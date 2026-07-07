@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Casting Bible</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<div id="app">
+  <header class="hdr">
+    <div>
+      <div class="hdr-brand">CASTING BIBLE</div>
+      <div class="hdr-sub">OUTDOOR · PRODUCTION · TALENT DIRECTORY</div>
+    </div>
+    <span class="count-pill" id="total-count"></span>
+  </header>
+  <nav class="tabs" id="tabs-nav"></nav>
+  <main id="main-content"></main>
+</div>
+
+<!-- FORM MODAL (add/edit talent or club) -->
+<div class="modal-bg" id="form-modal" style="display:none" onclick="if(event.target===this)closeForm()">
+  <div class="modal" id="form-modal-inner">
+    <div class="modal-hdr">
+      <span class="modal-title" id="form-title"></span>
+      <button class="modal-close" onclick="closeForm()">✕</button>
+    </div>
+    <div class="modal-body" id="form-body"></div>
+    <div class="modal-footer" id="form-footer">
+      <button class="btn-del" id="form-btn-del" style="display:none" onclick="deleteFromForm()">✕ SUPPRIMER</button>
+      <div class="spacer"></div>
+      <button class="btn-cancel" onclick="closeForm()">ANNULER</button>
+      <button class="btn-save" id="btn-save" onclick="submitForm()">SAUVEGARDER</button>
+    </div>
+  </div>
+</div>
+
+<!-- DETAIL MODAL -->
+<div class="modal-bg" id="detail-modal" style="display:none" onclick="if(event.target===this)closeDetail()">
+  <div class="modal wide">
+    <div class="modal-hdr">
+      <span class="modal-title" id="detail-title" style="color:var(--text)"></span>
+      <button class="modal-close" onclick="closeDetail()">✕</button>
+    </div>
+    <div id="detail-body"></div>
+    <div class="modal-footer">
+      <button class="btn-del" onclick="delFromDetail()">✕ SUPPRIMER</button>
+      <div class="spacer"></div>
+      <button class="btn-cancel" onclick="closeDetail()">FERMER</button>
+      <button class="btn-save" onclick="editFromDetail()">ÉDITER</button>
+    </div>
+  </div>
+</div>
+
+<script src="geo.js"></script>
+<script src="data.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
