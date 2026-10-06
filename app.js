@@ -38,9 +38,12 @@ function g(id) { const el = document.getElementById(id); return el ? el.value.tr
 function catById(id) { return db.categories.find(c => c.id === id); }
 function agenceNames() { return db.agences.map(a => a.nom).sort(); }
 
-// ── PHOTOS LOCALES (non synchronisées, propres à cet appareil) ──────────────
+// ── PHOTOS ────────────────────────────────────────────────────────────────────
+// Les photos importées depuis un appareil sont envoyées sur Airtable (voir
+// airtable-sync.js) pour être visibles par toute l'équipe. Le stockage local
+// ci-dessous ne sert plus que de secours si l'envoi échoue.
 const LOCAL_PHOTOS_KEY = 'casting_bible_local_photos';
-let pendingLocalPhoto = null; // base64 en attente de sauvegarde lors du submit
+let pendingLocalPhoto = null; // base64 en attente d'envoi lors du submit
 
 function getLocalPhotos() {
   try { return JSON.parse(localStorage.getItem(LOCAL_PHOTOS_KEY) || '{}'); }
@@ -51,11 +54,16 @@ function setLocalPhoto(talentId, base64) {
   store[talentId] = base64;
   try { localStorage.setItem(LOCAL_PHOTOS_KEY, JSON.stringify(store)); } catch(e) {}
 }
+function removeLocalPhoto(talentId) {
+  const store = getLocalPhotos();
+  delete store[talentId];
+  try { localStorage.setItem(LOCAL_PHOTOS_KEY, JSON.stringify(store)); } catch(e) {}
+}
 function getLocalPhotoFor(talentId) {
   return getLocalPhotos()[talentId] || null;
 }
 function photoFor(talent) {
-  return normalizePhotoUrl(talent.photo) || getLocalPhotoFor(talent.id) || '';
+  return normalizePhotoUrl(talent.photo) || getSharedPhotoFor(talent.id) || getLocalPhotoFor(talent.id) || '';
 }
 function talentSports(t) {
   if (Array.isArray(t.sports)) return t.sports;
@@ -566,7 +574,7 @@ function closeDetail() { document.getElementById('detail-modal').style.display =
 
 function delFromDetail() {
   if (!confirm('Supprimer ce profil ?')) return;
-  if (detailType === 'talent') db.talents = db.talents.filter(p => p.id !== detailId);
+  if (detailType === 'talent') { db.talents = db.talents.filter(p => p.id !== detailId); deleteSharedPhoto(detailId); removeLocalPhoto(detailId); }
   else                         db.clubs   = db.clubs.filter(c => c.id !== detailId);
   saveDb();
   closeDetail();
@@ -728,14 +736,14 @@ function renderTalentForm(v) {
     <div class="field"><label>INSTAGRAM (handle sans @)</label><input id="f-insta" value="${esc(v.insta||'')}" placeholder="ex: monpseudo"></div>
     <div class="field"><label>LIEN / SITE (book, page agence...)</label><input id="f-site" value="${esc(v.site||'')}" placeholder="https://..."></div>
     <div class="field full">
-      <label>PHOTO — LIEN URL (recommandé, visible par toute l'équipe)</label>
+      <label>PHOTO — LIEN URL OU IMPORT (visible par toute l'équipe)</label>
       <input id="f-photo" value="${esc(v.photo||'')}" placeholder="https://... (Google Drive, Imgur, lien image direct)" oninput="previewPhoto(this.value)">
       <div class="photo-upload-row" style="margin-top:8px">
         <label class="btn-upload" for="f-photo-file">📷 OU importer depuis cet appareil</label>
         <input type="file" id="f-photo-file" accept="image/*" style="display:none" onchange="handlePhotoUpload(this)">
-        <span id="photo-filename" class="photo-filename">${v.id && getLocalPhotoFor(v.id) && !v.photo ? '📎 photo locale déjà enregistrée' : ''}</span>
+        <span id="photo-filename" class="photo-filename">${v.id && !v.photo && getSharedPhotoFor(v.id) ? '📎 photo importée' : (v.id && !v.photo && getLocalPhotoFor(v.id) ? '📎 photo locale (pas encore partagée)' : '')}</span>
       </div>
-      <div class="field-hint">💡 Colle directement un lien de partage Google Drive classique (celui du bouton "Partager") — il sera converti automatiquement. Vérifie juste que l'accès est sur "Tous les utilisateurs disposant du lien". ⚠ Une photo importée depuis l'appareil reste locale : elle ne sera pas visible par le reste de l'équipe.</div>
+      <div class="field-hint">💡 Colle directement un lien de partage Google Drive classique (celui du bouton "Partager") — il sera converti automatiquement. Vérifie juste que l'accès est sur "Tous les utilisateurs disposant du lien". Tu peux aussi importer une photo depuis ton ordinateur ou ton téléphone : elle est envoyée en ligne et visible par toute l'équipe.</div>
       <img id="photo-preview" class="photo-preview-img ${photoFor(v)?'show':''}" src="${esc(photoFor(v))}" alt="">
     </div>
     <div class="field full"><label>NOTES</label><input id="f-notes" value="${esc(v.notes||'')}"></div>`;
@@ -813,7 +821,7 @@ function previewPhoto(url) {
   else img.classList.remove('show');
 }
 
-// ── PHOTO UPLOAD LOCAL (non synchronisé) + COMPRESSION ────────────────────────
+// ── PHOTO UPLOAD (envoyée sur Airtable au SAUVEGARDER) + COMPRESSION ────────────────────────
 function handlePhotoUpload(input) {
   const file = input.files && input.files[0];
   if (!file) return;
@@ -840,12 +848,15 @@ function handlePhotoUpload(input) {
 
       const dataUrl = canvas.toDataURL('image/jpeg', 0.75);
 
-      // Stocké en attente : sera sauvegardé localement (pas synchronisé) au moment du SAUVEGARDER
+      // Stocké en attente : sera envoyé en ligne au moment du SAUVEGARDER
       pendingLocalPhoto = dataUrl;
+      // L'import remplace un éventuel lien collé
+      const urlInput = document.getElementById('f-photo');
+      if (urlInput) urlInput.value = '';
       previewPhoto(dataUrl);
 
       const nameLabel = document.getElementById('photo-filename');
-      if (nameLabel) nameLabel.textContent = '📎 ' + file.name + ' (local uniquement)';
+      if (nameLabel) nameLabel.textContent = '📎 ' + file.name;
     };
     img.onerror = function() { alert('Impossible de lire cette image.'); };
     img.src = e.target.result;
@@ -865,13 +876,29 @@ function clearPhoto() {
   previewPhoto('');
 }
 
+async function saveImportedPhoto(talentId, dataUrl) {
+  // Affichage immédiat sur cet appareil pendant l'envoi
+  setLocalPhoto(talentId, dataUrl);
+  setSyncStatus('syncing');
+  try {
+    await uploadSharedPhoto(talentId, dataUrl);
+    removeLocalPhoto(talentId);
+    setSyncStatus('ok');
+    render();
+  } catch (e) {
+    console.error(e);
+    setSyncStatus('error');
+    alert("L'envoi de la photo a échoué. Elle reste visible sur cet appareil et sera renvoyée au prochain chargement de la page.\n\n" + e.message);
+  }
+}
+
 function closeForm() { document.getElementById('form-modal').style.display = 'none'; }
 
 function deleteFromForm() {
   const { type, id: pid } = formCtx;
   if (pid === null || pid === undefined) return;
   if (!confirm('Supprimer définitivement ?')) return;
-  if (type === 'talent') db.talents = db.talents.filter(p => p.id !== pid);
+  if (type === 'talent') { db.talents = db.talents.filter(p => p.id !== pid); deleteSharedPhoto(pid); removeLocalPhoto(pid); }
   else if (type === 'club') db.clubs = db.clubs.filter(c => c.id !== pid);
   else if (type === 'agence') db.agences = db.agences.filter(a => a.id !== pid);
   else if (type === 'marque') db.marques.splice(pid, 1);
@@ -904,8 +931,8 @@ function submitForm() {
     if (isEdit) { db.talents = db.talents.map(p => p.id === pid ? { ...obj, id: p.id } : p); finalId = pid; }
     else        { finalId = uid(); db.talents.push({ ...obj, id: finalId }); }
 
-    // Sauvegarde la photo locale (si une a été importée depuis l'appareil)
-    if (pendingLocalPhoto) setLocalPhoto(finalId, pendingLocalPhoto);
+    // Envoie la photo importée depuis l'appareil pour que toute l'équipe la voie
+    if (pendingLocalPhoto) saveImportedPhoto(finalId, pendingLocalPhoto);
 
   } else if (type === 'club') {
     if (!g('f-nom')) { alert('Le nom est requis.'); return; }

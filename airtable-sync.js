@@ -75,6 +75,7 @@ async function initRemoteSync() {
       await pushRemoteDb(db);
     }
     setSyncStatus('ok');
+    initSharedPhotos(); // photos importées, partagées avec l'équipe
   } catch (e) {
     console.error(e);
     setSyncStatus('error');
@@ -137,4 +138,154 @@ async function saveDbRemote() {
     setSyncStatus('error');
     alert("La sauvegarde en ligne a échoué. Tes changements restent sur cet appareil mais ne sont pas encore partagés avec l'équipe.\n\n" + e.message);
   }
+}
+
+// ── PHOTOS PARTAGÉES (importées depuis un appareil) ─────────────────────────
+// Chaque photo importée depuis un ordinateur/téléphone est envoyée dans la
+// même table Airtable : une ligne par talent, key = "photo:<id du talent>",
+// le fichier est stocké dans la colonne "Attachments". Comme ça, tout le monde
+// la voit. Les liens Airtable expirent au bout de ~2h : on les rafraîchit
+// régulièrement.
+
+const AIRTABLE_CONTENT_URL  = `https://content.airtable.com/v0/${AIRTABLE_BASE_ID}`;
+const PHOTO_ATTACHMENT_FIELD = 'Attachments';
+const PHOTO_REFRESH_INTERVAL = 20 * 60 * 1000;
+
+let sharedPhotos = {};      // talentId -> url de l'image
+let photoRecordIds = {};    // talentId -> id de la ligne Airtable "photo:..."
+
+function photoKey(talentId) { return 'photo:' + talentId; }
+
+function getSharedPhotoFor(talentId) {
+  return sharedPhotos[talentId] || null;
+}
+
+// Récupère toutes les lignes "photo:..." (avec pagination)
+async function fetchSharedPhotos() {
+  const nextPhotos = {};
+  const nextIds = {};
+  let offset = null;
+  do {
+    const params = new URLSearchParams();
+    params.set('filterByFormula', "LEFT({key},6)='photo:'");
+    params.append('fields[]', 'key');
+    params.append('fields[]', PHOTO_ATTACHMENT_FIELD);
+    if (offset) params.set('offset', offset);
+    const res = await fetch(`${AIRTABLE_API_URL}?${params}`, {
+      headers: { 'Authorization': 'Bearer ' + AIRTABLE_TOKEN }
+    });
+    if (!res.ok) throw new Error('Airtable photos fetch failed: ' + res.status);
+    const data = await res.json();
+    for (const rec of data.records || []) {
+      const talentId = String(rec.fields.key || '').slice(6);
+      if (!talentId) continue;
+      nextIds[talentId] = rec.id;
+      const files = rec.fields[PHOTO_ATTACHMENT_FIELD] || [];
+      const last = files[files.length - 1];
+      if (last) nextPhotos[talentId] = last.thumbnails?.large?.url || last.url;
+    }
+    offset = data.offset;
+  } while (offset);
+  sharedPhotos = nextPhotos;
+  photoRecordIds = nextIds;
+}
+
+async function refreshSharedPhotos() {
+  try {
+    const before = JSON.stringify(Object.keys(sharedPhotos).sort());
+    await fetchSharedPhotos();
+    const after = JSON.stringify(Object.keys(sharedPhotos).sort());
+    // On ne redessine que si une photo est apparue/disparue, pour ne pas
+    // fermer un formulaire en cours ni faire clignoter les images.
+    const formOpen = document.getElementById('form-modal').style.display === 'flex';
+    if (before !== after && !formOpen) render();
+  } catch (e) { console.error(e); }
+}
+
+async function airtableJson(url, options) {
+  const res = await fetch(url, {
+    ...options,
+    headers: {
+      'Authorization': 'Bearer ' + AIRTABLE_TOKEN,
+      'Content-Type': 'application/json'
+    }
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error('Airtable ' + res.status + ' ' + (err?.error?.message || ''));
+  }
+  return res.json();
+}
+
+// Envoie une photo (dataURL base64 JPEG) et l'associe au talent.
+// Remplace la photo précédente s'il y en avait une.
+async function uploadSharedPhoto(talentId, dataUrl) {
+  const key = photoKey(talentId);
+  let recordId = photoRecordIds[talentId];
+  if (recordId) {
+    // Vide l'ancienne photo
+    await airtableJson(`${AIRTABLE_API_URL}/${recordId}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ fields: { [PHOTO_ATTACHMENT_FIELD]: [] } })
+    });
+  } else {
+    const created = await airtableJson(AIRTABLE_API_URL, {
+      method: 'POST',
+      body: JSON.stringify({ fields: { key } })
+    });
+    recordId = created.id;
+    photoRecordIds[talentId] = recordId;
+  }
+
+  const [meta, base64] = dataUrl.split(',');
+  const contentType = (meta.match(/^data:([^;]+)/) || [])[1] || 'image/jpeg';
+  const ext = contentType.split('/')[1] || 'jpg';
+  const uploaded = await airtableJson(
+    `${AIRTABLE_CONTENT_URL}/${recordId}/${encodeURIComponent(PHOTO_ATTACHMENT_FIELD)}/uploadAttachment`,
+    {
+      method: 'POST',
+      body: JSON.stringify({ contentType, file: base64, filename: `talent-${talentId}.${ext}` })
+    }
+  );
+  const files = uploaded?.fields?.[PHOTO_ATTACHMENT_FIELD] || [];
+  const last = files[files.length - 1];
+  // En attendant que l'URL Airtable soit prête, on affiche la version locale
+  sharedPhotos[talentId] = (last && (last.thumbnails?.large?.url || last.url)) || dataUrl;
+}
+
+async function deleteSharedPhoto(talentId) {
+  const recordId = photoRecordIds[talentId];
+  delete sharedPhotos[talentId];
+  delete photoRecordIds[talentId];
+  if (!recordId) return;
+  try {
+    await airtableJson(`${AIRTABLE_API_URL}/${recordId}`, { method: 'DELETE' });
+  } catch (e) { console.error(e); }
+}
+
+// Les photos importées AVANT cette mise à jour étaient restées sur l'appareil.
+// On les envoie automatiquement pour que l'équipe les voie aussi.
+async function migrateLocalPhotos() {
+  const local = getLocalPhotos();
+  let changed = false;
+  for (const talentId of Object.keys(local)) {
+    const talent = db.talents.find(t => String(t.id) === talentId);
+    if (!talent) { removeLocalPhoto(talentId); continue; }
+    if (sharedPhotos[talentId] || talent.photo) { removeLocalPhoto(talentId); continue; }
+    try {
+      await uploadSharedPhoto(talentId, local[talentId]);
+      removeLocalPhoto(talentId);
+      changed = true;
+    } catch (e) { console.error('Migration photo échouée pour', talentId, e); }
+  }
+  if (changed) render();
+}
+
+async function initSharedPhotos() {
+  await refreshSharedPhotos();
+  await migrateLocalPhotos();
+  setInterval(refreshSharedPhotos, PHOTO_REFRESH_INTERVAL);
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') refreshSharedPhotos();
+  });
 }
