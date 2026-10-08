@@ -16,6 +16,7 @@ function loadDb() {
     agences:    JSON.parse(JSON.stringify(INITIAL_DATA.agences)),
     sports:     JSON.parse(JSON.stringify(INITIAL_DATA.sports)),
     categories: JSON.parse(JSON.stringify(INITIAL_DATA.categories)),
+    lieux:      [],
   };
 }
 
@@ -37,10 +38,15 @@ function initials(p, n) { return ((p||'')[0]||'').toUpperCase() + ((n||'')[0]||'
 function g(id) { const el = document.getElementById(id); return el ? el.value.trim() : ''; }
 function catById(id) { return db.categories.find(c => c.id === id); }
 function agenceNames() { return db.agences.map(a => a.nom).sort(); }
+// Les bases créées avant l'ajout des lieux n'ont pas encore de liste "lieux"
+function lieuxList() { if (!Array.isArray(db.lieux)) db.lieux = []; return db.lieux; }
 
-// ── PHOTOS LOCALES (non synchronisées, propres à cet appareil) ──────────────
+// ── PHOTOS ────────────────────────────────────────────────────────────────────
+// Les photos importées depuis un appareil sont envoyées sur Airtable (voir
+// airtable-sync.js) pour être visibles par toute l'équipe. Le stockage local
+// ci-dessous ne sert plus que de secours si l'envoi échoue.
 const LOCAL_PHOTOS_KEY = 'casting_bible_local_photos';
-let pendingLocalPhoto = null; // base64 en attente de sauvegarde lors du submit
+let pendingLocalPhoto = null; // base64 en attente d'envoi lors du submit
 
 function getLocalPhotos() {
   try { return JSON.parse(localStorage.getItem(LOCAL_PHOTOS_KEY) || '{}'); }
@@ -51,11 +57,16 @@ function setLocalPhoto(talentId, base64) {
   store[talentId] = base64;
   try { localStorage.setItem(LOCAL_PHOTOS_KEY, JSON.stringify(store)); } catch(e) {}
 }
+function removeLocalPhoto(talentId) {
+  const store = getLocalPhotos();
+  delete store[talentId];
+  try { localStorage.setItem(LOCAL_PHOTOS_KEY, JSON.stringify(store)); } catch(e) {}
+}
 function getLocalPhotoFor(talentId) {
   return getLocalPhotos()[talentId] || null;
 }
 function photoFor(talent) {
-  return normalizePhotoUrl(talent.photo) || getLocalPhotoFor(talent.id) || '';
+  return normalizePhotoUrl(talent.photo) || getSharedPhotoFor(talent.id) || getLocalPhotoFor(talent.id) || '';
 }
 function talentSports(t) {
   if (Array.isArray(t.sports)) return t.sports;
@@ -125,6 +136,7 @@ function buildTabs() {
   });
 
   html += `<button class="tab${curCatId==='clubs'?' active':''}" data-group="clubs" onclick="switchCat('clubs')">CLUBS (${db.clubs.length})</button>`;
+  html += `<button class="tab${curCatId==='lieux'?' active':''}" data-group="lieux" onclick="switchCat('lieux')">📍 LIEUX (${lieuxList().length})</button>`;
   html += `<button class="tab${curCatId==='marques'?' active':''}" data-group="marques" onclick="switchCat('marques')">MARQUES · AGENCES</button>`;
   html += `<button class="tab${curCatId==='settings'?' active':''}" data-group="settings" onclick="switchCat('settings')">⚙ PARAMÈTRES</button>`;
 
@@ -144,6 +156,7 @@ function render() {
   const main = document.getElementById('main-content');
 
   if (curCatId === 'clubs')    { renderClubs(main); return; }
+  if (curCatId === 'lieux')    { renderLieux(main); return; }
   if (curCatId === 'marques')  { renderMarques(main); return; }
   if (curCatId === 'settings') { renderSettings(main); return; }
 
@@ -153,7 +166,7 @@ function render() {
 
 function updateCounts() {
   document.getElementById('total-count').textContent =
-    db.talents.length + ' TALENTS · ' + db.clubs.length + ' CLUBS';
+    db.talents.length + ' TALENTS · ' + db.clubs.length + ' CLUBS · ' + lieuxList().length + ' LIEUX';
 }
 
 // ── TALENTS ───────────────────────────────────────────────────────────────────
@@ -314,6 +327,112 @@ function renderClubs(main) {
   });
   html += `</div>`;
   main.innerHTML = html;
+}
+
+// ── LIEUX (scouting) ──────────────────────────────────────────────────────────
+function lieuPhotoUrls(l) {
+  // Photos importées (Airtable) puis liens collés à la main
+  const imported = getLieuPhotos(l.id).map(p => ({ url: p.url, full: p.full }));
+  const links = (l.photos || []).map(normalizePhotoUrl).filter(Boolean).map(u => ({ url: u, full: u }));
+  return [...imported, ...links];
+}
+function lieuMapQuery(l) {
+  if (l.gps) return l.gps;
+  return [l.adresse, l.ville, l.pays].filter(Boolean).join(', ');
+}
+function lieuMapsLink(l) {
+  if (l.maps) return l.maps;
+  const q = lieuMapQuery(l);
+  return q ? 'https://www.google.com/maps/search/?api=1&query=' + encodeURIComponent(q) : '';
+}
+function formatCout(v) {
+  if (v === '' || v === null || v === undefined) return '';
+  const n = Number(v);
+  return isNaN(n) ? String(v) : n.toLocaleString('fr-FR') + ' €';
+}
+
+function renderLieux(main) {
+  const q = searchQ.toLowerCase();
+  const list = lieuxList().filter(l => {
+    if (q && ![l.nom,l.type,l.adresse,l.ville,l.pays,l.contact,l.notes,l.coutDetail]
+      .some(v => String(v||'').toLowerCase().includes(q))) return false;
+    if (fPays && l.pays !== fPays) return false;
+    return true;
+  });
+  const pays = [...new Set(lieuxList().map(l => l.pays).filter(Boolean))].sort();
+
+  let html = `<div class="toolbar">
+    <div class="search-wrap">
+      <input placeholder="Nom, ville, type..." value="${esc(searchQ)}"
+             oninput="searchQ=this.value;renderLieux(document.getElementById('main-content'))">
+    </div>
+    <select class="filter-sel" onchange="fPays=this.value;renderLieux(document.getElementById('main-content'))">
+      <option value="">PAYS</option>
+      ${pays.map(p=>`<option value="${esc(p)}"${fPays===p?' selected':''}>${FLAGS[p]||''} ${esc(p)}</option>`).join('')}
+    </select>
+    <div class="spacer"></div>
+    <button class="btn-add" style="background:var(--accent2)" onclick="openForm('lieu')">+ AJOUTER</button>
+  </div>`;
+
+  if (!list.length) {
+    html += `<div class="empty">AUCUN LIEU${lieuxList().length ? ' TROUVÉ' : ' POUR LE MOMENT'}</div>`;
+  } else {
+    html += `<div class="grid lieux-grid">`;
+    list.forEach(l => {
+      const photos = lieuPhotoUrls(l);
+      const cover = photos[0]?.url;
+      html += `<div class="card" onclick="openDetail('lieu',${l.id})">`;
+      if (cover) {
+        html += `<img class="card-img lieu" src="${esc(cover)}" alt="${esc(l.nom)}"
+          onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">
+          <div class="card-ph lieu" style="display:none">📍</div>`;
+      } else {
+        html += `<div class="card-ph lieu">📍</div>`;
+      }
+      if (photos.length > 1) html += `<span class="card-age">${photos.length} 📷</span>`;
+      if (l.cout !== '' && l.cout !== undefined) html += `<div class="card-ig-hover" style="color:var(--accent2)">≈ ${esc(formatCout(l.cout))}</div>`;
+      html += `<div class="card-body">
+        <div class="card-name">${esc(l.nom)}</div>
+        <div class="card-meta">
+          ${l.type ? `<span class="tag agence">${esc(l.type)}</span>` : ''}
+          ${l.ville ? `<span class="tag">${esc(l.ville)}</span>` : ''}
+          ${l.pays ? `<span class="tag">${FLAGS[l.pays]||''} ${esc(l.pays)}</span>` : ''}
+        </div>
+      </div></div>`;
+    });
+    html += `</div>`;
+  }
+  main.innerHTML = html;
+}
+
+function lieuDetailHtml(l) {
+  const photos = lieuPhotoUrls(l);
+  const mapQ = lieuMapQuery(l);
+  const mapsLink = lieuMapsLink(l);
+  return `<div class="lieu-detail">
+    ${photos.length ? `<div class="lieu-gallery">
+      ${photos.map(p => `<a href="${esc(p.full)}" target="_blank"><img src="${esc(p.url)}" alt="" onerror="this.parentElement.style.display='none'"></a>`).join('')}
+    </div>` : ''}
+    <div class="detail-info">
+      <div class="detail-name">${esc(l.nom)}</div>
+      <div class="detail-tags">
+        ${l.type ? `<span class="tag agence">${esc(l.type)}</span>` : ''}
+        ${l.pays ? `<span class="tag">${FLAGS[l.pays]||''} ${esc(l.pays)}</span>` : ''}
+        ${l.ville ? `<span class="tag">${esc(l.ville)}</span>` : ''}
+      </div>
+      <div class="detail-row"><span class="detail-lbl">ADRESSE</span><span class="detail-val">${esc(l.adresse||'—')}</span></div>
+      ${l.gps ? `<div class="detail-row"><span class="detail-lbl">GPS</span><span class="detail-val">${esc(l.gps)}</span></div>` : ''}
+      <div class="detail-row"><span class="detail-lbl">COÛT ESTIMÉ</span><span class="detail-val" style="color:var(--accent2)">${esc(formatCout(l.cout) || '—')}</span></div>
+      ${l.coutDetail ? `<div class="detail-row"><span class="detail-lbl">DÉTAIL COÛTS</span><span class="detail-val pre">${esc(l.coutDetail)}</span></div>` : ''}
+      ${l.contact ? `<div class="detail-row"><span class="detail-lbl">CONTACT</span><span class="detail-val">${esc(l.contact)}</span></div>` : ''}
+      ${l.tel ? `<div class="detail-row"><span class="detail-lbl">TEL</span><span class="detail-val"><a href="tel:${esc(l.tel)}">${esc(l.tel)}</a></span></div>` : ''}
+      ${l.mail ? `<div class="detail-row"><span class="detail-lbl">MAIL</span><span class="detail-val"><a href="mailto:${esc(l.mail)}">${esc(l.mail)}</a></span></div>` : ''}
+      ${l.notes ? `<div class="detail-row"><span class="detail-lbl">NOTES</span><span class="detail-val pre">${esc(l.notes)}</span></div>` : ''}
+      ${mapsLink ? `<a class="btn-ig" style="border-color:var(--accent2);color:var(--accent2)" href="${esc(mapsLink)}" target="_blank">OUVRIR DANS GOOGLE MAPS ↗</a>` : ''}
+    </div>
+    ${mapQ ? `<iframe class="lieu-map" loading="lazy" referrerpolicy="no-referrer-when-downgrade"
+      src="https://www.google.com/maps?q=${encodeURIComponent(mapQ)}&output=embed"></iframe>` : ''}
+  </div>`;
 }
 
 // ── MARQUES & AGENCES ────────────────────────────────────────────────────────
@@ -500,11 +619,17 @@ function delAgence(id) {
 function openDetail(type, pid) {
   detailType = type;
   detailId   = pid;
-  const arr = type === 'talent' ? db.talents : db.clubs;
+  const arr = type === 'talent' ? db.talents : type === 'lieu' ? lieuxList() : db.clubs;
   const p   = arr.find(x => x.id === pid);
   if (!p) return;
 
   document.getElementById('detail-title').textContent = (p.nom||'') + (p.prenom ? ' ' + p.prenom : '');
+
+  if (type === 'lieu') {
+    document.getElementById('detail-body').innerHTML = lieuDetailHtml(p);
+    document.getElementById('detail-modal').style.display = 'flex';
+    return;
+  }
 
   const ig = type === 'talent' && p.insta && p.insta.trim() !== '';
   const cats = type === 'talent' ? (p.cats||[]).map(c => catById(c)).filter(Boolean) : [];
@@ -565,8 +690,9 @@ function openDetail(type, pid) {
 function closeDetail() { document.getElementById('detail-modal').style.display = 'none'; }
 
 function delFromDetail() {
-  if (!confirm('Supprimer ce profil ?')) return;
-  if (detailType === 'talent') db.talents = db.talents.filter(p => p.id !== detailId);
+  if (!confirm(detailType === 'lieu' ? 'Supprimer ce lieu ?' : 'Supprimer ce profil ?')) return;
+  if (detailType === 'talent') { db.talents = db.talents.filter(p => p.id !== detailId); deleteSharedPhoto(detailId); removeLocalPhoto(detailId); }
+  else if (detailType === 'lieu') { db.lieux = lieuxList().filter(l => l.id !== detailId); deleteAllLieuPhotos(detailId); }
   else                         db.clubs   = db.clubs.filter(c => c.id !== detailId);
   saveDb();
   closeDetail();
@@ -599,6 +725,13 @@ function openForm(type, pid) {
     document.getElementById('form-title').textContent = isEdit ? 'ÉDITER CLUB' : '+ NOUVEAU CLUB';
     document.getElementById('btn-save').style.background = 'var(--accent3)';
     renderClubForm(c || {});
+  } else if (type === 'lieu') {
+    const l = isEdit ? lieuxList().find(x => x.id === pid) : {};
+    pendingLieuPhotos = [];
+    pendingLieuRemovals = [];
+    document.getElementById('form-title').textContent = isEdit ? 'ÉDITER LIEU' : '+ NOUVEAU LIEU';
+    document.getElementById('btn-save').style.background = 'var(--accent2)';
+    renderLieuForm(l || {});
   } else if (type === 'agence') {
     const a = isEdit ? db.agences.find(x => x.id === pid) : {};
     document.getElementById('form-title').textContent = isEdit ? 'ÉDITER AGENCE' : '+ NOUVELLE AGENCE';
@@ -728,14 +861,14 @@ function renderTalentForm(v) {
     <div class="field"><label>INSTAGRAM (handle sans @)</label><input id="f-insta" value="${esc(v.insta||'')}" placeholder="ex: monpseudo"></div>
     <div class="field"><label>LIEN / SITE (book, page agence...)</label><input id="f-site" value="${esc(v.site||'')}" placeholder="https://..."></div>
     <div class="field full">
-      <label>PHOTO — LIEN URL (recommandé, visible par toute l'équipe)</label>
+      <label>PHOTO — LIEN URL OU IMPORT (visible par toute l'équipe)</label>
       <input id="f-photo" value="${esc(v.photo||'')}" placeholder="https://... (Google Drive, Imgur, lien image direct)" oninput="previewPhoto(this.value)">
       <div class="photo-upload-row" style="margin-top:8px">
         <label class="btn-upload" for="f-photo-file">📷 OU importer depuis cet appareil</label>
         <input type="file" id="f-photo-file" accept="image/*" style="display:none" onchange="handlePhotoUpload(this)">
-        <span id="photo-filename" class="photo-filename">${v.id && getLocalPhotoFor(v.id) && !v.photo ? '📎 photo locale déjà enregistrée' : ''}</span>
+        <span id="photo-filename" class="photo-filename">${v.id && !v.photo && getSharedPhotoFor(v.id) ? '📎 photo importée' : (v.id && !v.photo && getLocalPhotoFor(v.id) ? '📎 photo locale (pas encore partagée)' : '')}</span>
       </div>
-      <div class="field-hint">💡 Colle directement un lien de partage Google Drive classique (celui du bouton "Partager") — il sera converti automatiquement. Vérifie juste que l'accès est sur "Tous les utilisateurs disposant du lien". ⚠ Une photo importée depuis l'appareil reste locale : elle ne sera pas visible par le reste de l'équipe.</div>
+      <div class="field-hint">💡 Colle directement un lien de partage Google Drive classique (celui du bouton "Partager") — il sera converti automatiquement. Vérifie juste que l'accès est sur "Tous les utilisateurs disposant du lien". Tu peux aussi importer une photo depuis ton ordinateur ou ton téléphone : elle est envoyée en ligne et visible par toute l'équipe.</div>
       <img id="photo-preview" class="photo-preview-img ${photoFor(v)?'show':''}" src="${esc(photoFor(v))}" alt="">
     </div>
     <div class="field full"><label>NOTES</label><input id="f-notes" value="${esc(v.notes||'')}"></div>`;
@@ -755,6 +888,96 @@ function renderClubForm(v) {
     <div class="field"><label>VILLE</label><select id="fc-ville">${villesl}</select></div>
     <div class="field"><label>INSTAGRAM (handle sans @)</label><input id="f-lien" value="${esc(v.lien||'')}"></div>
     <div class="field full"><label>NOTES</label><input id="f-notes" value="${esc(v.notes||'')}"></div>`;
+}
+
+// ── FORMULAIRE LIEU ──────────────────────────────────────────────────────────
+let pendingLieuPhotos   = []; // dataURLs importées, envoyées au SAUVEGARDER
+let pendingLieuRemovals = []; // ids des photos Airtable à retirer au SAUVEGARDER
+
+function renderLieuForm(v) {
+  const paysl = `<option value="">—</option>` + COUNTRIES.map(p => `<option value="${esc(p)}"${(v.pays||'')===p?' selected':''}>${FLAGS[p]||''} ${esc(p)}</option>`).join('');
+
+  document.getElementById('form-body').innerHTML = `
+    <div class="field"><label>NOM DU LIEU *</label><input id="f-nom" value="${esc(v.nom||'')}" placeholder="ex: Plage de la Torche"></div>
+    <div class="field"><label>TYPE</label><input id="f-type" value="${esc(v.type||'')}" placeholder="ex: Plage, forêt, rooftop, stade..."></div>
+    <div class="field full"><label>ADRESSE</label><input id="f-adresse" value="${esc(v.adresse||'')}" placeholder="ex: 29120 Plomeur"></div>
+    <div class="field"><label>PAYS</label><select id="fl-pays">${paysl}</select></div>
+    <div class="field"><label>VILLE</label><input id="f-ville" value="${esc(v.ville||'')}"></div>
+    <div class="field full">
+      <label>COORDONNÉES GPS (optionnel)</label>
+      <div class="photo-upload-row">
+        <input id="f-gps" value="${esc(v.gps||'')}" placeholder="ex: 47.8389, -4.3519" style="flex:1">
+        <button type="button" class="btn-upload" onclick="fillGpsFromDevice()">📍 MA POSITION</button>
+      </div>
+      <div class="field-hint">💡 Sur place, appuie sur « MA POSITION » pour enregistrer l'endroit exact. Sinon l'adresse suffit pour la carte.</div>
+    </div>
+    <div class="field full"><label>LIEN GOOGLE MAPS (optionnel)</label><input id="f-maps" value="${esc(v.maps||'')}" placeholder="https://maps.app.goo.gl/..."></div>
+    <div class="field"><label>COÛT ESTIMÉ (€)</label><input id="f-cout" type="number" min="0" step="any" value="${esc(String(v.cout ?? ''))}" placeholder="ex: 1500"></div>
+    <div class="field"><label>CONTACT (propriétaire, mairie...)</label><input id="f-contact" value="${esc(v.contact||'')}"></div>
+    <div class="field full"><label>DÉTAIL DES COÛTS</label><textarea id="f-cout-detail" rows="3" placeholder="ex: Location 1000 €/jour, autorisation mairie 300 €, parking régie 200 €">${esc(v.coutDetail||'')}</textarea></div>
+    <div class="field"><label>TEL</label><input id="f-tel" value="${esc(v.tel||'')}" placeholder="+33 6..."></div>
+    <div class="field"><label>MAIL</label><input id="f-mail" type="email" value="${esc(v.mail||'')}"></div>
+    <div class="field full">
+      <label>PHOTOS DU LIEU (visibles par toute l'équipe)</label>
+      <div class="photo-upload-row">
+        <label class="btn-upload" for="f-lieu-files">📷 Importer des photos</label>
+        <input type="file" id="f-lieu-files" accept="image/*" multiple style="display:none" onchange="handleLieuPhotos(this)">
+      </div>
+      <div class="lieu-thumbs" id="lieu-thumbs"></div>
+      <textarea id="f-photo-links" rows="2" style="margin-top:8px" placeholder="Ou colle des liens d'images (Google Drive, Imgur...), un par ligne">${esc((v.photos||[]).join('\n'))}</textarea>
+    </div>
+    <div class="field full"><label>NOTES (accès, lumière, horaires, autorisations...)</label><textarea id="f-notes" rows="3">${esc(v.notes||'')}</textarea></div>`;
+  renderLieuThumbs();
+}
+
+function renderLieuThumbs() {
+  const box = document.getElementById('lieu-thumbs');
+  if (!box) return;
+  const lieuId = formCtx && formCtx.id;
+  const existing = lieuId ? getLieuPhotos(lieuId).filter(p => !pendingLieuRemovals.includes(p.id)) : [];
+  box.innerHTML =
+    existing.map(p => `<div class="lieu-thumb"><img src="${esc(p.url)}" alt="">
+      <button type="button" title="Retirer" onclick="pendingLieuRemovals.push('${esc(p.id)}');renderLieuThumbs()">✕</button></div>`).join('') +
+    pendingLieuPhotos.map((d, i) => `<div class="lieu-thumb new"><img src="${d}" alt="">
+      <button type="button" title="Retirer" onclick="pendingLieuPhotos.splice(${i},1);renderLieuThumbs()">✕</button></div>`).join('');
+}
+
+async function handleLieuPhotos(input) {
+  const files = [...(input.files || [])].filter(f => f.type.startsWith('image/'));
+  for (const file of files) {
+    try { pendingLieuPhotos.push(await compressImage(file, 1400)); }
+    catch (e) { alert('Impossible de lire ' + file.name); }
+  }
+  input.value = '';
+  renderLieuThumbs();
+}
+
+function fillGpsFromDevice() {
+  if (!navigator.geolocation) { alert("La localisation n'est pas disponible sur cet appareil."); return; }
+  navigator.geolocation.getCurrentPosition(
+    pos => {
+      document.getElementById('f-gps').value =
+        pos.coords.latitude.toFixed(6) + ', ' + pos.coords.longitude.toFixed(6);
+    },
+    err => alert('Impossible de récupérer ta position : ' + err.message),
+    { enableHighAccuracy: true, timeout: 15000 }
+  );
+}
+
+async function saveLieuPhotos(lieuId, toAdd, toRemove) {
+  if (!toAdd.length && !toRemove.length) return;
+  setSyncStatus('syncing');
+  try {
+    if (toRemove.length) await removeLieuPhotos(lieuId, toRemove);
+    for (const dataUrl of toAdd) await addLieuPhoto(lieuId, dataUrl);
+    setSyncStatus('ok');
+    render();
+  } catch (e) {
+    console.error(e);
+    setSyncStatus('error');
+    alert("L'envoi des photos du lieu a échoué. Réessaie depuis ÉDITER.\n\n" + e.message);
+    render();
+  }
 }
 
 function renderAgenceForm(v) {
@@ -813,7 +1036,7 @@ function previewPhoto(url) {
   else img.classList.remove('show');
 }
 
-// ── PHOTO UPLOAD LOCAL (non synchronisé) + COMPRESSION ────────────────────────
+// ── PHOTO UPLOAD (envoyée sur Airtable au SAUVEGARDER) + COMPRESSION ────────────────────────
 function handlePhotoUpload(input) {
   const file = input.files && input.files[0];
   if (!file) return;
@@ -823,35 +1046,41 @@ function handlePhotoUpload(input) {
     return;
   }
 
-  const reader = new FileReader();
-  reader.onload = function(e) {
-    const img = new Image();
-    img.onload = function() {
-      const maxW = 700;
-      const scale = Math.min(1, maxW / img.width);
-      const w = Math.round(img.width * scale);
-      const h = Math.round(img.height * scale);
+  compressImage(file, 700).then(dataUrl => {
+    // Stocké en attente : sera envoyé en ligne au moment du SAUVEGARDER
+    pendingLocalPhoto = dataUrl;
+    // L'import remplace un éventuel lien collé
+    const urlInput = document.getElementById('f-photo');
+    if (urlInput) urlInput.value = '';
+    previewPhoto(dataUrl);
 
-      const canvas = document.createElement('canvas');
-      canvas.width = w;
-      canvas.height = h;
-      const ctx = canvas.getContext('2d');
-      ctx.drawImage(img, 0, 0, w, h);
+    const nameLabel = document.getElementById('photo-filename');
+    if (nameLabel) nameLabel.textContent = '📎 ' + file.name;
+  }).catch(() => alert('Impossible de lire cette image.'));
+}
 
-      const dataUrl = canvas.toDataURL('image/jpeg', 0.75);
-
-      // Stocké en attente : sera sauvegardé localement (pas synchronisé) au moment du SAUVEGARDER
-      pendingLocalPhoto = dataUrl;
-      previewPhoto(dataUrl);
-
-      const nameLabel = document.getElementById('photo-filename');
-      if (nameLabel) nameLabel.textContent = '📎 ' + file.name + ' (local uniquement)';
+// Réduit une image à maxW pixels de large et la renvoie en dataURL JPEG
+function compressImage(file, maxW) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = function(e) {
+      const img = new Image();
+      img.onload = function() {
+        const scale = Math.min(1, maxW / img.width);
+        const w = Math.round(img.width * scale);
+        const h = Math.round(img.height * scale);
+        const canvas = document.createElement('canvas');
+        canvas.width = w;
+        canvas.height = h;
+        canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+        resolve(canvas.toDataURL('image/jpeg', 0.75));
+      };
+      img.onerror = reject;
+      img.src = e.target.result;
     };
-    img.onerror = function() { alert('Impossible de lire cette image.'); };
-    img.src = e.target.result;
-  };
-  reader.onerror = function() { alert('Erreur de lecture du fichier.'); };
-  reader.readAsDataURL(file);
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
 }
 
 function clearPhoto() {
@@ -865,14 +1094,31 @@ function clearPhoto() {
   previewPhoto('');
 }
 
+async function saveImportedPhoto(talentId, dataUrl) {
+  // Affichage immédiat sur cet appareil pendant l'envoi
+  setLocalPhoto(talentId, dataUrl);
+  setSyncStatus('syncing');
+  try {
+    await uploadSharedPhoto(talentId, dataUrl);
+    removeLocalPhoto(talentId);
+    setSyncStatus('ok');
+    render();
+  } catch (e) {
+    console.error(e);
+    setSyncStatus('error');
+    alert("L'envoi de la photo a échoué. Elle reste visible sur cet appareil et sera renvoyée au prochain chargement de la page.\n\n" + e.message);
+  }
+}
+
 function closeForm() { document.getElementById('form-modal').style.display = 'none'; }
 
 function deleteFromForm() {
   const { type, id: pid } = formCtx;
   if (pid === null || pid === undefined) return;
   if (!confirm('Supprimer définitivement ?')) return;
-  if (type === 'talent') db.talents = db.talents.filter(p => p.id !== pid);
+  if (type === 'talent') { db.talents = db.talents.filter(p => p.id !== pid); deleteSharedPhoto(pid); removeLocalPhoto(pid); }
   else if (type === 'club') db.clubs = db.clubs.filter(c => c.id !== pid);
+  else if (type === 'lieu') { db.lieux = lieuxList().filter(l => l.id !== pid); deleteAllLieuPhotos(pid); }
   else if (type === 'agence') db.agences = db.agences.filter(a => a.id !== pid);
   else if (type === 'marque') db.marques.splice(pid, 1);
   saveDb();
@@ -904,14 +1150,29 @@ function submitForm() {
     if (isEdit) { db.talents = db.talents.map(p => p.id === pid ? { ...obj, id: p.id } : p); finalId = pid; }
     else        { finalId = uid(); db.talents.push({ ...obj, id: finalId }); }
 
-    // Sauvegarde la photo locale (si une a été importée depuis l'appareil)
-    if (pendingLocalPhoto) setLocalPhoto(finalId, pendingLocalPhoto);
+    // Envoie la photo importée depuis l'appareil pour que toute l'équipe la voie
+    if (pendingLocalPhoto) saveImportedPhoto(finalId, pendingLocalPhoto);
 
   } else if (type === 'club') {
     if (!g('f-nom')) { alert('Le nom est requis.'); return; }
     const obj = { nom:g('f-nom'), pays:g('fc-pays')||'', ville:g('fc-ville')||'', mail:g('f-mail'), lien:g('f-lien'), notes:g('f-notes') };
     if (isEdit) db.clubs = db.clubs.map(c => c.id === pid ? { ...obj, id: c.id } : c);
     else        db.clubs.push({ ...obj, id: uid() });
+
+  } else if (type === 'lieu') {
+    if (!g('f-nom')) { alert('Le nom est requis.'); return; }
+    const obj = {
+      nom: g('f-nom'), type: g('f-type'), adresse: g('f-adresse'),
+      pays: g('fl-pays'), ville: g('f-ville'), gps: g('f-gps'), maps: g('f-maps'),
+      cout: g('f-cout'), coutDetail: g('f-cout-detail'),
+      contact: g('f-contact'), tel: g('f-tel'), mail: g('f-mail'),
+      photos: g('f-photo-links').split('\n').map(s => s.trim()).filter(Boolean),
+      notes: g('f-notes')
+    };
+    let finalId;
+    if (isEdit) { db.lieux = lieuxList().map(l => l.id === pid ? { ...obj, id: l.id } : l); finalId = pid; }
+    else        { finalId = uid(); lieuxList().push({ ...obj, id: finalId }); }
+    saveLieuPhotos(finalId, pendingLieuPhotos.slice(), pendingLieuRemovals.slice());
 
   } else if (type === 'agence') {
     if (!g('f-nom')) { alert('Le nom est requis.'); return; }

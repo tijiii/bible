@@ -172,3 +172,19 @@ body { background: var(--bg); color: var(--text); font-family: 'Barlow', sans-se
   .detail-img { width:100%; }
   .marques-section { padding:14px 16px; }
 }
+
+/* LIEUX (scouting) */
+.tab[data-group="lieux"].active { border-bottom-color:var(--accent2); color:var(--accent2); }
+.lieux-grid { grid-template-columns:repeat(auto-fill,minmax(230px,1fr)); }
+.card-img.lieu, .card-ph.lieu { aspect-ratio:4/3; }
+.card-ph.lieu { background:var(--bg3); font-size:30px; }
+.lieu-gallery { display:grid; grid-template-columns:repeat(auto-fill,minmax(150px,1fr)); gap:1px; background:var(--border); max-height:340px; overflow-y:auto; }
+.lieu-gallery a { display:block; background:var(--bg3); }
+.lieu-gallery img { width:100%; aspect-ratio:4/3; object-fit:cover; display:block; }
+.lieu-map { width:100%; height:260px; border:0; border-top:1px solid var(--border); display:block; }
+.detail-val.pre { white-space:pre-wrap; word-break:break-word; }
+.lieu-thumbs { display:flex; flex-wrap:wrap; gap:6px; margin-top:8px; }
+.lieu-thumb { position:relative; width:84px; height:63px; border:1px solid var(--border); }
+.lieu-thumb.new { border-color:var(--accent2); }
+.lieu-thumb img { width:100%; height:100%; object-fit:cover; display:block; }
+.lieu-thumb button { position:absolute; top:2px; right:2px; background:rgba(0,0,0,.75); border:none; color:#fff; width:18px; height:18px; font-size:10px; cursor:pointer; }

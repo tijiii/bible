@@ -46,3 +46,17 @@ Dans `geo.js`, ajoute une entrée dans `GEO` et son drapeau dans `FLAGS` :
 
 Tout ce que tu ajoutes/modifies dans l'app est sauvegardé dans le localStorage du navigateur.
 Pour repartir des données initiales : Paramètres → Réinitialiser.
+
+## Photos des talents
+
+Dans la fiche d'un talent (ÉDITER ou + NOUVEAU TALENT), deux possibilités, toutes deux visibles par toute l'équipe :
+- coller un lien d'image (Google Drive, Imgur…) dans **PHOTO** ;
+- ou cliquer **📷 OU importer depuis cet appareil**, choisir l'image, puis **SAUVEGARDER**.
+
+Les photos importées sont réduites (700 px) puis envoyées dans la table Airtable, sur une ligne `photo:<id du talent>`, colonne **Attachments**. Ne supprime pas ces lignes dans Airtable.
+
+## Lieux (scouting)
+
+Onglet **📍 LIEUX** : nom, type, adresse, pays/ville, coordonnées GPS (bouton **📍 MA POSITION** sur place), lien Google Maps, coût estimé et détail des coûts, contact, notes, et plusieurs photos. La fiche d'un lieu affiche ses photos, une carte et un bouton pour l'ouvrir dans Google Maps.
+
+Les infos des lieux sont stockées avec le reste de la base (ligne `db`). Les photos importées sont envoyées dans la table Airtable, sur une ligne `lieu:<id du lieu>`, colonne **Attachments** (toutes les photos du lieu sur la même ligne). Ne supprime pas ces lignes dans Airtable.
