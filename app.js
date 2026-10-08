@@ -17,6 +17,7 @@ function loadDb() {
     sports:     JSON.parse(JSON.stringify(INITIAL_DATA.sports)),
     categories: JSON.parse(JSON.stringify(INITIAL_DATA.categories)),
     lieux:      [],
+    chapitres:  [],
   };
 }
 
@@ -97,68 +98,101 @@ function groupLabel(catId) {
 }
 
 // ── STATE ─────────────────────────────────────────────────────────────────────
-let curCatId   = null;  // current category tab (null = "Tous")
+let curCatId   = 'home'; // 'home' = accueil, null = tous les talents, sinon un chapitre
 let searchQ    = '';
+let homeQ      = '';
 let fSport     = '';
 let fSexe      = '';
 let fPays      = '';
 let fAgence    = '';
+let fSubCat    = '';    // sous-catégorie dans un groupe (ex: DOP chez les techniciens)
 let detailType = null;
 let detailId   = null;
-let formCtx    = null;  // { type: 'talent'|'club'|'agence'|'marque', id }
+let detailChap = null;  // chapitre de l'élément affiché (chapitres libres)
+let formCtx    = null;  // { type: 'talent'|'club'|'agence'|'marque'|'lieu'|'item'|'chapitre', id, chap }
 let formSexe   = 'f';
 
-// ── TABS BUILD ────────────────────────────────────────────────────────────────
+// ── CHAPITRES ─────────────────────────────────────────────────────────────────
+// Un chapitre = une entrée de la page d'accueil. Les chapitres "liste" créés
+// depuis l'app (comme Clubs) sont stockés dans db.chapitres et synchronisés
+// avec Airtable comme le reste de la base.
+const TALENT_FAMILIES = [
+  { key:'modele',  label:'Modèles',     color:'#c8f059' },
+  { key:'athlete', label:'Athlètes',    color:'#59d4f0' },
+  { key:'tech',    label:'Techniciens', color:'#f0a059' },
+];
+function isFamilyCat(c) { return TALENT_FAMILIES.some(f => c.id.startsWith(f.key + '-')); }
+function chapitresList() { if (!Array.isArray(db.chapitres)) db.chapitres = []; return db.chapitres; }
+function chapById(id) { return chapitresList().find(c => String(c.id) === String(id)); }
+function countInCat(catId) { return db.talents.filter(t => t.cats && t.cats.includes(catId)).length; }
+
+function chaptersList() {
+  const list = [];
+  TALENT_FAMILIES.forEach(fam => {
+    const cats = db.categories.filter(c => c.id.startsWith(fam.key + '-'));
+    if (!cats.length) return;
+    const count = db.talents.filter(t => t.cats && t.cats.some(c => c.startsWith(fam.key + '-'))).length;
+    list.push({ key: fam.key + '-group', label: fam.label, color: fam.color, count, add: () => openForm('talent', undefined, { cats: [] }) });
+  });
+  db.categories.filter(c => !isFamilyCat(c)).forEach(cat => {
+    list.push({ key: cat.id, label: cat.label, color: cat.color, count: countInCat(cat.id), custom: 'profils',
+      add: () => openForm('talent', undefined, { cats: [cat.id] }) });
+  });
+  list.push({ key:'clubs', label:'Clubs', color:'#f0a059', count: db.clubs.length, add: () => openForm('club') });
+  list.push({ key:'lieux', label:'Lieux', color:'#59d4f0', count: lieuxList().length, add: () => openForm('lieu') });
+  list.push({ key:'marques', label:'Marques · Agences', color:'#d066e0', count: db.marques.length + db.agences.length,
+    add: () => openChooser('AJOUTER DANS MARQUES · AGENCES', [
+      { label:'Marque', color:'#d066e0', run: () => openForm('marque') },
+      { label:'Agence', color:'#d066e0', run: () => openForm('agence') },
+    ]) });
+  chapitresList().forEach(ch => {
+    list.push({ key: 'ch:' + ch.id, label: ch.nom, color: ch.color || '#e8e8e8', count: (ch.items || []).length, custom: 'liste',
+      add: () => openForm('item', undefined, { chap: ch.id }) });
+  });
+  return list;
+}
+function chapterByKey(key) {
+  if (key === null) return { key: null, label: 'Tous les talents', color: '#c8f059', count: db.talents.length };
+  if (key === 'settings') return { key, label: 'Paramètres', color: '#666666' };
+  return chaptersList().find(c => c.key === key);
+}
+function chapterAdd(key) { const c = chapterByKey(key); if (c && c.add) c.add(); }
+
+// ── NAVIGATION ────────────────────────────────────────────────────────────────
+// Sur l'accueil : rien. Dans un chapitre : un fil d'Ariane pour revenir.
 function buildTabs() {
   const nav = document.getElementById('tabs-nav');
-
-  // Group categories by "family"
-  const families = [
-    { key:'modele',  label:'MODÈLES',    cats: db.categories.filter(c => c.id.startsWith('modele-')) },
-    { key:'athlete', label:'ATHLÈTES',   cats: db.categories.filter(c => c.id.startsWith('athlete-')) },
-    { key:'tech',    label:'TECHNICIENS',cats: db.categories.filter(c => c.id.startsWith('tech-')) },
-  ];
-  // Custom categories (not in any family)
-  const known = db.categories.filter(c => c.id.startsWith('modele-')||c.id.startsWith('athlete-')||c.id.startsWith('tech-'));
-  const custom = db.categories.filter(c => !known.includes(c));
-
-  let html = `<button class="tab${curCatId===null?' active':''}" data-group="talents" onclick="switchCat(null)">TOUS (${db.talents.length})</button>`;
-
-  families.forEach(fam => {
-    if (fam.cats.length === 0) return;
-    const total = db.talents.filter(t => t.cats && t.cats.some(c => fam.cats.find(fc => fc.id===c))).length;
-    html += `<button class="tab${curCatId===fam.key+'-group'?' active':''}" data-group="talents" onclick="switchCat('${fam.key}-group')">${fam.label} (${total})</button>`;
-  });
-
-  custom.forEach(cat => {
-    const cnt = db.talents.filter(t => t.cats && t.cats.includes(cat.id)).length;
-    html += `<button class="tab${curCatId===cat.id?' active':''}" data-group="talents" onclick="switchCat('${cat.id}')">${cat.label.toUpperCase()} (${cnt})</button>`;
-  });
-
-  html += `<button class="tab${curCatId==='clubs'?' active':''}" data-group="clubs" onclick="switchCat('clubs')">CLUBS (${db.clubs.length})</button>`;
-  html += `<button class="tab${curCatId==='lieux'?' active':''}" data-group="lieux" onclick="switchCat('lieux')">📍 LIEUX (${lieuxList().length})</button>`;
-  html += `<button class="tab${curCatId==='marques'?' active':''}" data-group="marques" onclick="switchCat('marques')">MARQUES · AGENCES</button>`;
-  html += `<button class="tab${curCatId==='settings'?' active':''}" data-group="settings" onclick="switchCat('settings')">⚙ PARAMÈTRES</button>`;
-
-  nav.innerHTML = html;
+  if (curCatId === 'home') { nav.innerHTML = ''; nav.style.display = 'none'; return; }
+  const ch = chapterByKey(curCatId);
+  if (!ch) { curCatId = 'home'; buildTabs(); return; }
+  nav.style.display = '';
+  nav.innerHTML = `<button class="crumb-back" onclick="goHome()">← CHAPITRES</button>
+    <span class="crumb-sep">/</span>
+    <span class="crumb-title"><span class="ch-dot" style="background:${esc(ch.color)}"></span>${esc(ch.label.toUpperCase())}</span>
+    ${ch.count !== undefined ? `<span class="crumb-count">${ch.count}</span>` : ''}
+    ${ch.custom ? `<button class="crumb-edit" onclick="openForm('chapitre','${esc(String(ch.key).replace(/^ch:/,''))}',{kind:'${ch.custom}'})">MODIFIER LE CHAPITRE</button>` : ''}`;
 }
 
 function switchCat(catId) {
   curCatId = catId;
-  searchQ = ''; fSport = ''; fSexe = ''; fPays = ''; fAgence = '';
+  searchQ = ''; fSport = ''; fSexe = ''; fPays = ''; fAgence = ''; fSubCat = '';
   buildTabs();
   render();
+  window.scrollTo(0, 0);
 }
+function goHome() { homeQ = ''; switchCat('home'); }
 
 // ── RENDER ────────────────────────────────────────────────────────────────────
 function render() {
   updateCounts();
   const main = document.getElementById('main-content');
 
+  if (curCatId === 'home')     { renderHome(main); return; }
   if (curCatId === 'clubs')    { renderClubs(main); return; }
   if (curCatId === 'lieux')    { renderLieux(main); return; }
   if (curCatId === 'marques')  { renderMarques(main); return; }
   if (curCatId === 'settings') { renderSettings(main); return; }
+  if (String(curCatId).startsWith('ch:')) { renderChapitre(main); return; }
 
   // Talents (all, group, or single category)
   renderTalents(main);
@@ -167,6 +201,108 @@ function render() {
 function updateCounts() {
   document.getElementById('total-count').textContent =
     db.talents.length + ' TALENTS · ' + db.clubs.length + ' CLUBS · ' + lieuxList().length + ' LIEUX';
+}
+
+// ── ACCUEIL ───────────────────────────────────────────────────────────────────
+function renderHome(main) {
+  const chapters = chaptersList();
+  main.innerHTML = `<div class="home">
+    <div class="home-search">
+      <input id="home-search" placeholder="Rechercher dans toute la bible..." value="${esc(homeQ)}"
+             oninput="homeQ=this.value;renderHomeBody()">
+    </div>
+    <div id="home-body"></div>
+  </div>`;
+  renderHomeBody();
+}
+
+function renderHomeBody() {
+  const box = document.getElementById('home-body');
+  if (!box) return;
+  if (homeQ.trim()) { box.innerHTML = homeResultsHtml(homeQ.trim().toLowerCase()); return; }
+  const chapters = chaptersList();
+  box.innerHTML = `
+    <div class="home-head">
+      <span>CHAPITRES</span>
+      <span>${chapters.length}</span>
+    </div>
+    <ol class="chapters">
+      ${chapters.map((c, i) => `<li class="chapter" onclick="switchCat('${esc(c.key)}')">
+        <span class="ch-num">${String(i + 1).padStart(2, '0')}</span>
+        <span class="ch-dot" style="background:${esc(c.color)}"></span>
+        <span class="ch-name">${esc(c.label)}</span>
+        <span class="ch-count">${c.count}</span>
+        <button class="ch-add" title="Ajouter dans ${esc(c.label)}" onclick="event.stopPropagation();chapterAdd('${esc(c.key)}')">+</button>
+      </li>`).join('')}
+    </ol>
+    <button class="ch-new" onclick="openForm('chapitre')">+ NOUVEAU CHAPITRE</button>
+    <div class="home-foot">
+      <button onclick="switchCat(null)">TOUS LES TALENTS (${db.talents.length})</button>
+      <button onclick="switchCat('settings')">PARAMÈTRES</button>
+    </div>`;
+}
+
+// Recherche sur tous les chapitres depuis l'accueil
+function homeResultsHtml(q) {
+  const hit = (...vals) => vals.flat().some(v => String(v || '').toLowerCase().includes(q));
+  const rows = [];
+  db.talents.forEach(p => {
+    if (!hit(p.nom, p.prenom, talentSports(p), talentAgences(p), talentPays(p), talentVilles(p), p.insta, p.notes,
+      (p.cats || []).map(c => catById(c)?.label))) return;
+    const cats = (p.cats || []).map(c => catById(c)).filter(Boolean);
+    rows.push({ name: [p.nom, p.prenom].filter(Boolean).join(' '), where: cats.map(c => c.label).join(', ') || 'Talent',
+      color: cats[0]?.color || '#c8f059', open: `openDetail('talent',${p.id})` });
+  });
+  db.clubs.forEach(c => { if (hit(c.nom, c.ville, c.pays, c.notes, c.lien)) rows.push({ name: c.nom, where: 'Club · ' + (c.ville || ''), color: '#f0a059', open: `openDetail('club',${c.id})` }); });
+  lieuxList().forEach(l => { if (hit(l.nom, l.type, l.adresse, l.ville, l.pays, l.notes)) rows.push({ name: l.nom, where: 'Lieu · ' + (l.ville || l.type || ''), color: '#59d4f0', open: `openDetail('lieu',${l.id})` }); });
+  db.agences.forEach(a => { if (hit(a.nom, a.ville, a.pays)) rows.push({ name: a.nom, where: 'Agence · ' + (a.ville || ''), color: '#d066e0', open: `openForm('agence',${a.id})` }); });
+  db.marques.forEach((m, i) => { const nom = typeof m === 'string' ? m : m.nom; if (hit(nom)) rows.push({ name: nom, where: 'Marque', color: '#d066e0', open: `openForm('marque',${i})` }); });
+  chapitresList().forEach(ch => (ch.items || []).forEach(it => {
+    if (hit(it.nom, it.type, it.ville, it.pays, it.contact, it.notes)) rows.push({ name: it.nom, where: ch.nom + (it.ville ? ' · ' + it.ville : ''), color: ch.color || '#e8e8e8', open: `openDetail('item',${it.id},'${esc(String(ch.id))}')` });
+  }));
+  if (!rows.length) return `<div class="empty">AUCUN RÉSULTAT</div>`;
+  return `<div class="home-head"><span>RÉSULTATS</span><span>${rows.length}</span></div>
+    <ol class="chapters results">${rows.slice(0, 200).map(r => `<li class="chapter" onclick="${r.open}">
+      <span class="ch-dot" style="background:${esc(r.color)}"></span>
+      <span class="ch-name">${esc(r.name)}</span>
+      <span class="ch-where">${esc(r.where)}</span>
+    </li>`).join('')}</ol>`;
+}
+
+// ── CHOIX (bouton + AJOUTER de l'en-tête) ─────────────────────────────────────
+let chooserItems = [];
+function openChooser(title, items) {
+  chooserItems = items;
+  formCtx = { type: 'chooser', id: null };
+  document.getElementById('form-title').textContent = title;
+  document.getElementById('form-btn-del').style.display = 'none';
+  document.getElementById('btn-save').style.display = 'none';
+  document.getElementById('form-body').innerHTML = `<div class="field full"><div class="chooser">
+    ${items.map((it, i) => `<button class="chooser-item" onclick="chooserItems[${i}].run()">
+      <span class="ch-dot" style="background:${esc(it.color)}"></span>${esc(it.label)}</button>`).join('')}
+  </div></div>`;
+  document.getElementById('form-modal').style.display = 'flex';
+}
+function openAddChooser() {
+  // Dans un chapitre : on ajoute directement dedans
+  if (curCatId !== 'home' && curCatId !== 'settings') {
+    if (curCatId === null || String(curCatId).endsWith('-group')) { openForm('talent', undefined, { cats: fSubCat ? [fSubCat] : [] }); return; }
+    const ch = chapterByKey(curCatId);
+    if (ch && ch.add) { ch.add(); return; }
+  }
+  const items = [];
+  chaptersList().forEach(c => {
+    if (c.key === 'marques') {
+      items.push({ label: 'Marque', color: c.color, run: () => openForm('marque') });
+      items.push({ label: 'Agence', color: c.color, run: () => openForm('agence') });
+    } else if (c.key.endsWith('-group')) {
+      items.push({ label: c.label, color: c.color, run: () => openForm('talent', undefined, { cats: [] }) });
+    } else {
+      items.push({ label: c.label, color: c.color, run: c.add });
+    }
+  });
+  items.push({ label: '+ Nouveau chapitre', color: '#666666', run: () => openForm('chapitre') });
+  openChooser('QUE VEUX-TU AJOUTER ?', items);
 }
 
 // ── TALENTS ───────────────────────────────────────────────────────────────────
@@ -178,6 +314,7 @@ function filterTalents() {
       if (curCatId.endsWith('-group')) {
         const prefix = curCatId.replace('-group','');
         if (!p.cats.some(c => c.startsWith(prefix))) return false;
+        if (fSubCat && !p.cats.includes(fSubCat)) return false;
       } else {
         if (!p.cats.includes(curCatId)) return false;
       }
@@ -212,7 +349,18 @@ function renderTalents(main) {
   const pays    = [...new Set(scope.flatMap(p=>talentPays(p)).filter(Boolean))].sort();
   const agences = [...new Set(scope.flatMap(p=>talentAgences(p)).filter(a=>a&&a!=='—'&&a!==''))].sort();
 
-  let html = `<div class="toolbar">
+  let html = '';
+  if (curCatId && curCatId.endsWith('-group')) {
+    const prefix = curCatId.replace('-group','') + '-';
+    const subs = db.categories.filter(c => c.id.startsWith(prefix));
+    if (subs.length > 1) {
+      html += `<div class="subcats">
+        <button class="subcat${fSubCat===''?' active':''}" onclick="fSubCat='';renderTalents(document.getElementById('main-content'))">TOUS</button>
+        ${subs.map(c => `<button class="subcat${fSubCat===c.id?' active':''}" onclick="fSubCat='${esc(c.id)}';renderTalents(document.getElementById('main-content'))">${esc(c.label.toUpperCase())} <span>${countInCat(c.id)}</span></button>`).join('')}
+      </div>`;
+    }
+  }
+  html += `<div class="toolbar">
     <div class="search-wrap">
       <input placeholder="Nom, ville, catégorie..." value="${esc(searchQ)}"
              oninput="searchQ=this.value;renderTalents(document.getElementById('main-content'))">
@@ -235,7 +383,7 @@ function renderTalents(main) {
       ${agences.map(a=>`<option value="${esc(a)}"${fAgence===a?' selected':''}>${esc(a)}</option>`).join('')}
     </select>
     <div class="spacer"></div>
-    <button class="btn-add" onclick="openForm('talent')">+ AJOUTER</button>
+    <button class="btn-add" onclick="openAddChooser()">+ AJOUTER</button>
   </div>`;
 
   if (!list.length) {
@@ -269,7 +417,7 @@ function renderTalents(main) {
       }
 
       if (ig) html += `<div class="card-ig-hover">@${esc(p.insta)}</div>`;
-      else if (p.site) html += `<div class="card-ig-hover">🔗 Site</div>`;
+      else if (p.site) html += `<div class="card-ig-hover">SITE ↗</div>`;
 
       html += `<div class="card-body">
         <div class="card-name">${esc(p.nom)} <span class="card-prenom">${esc(p.prenom)}</span></div>
@@ -385,11 +533,11 @@ function renderLieux(main) {
       if (cover) {
         html += `<img class="card-img lieu" src="${esc(cover)}" alt="${esc(l.nom)}"
           onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">
-          <div class="card-ph lieu" style="display:none">📍</div>`;
+          <div class="card-ph lieu" style="display:none">${initials(l.nom,'')}</div>`;
       } else {
-        html += `<div class="card-ph lieu">📍</div>`;
+        html += `<div class="card-ph lieu">${initials(l.nom,'')}</div>`;
       }
-      if (photos.length > 1) html += `<span class="card-age">${photos.length} 📷</span>`;
+      if (photos.length > 1) html += `<span class="card-age">${photos.length} PHOTOS</span>`;
       if (l.cout !== '' && l.cout !== undefined) html += `<div class="card-ig-hover" style="color:var(--accent2)">≈ ${esc(formatCout(l.cout))}</div>`;
       html += `<div class="card-body">
         <div class="card-name">${esc(l.nom)}</div>
@@ -435,6 +583,124 @@ function lieuDetailHtml(l) {
   </div>`;
 }
 
+// ── CHAPITRES LIBRES (créés depuis l'app) ─────────────────────────────────────
+function curChap() { return chapById(String(curCatId).slice(3)); }
+
+function renderChapitre(main) {
+  const ch = curChap();
+  if (!ch) { goHome(); return; }
+  const items = ch.items || [];
+  const q = searchQ.toLowerCase();
+  const list = items.filter(it => {
+    if (q && ![it.nom,it.type,it.ville,it.pays,it.contact,it.notes,it.insta]
+      .some(v => String(v||'').toLowerCase().includes(q))) return false;
+    if (fPays && it.pays !== fPays) return false;
+    return true;
+  });
+  const pays = [...new Set(items.map(it => it.pays).filter(Boolean))].sort();
+  const color = ch.color || 'var(--text)';
+
+  let html = `<div class="toolbar">
+    <div class="search-wrap">
+      <input placeholder="Nom, ville, type..." value="${esc(searchQ)}"
+             oninput="searchQ=this.value;renderChapitre(document.getElementById('main-content'))">
+    </div>
+    <select class="filter-sel" onchange="fPays=this.value;renderChapitre(document.getElementById('main-content'))">
+      <option value="">PAYS</option>
+      ${pays.map(p=>`<option value="${esc(p)}"${fPays===p?' selected':''}>${FLAGS[p]||''} ${esc(p)}</option>`).join('')}
+    </select>
+    <div class="spacer"></div>
+    <button class="btn-add" style="background:${esc(color)}" onclick="openForm('item',undefined,{chap:'${esc(String(ch.id))}'})">+ AJOUTER</button>
+  </div>`;
+
+  if (!list.length) {
+    html += `<div class="empty">${items.length ? 'AUCUN RÉSULTAT' : 'CE CHAPITRE EST VIDE'}</div>`;
+  } else {
+    html += `<div class="clubs-grid">`;
+    list.forEach(it => {
+      html += `<div class="club-card" onclick="openDetail('item',${it.id},'${esc(String(ch.id))}')">
+        <div class="club-dot" style="background:${esc(color)}"></div>
+        <div class="club-name">${esc(it.nom)}</div>
+        ${it.type ? `<div class="club-ville" style="color:var(--text)">${esc(it.type)}</div>` : ''}
+        <div class="club-ville">${FLAGS[it.pays]||''} ${esc([it.ville, it.pays].filter(Boolean).join(', '))}</div>
+        ${it.notes ? `<div style="font-size:11px;color:var(--muted);margin-top:5px">${esc(it.notes)}</div>` : ''}
+      </div>`;
+    });
+    html += `</div>`;
+  }
+  main.innerHTML = html;
+}
+
+function itemDetailHtml(it) {
+  const row = (lbl, val) => val ? `<div class="detail-row"><span class="detail-lbl">${lbl}</span><span class="detail-val">${val}</span></div>` : '';
+  const photo = normalizePhotoUrl(it.photo);
+  return `${photo ? `<img class="item-photo" src="${esc(photo)}" alt="" onerror="this.style.display='none'">` : ''}
+  <div style="padding:20px">
+    <div class="detail-name">${esc(it.nom)}</div>
+    <div class="detail-tags">
+      ${it.type ? `<span class="tag agence">${esc(it.type)}</span>` : ''}
+      ${it.pays ? `<span class="tag">${FLAGS[it.pays]||''} ${esc(it.pays)}</span>` : ''}
+      ${it.ville ? `<span class="tag">${esc(it.ville)}</span>` : ''}
+    </div>
+    ${row('CONTACT', esc(it.contact))}
+    ${row('TEL', it.tel ? `<a href="tel:${esc(it.tel)}">${esc(it.tel)}</a>` : '')}
+    ${row('MAIL', it.mail ? `<a href="mailto:${esc(it.mail)}">${esc(it.mail)}</a>` : '')}
+    ${row('INSTAGRAM', it.insta ? `<a href="https://instagram.com/${esc(it.insta)}" target="_blank">@${esc(it.insta)}</a>` : '')}
+    ${row('SITE', it.site ? `<a href="${esc(it.site)}" target="_blank">${esc(it.site)}</a>` : '')}
+    ${it.notes ? `<div class="detail-row"><span class="detail-lbl">NOTES</span><span class="detail-val pre">${esc(it.notes)}</span></div>` : ''}
+  </div>`;
+}
+
+function renderItemForm(v) {
+  const paysl = `<option value="">—</option>` + COUNTRIES.map(p => `<option value="${esc(p)}"${(v.pays||'')===p?' selected':''}>${FLAGS[p]||''} ${esc(p)}</option>`).join('');
+  document.getElementById('form-body').innerHTML = `
+    <div class="field"><label>NOM *</label><input id="f-nom" value="${esc(v.nom||'')}"></div>
+    <div class="field"><label>TYPE / DESCRIPTION</label><input id="f-type" value="${esc(v.type||'')}"></div>
+    <div class="field"><label>PAYS</label><select id="fi-pays">${paysl}</select></div>
+    <div class="field"><label>VILLE</label><input id="f-ville" value="${esc(v.ville||'')}"></div>
+    <div class="field"><label>CONTACT</label><input id="f-contact" value="${esc(v.contact||'')}"></div>
+    <div class="field"><label>TEL</label><input id="f-tel" value="${esc(v.tel||'')}" placeholder="+33 6..."></div>
+    <div class="field"><label>MAIL</label><input id="f-mail" type="email" value="${esc(v.mail||'')}"></div>
+    <div class="field"><label>INSTAGRAM (handle sans @)</label><input id="f-insta" value="${esc(v.insta||'')}"></div>
+    <div class="field full"><label>SITE (URL)</label><input id="f-site" value="${esc(v.site||'')}" placeholder="https://..."></div>
+    <div class="field full"><label>PHOTO (lien, optionnel)</label><input id="f-photo" value="${esc(v.photo||'')}" placeholder="https://... (Google Drive, Imgur, lien image direct)"></div>
+    <div class="field full"><label>NOTES</label><textarea id="f-notes" rows="3">${esc(v.notes||'')}</textarea></div>`;
+}
+
+const CHAPTER_COLORS = ['#c8f059','#59d4f0','#f0a059','#d066e0','#e24b4a','#f0e059','#e8e8e8'];
+
+function renderChapitreForm(v, isEdit, kind) {
+  const color = v.color || CHAPTER_COLORS[chapitresList().length % CHAPTER_COLORS.length];
+  document.getElementById('form-body').innerHTML = `
+    <div class="field full"><label>NOM DU CHAPITRE *</label>
+      <input id="f-nom" value="${esc(v.nom||'')}" placeholder="ex: Loueurs de matériel, Cascadeurs, Restaurants...">
+    </div>
+    <div class="field full"><label>COULEUR</label>
+      <div class="swatches">
+        ${CHAPTER_COLORS.map(c => `<button type="button" class="swatch${c===color?' sel':''}" style="background:${c}" onclick="pickSwatch(this,'${c}')"></button>`).join('')}
+        <input type="color" id="f-color" value="${esc(color)}" title="Autre couleur" oninput="pickSwatch(null,this.value)">
+      </div>
+    </div>
+    ${isEdit ? '' : `<div class="field full"><label>CONTENU</label>
+      <div class="kind-group">
+        <div class="kind-btn${kind!=='profils'?' sel':''}" id="kind-liste" onclick="selectKind('liste')">
+          <strong>FICHES</strong><span>Comme Clubs : nom, type, ville, contact, notes.</span>
+        </div>
+        <div class="kind-btn${kind==='profils'?' sel':''}" id="kind-profils" onclick="selectKind('profils')">
+          <strong>PROFILS</strong><span>Comme les talents : photo, âge, sport, agence, Instagram.</span>
+        </div>
+      </div>
+    </div>`}`;
+}
+function pickSwatch(btn, c) {
+  document.getElementById('f-color').value = c;
+  document.querySelectorAll('.swatch').forEach(el => el.classList.toggle('sel', el === btn));
+}
+function selectKind(k) {
+  formCtx.kind = k;
+  ['liste','profils'].forEach(x => document.getElementById('kind-'+x).classList.toggle('sel', x === k));
+}
+
 // ── MARQUES & AGENCES ────────────────────────────────────────────────────────
 function renderMarques(main) {
   let html = `<div class="marques-section">
@@ -463,7 +729,7 @@ function renderMarques(main) {
       <span class="list-item-name">${esc(a.nom)}</span>
       <span class="list-item-sub">${FLAGS[a.pays]||''} ${esc(a.pays)} · ${esc(a.ville)}</span>
       ${a.mail ? `<a class="list-item-mail" href="mailto:${esc(a.mail)}">${esc(a.mail)}</a>` : ''}
-      ${a.site ? `<a class="list-item-mail" href="${esc(a.site)}" target="_blank">🔗 Site</a>` : ''}
+      ${a.site ? `<a class="list-item-mail" href="${esc(a.site)}" target="_blank">SITE ↗</a>` : ''}
       <button class="btn-edit-inline" onclick="openForm('agence',${a.id})">ÉDITER</button>
       <button class="btn-del-inline" onclick="delAgence(${a.id})">✕</button>
     </div>`;
@@ -531,11 +797,14 @@ function renderSettings(main) {
     </div>` : ''}
 
     <div class="settings-section">
-      <div class="settings-title">CATÉGORIE LIBRE (autre groupe)</div>
+      <div class="settings-title">CHAPITRES (${chapitresList().length})</div>
+      <div class="settings-list">${chapitresList().map(ch => `<div class="settings-item">
+        <div class="dot" style="background:${esc(ch.color||'#e8e8e8')}"></div>
+        <span>${esc(ch.nom)} (${(ch.items||[]).length})</span>
+        <button onclick="openForm('chapitre','${esc(String(ch.id))}',{kind:'liste'})" title="Modifier">✎</button>
+      </div>`).join('')}</div>
       <div class="settings-add">
-        <input id="new-cat-custom" placeholder="Ex: Danseurs, Comédiens...">
-        <input type="color" id="new-cat-custom-color" value="#59d4f0" title="Couleur">
-        <button onclick="addCat('custom')">+ AJOUTER</button>
+        <button onclick="openForm('chapitre')">+ NOUVEAU CHAPITRE</button>
       </div>
     </div>
 
@@ -616,14 +885,22 @@ function delAgence(id) {
 }
 
 // ── DETAIL MODAL ──────────────────────────────────────────────────────────────
-function openDetail(type, pid) {
+function openDetail(type, pid, chapId) {
   detailType = type;
   detailId   = pid;
-  const arr = type === 'talent' ? db.talents : type === 'lieu' ? lieuxList() : db.clubs;
+  detailChap = chapId !== undefined ? chapId : null;
+  const arr = type === 'talent' ? db.talents : type === 'lieu' ? lieuxList()
+    : type === 'item' ? ((chapById(chapId) || {}).items || []) : db.clubs;
   const p   = arr.find(x => x.id === pid);
   if (!p) return;
 
   document.getElementById('detail-title').textContent = (p.nom||'') + (p.prenom ? ' ' + p.prenom : '');
+
+  if (type === 'item') {
+    document.getElementById('detail-body').innerHTML = itemDetailHtml(p);
+    document.getElementById('detail-modal').style.display = 'flex';
+    return;
+  }
 
   if (type === 'lieu') {
     document.getElementById('detail-body').innerHTML = lieuDetailHtml(p);
@@ -690,8 +967,9 @@ function openDetail(type, pid) {
 function closeDetail() { document.getElementById('detail-modal').style.display = 'none'; }
 
 function delFromDetail() {
-  if (!confirm(detailType === 'lieu' ? 'Supprimer ce lieu ?' : 'Supprimer ce profil ?')) return;
-  if (detailType === 'talent') { db.talents = db.talents.filter(p => p.id !== detailId); deleteSharedPhoto(detailId); removeLocalPhoto(detailId); }
+  if (!confirm(detailType === 'lieu' ? 'Supprimer ce lieu ?' : detailType === 'item' ? 'Supprimer cette fiche ?' : 'Supprimer ce profil ?')) return;
+  if (detailType === 'item') { const ch = chapById(detailChap); if (ch) ch.items = (ch.items || []).filter(it => it.id !== detailId); }
+  else if (detailType === 'talent') { db.talents = db.talents.filter(p => p.id !== detailId); deleteSharedPhoto(detailId); removeLocalPhoto(detailId); }
   else if (detailType === 'lieu') { db.lieux = lieuxList().filter(l => l.id !== detailId); deleteAllLieuPhotos(detailId); }
   else                         db.clubs   = db.clubs.filter(c => c.id !== detailId);
   saveDb();
@@ -702,19 +980,21 @@ function delFromDetail() {
 
 function editFromDetail() {
   closeDetail();
-  openForm(detailType, detailId);
+  openForm(detailType, detailId, { chap: detailChap });
 }
 
 // ── FORM MODAL ────────────────────────────────────────────────────────────────
-function openForm(type, pid) {
-  formCtx = { type, id: pid !== undefined ? pid : null };
+function openForm(type, pid, opts) {
+  opts = opts || {};
+  formCtx = { type, id: pid !== undefined ? pid : null, chap: opts.chap, kind: opts.kind };
   const isEdit = pid !== undefined && pid !== null;
 
   // show/hide delete button
   document.getElementById('form-btn-del').style.display = isEdit ? 'block' : 'none';
+  document.getElementById('btn-save').style.display = '';
 
   if (type === 'talent') {
-    const p = isEdit ? db.talents.find(x => x.id === pid) : {};
+    const p = isEdit ? db.talents.find(x => x.id === pid) : { cats: opts.cats || [] };
     formSexe = p?.sexe || 'f';
     pendingLocalPhoto = null; // reset à chaque ouverture
     document.getElementById('form-title').textContent = isEdit ? 'ÉDITER PROFIL' : '+ NOUVEAU TALENT';
@@ -737,6 +1017,22 @@ function openForm(type, pid) {
     document.getElementById('form-title').textContent = isEdit ? 'ÉDITER AGENCE' : '+ NOUVELLE AGENCE';
     document.getElementById('btn-save').style.background = 'var(--accent4)';
     renderAgenceForm(a || {});
+  } else if (type === 'item') {
+    const ch = chapById(opts.chap);
+    if (!ch) return;
+    const it = isEdit ? (ch.items || []).find(x => x.id === pid) : {};
+    document.getElementById('form-title').textContent = (isEdit ? 'ÉDITER · ' : '+ NOUVEAU · ') + ch.nom.toUpperCase();
+    document.getElementById('btn-save').style.background = ch.color || 'var(--accent)';
+    renderItemForm(it || {});
+  } else if (type === 'chapitre') {
+    // Chapitre "fiches" (db.chapitres) ou "profils" (une catégorie de talents)
+    let v = {};
+    if (isEdit && opts.kind === 'profils') { const c = catById(pid); v = c ? { nom: c.label, color: c.color } : {}; }
+    else if (isEdit) { const c = chapById(pid); v = c ? { nom: c.nom, color: c.color } : {}; }
+    formCtx.kind = opts.kind || 'liste';
+    document.getElementById('form-title').textContent = isEdit ? 'MODIFIER LE CHAPITRE' : '+ NOUVEAU CHAPITRE';
+    document.getElementById('btn-save').style.background = 'var(--accent)';
+    renderChapitreForm(v, isEdit, formCtx.kind);
   } else if (type === 'marque') {
     // pid here is the array index
     const raw = isEdit ? db.marques[pid] : { nom:'', site:'' };
@@ -864,11 +1160,11 @@ function renderTalentForm(v) {
       <label>PHOTO — LIEN URL OU IMPORT (visible par toute l'équipe)</label>
       <input id="f-photo" value="${esc(v.photo||'')}" placeholder="https://... (Google Drive, Imgur, lien image direct)" oninput="previewPhoto(this.value)">
       <div class="photo-upload-row" style="margin-top:8px">
-        <label class="btn-upload" for="f-photo-file">📷 OU importer depuis cet appareil</label>
+        <label class="btn-upload" for="f-photo-file">OU IMPORTER DEPUIS CET APPAREIL</label>
         <input type="file" id="f-photo-file" accept="image/*" style="display:none" onchange="handlePhotoUpload(this)">
-        <span id="photo-filename" class="photo-filename">${v.id && !v.photo && getSharedPhotoFor(v.id) ? '📎 photo importée' : (v.id && !v.photo && getLocalPhotoFor(v.id) ? '📎 photo locale (pas encore partagée)' : '')}</span>
+        <span id="photo-filename" class="photo-filename">${v.id && !v.photo && getSharedPhotoFor(v.id) ? 'Photo importée' : (v.id && !v.photo && getLocalPhotoFor(v.id) ? 'Photo locale (pas encore partagée)' : '')}</span>
       </div>
-      <div class="field-hint">💡 Colle directement un lien de partage Google Drive classique (celui du bouton "Partager") — il sera converti automatiquement. Vérifie juste que l'accès est sur "Tous les utilisateurs disposant du lien". Tu peux aussi importer une photo depuis ton ordinateur ou ton téléphone : elle est envoyée en ligne et visible par toute l'équipe.</div>
+      <div class="field-hint">Colle directement un lien de partage Google Drive classique (celui du bouton "Partager") — il sera converti automatiquement. Vérifie juste que l'accès est sur "Tous les utilisateurs disposant du lien". Tu peux aussi importer une photo depuis ton ordinateur ou ton téléphone : elle est envoyée en ligne et visible par toute l'équipe.</div>
       <img id="photo-preview" class="photo-preview-img ${photoFor(v)?'show':''}" src="${esc(photoFor(v))}" alt="">
     </div>
     <div class="field full"><label>NOTES</label><input id="f-notes" value="${esc(v.notes||'')}"></div>`;
@@ -907,9 +1203,9 @@ function renderLieuForm(v) {
       <label>COORDONNÉES GPS (optionnel)</label>
       <div class="photo-upload-row">
         <input id="f-gps" value="${esc(v.gps||'')}" placeholder="ex: 47.8389, -4.3519" style="flex:1">
-        <button type="button" class="btn-upload" onclick="fillGpsFromDevice()">📍 MA POSITION</button>
+        <button type="button" class="btn-upload" onclick="fillGpsFromDevice()">MA POSITION</button>
       </div>
-      <div class="field-hint">💡 Sur place, appuie sur « MA POSITION » pour enregistrer l'endroit exact. Sinon l'adresse suffit pour la carte.</div>
+      <div class="field-hint">Sur place, appuie sur « MA POSITION » pour enregistrer l'endroit exact. Sinon l'adresse suffit pour la carte.</div>
     </div>
     <div class="field full"><label>LIEN GOOGLE MAPS (optionnel)</label><input id="f-maps" value="${esc(v.maps||'')}" placeholder="https://maps.app.goo.gl/..."></div>
     <div class="field"><label>COÛT ESTIMÉ (€)</label><input id="f-cout" type="number" min="0" step="any" value="${esc(String(v.cout ?? ''))}" placeholder="ex: 1500"></div>
@@ -920,7 +1216,7 @@ function renderLieuForm(v) {
     <div class="field full">
       <label>PHOTOS DU LIEU (visibles par toute l'équipe)</label>
       <div class="photo-upload-row">
-        <label class="btn-upload" for="f-lieu-files">📷 Importer des photos</label>
+        <label class="btn-upload" for="f-lieu-files">IMPORTER DES PHOTOS</label>
         <input type="file" id="f-lieu-files" accept="image/*" multiple style="display:none" onchange="handleLieuPhotos(this)">
       </div>
       <div class="lieu-thumbs" id="lieu-thumbs"></div>
@@ -1055,7 +1351,7 @@ function handlePhotoUpload(input) {
     previewPhoto(dataUrl);
 
     const nameLabel = document.getElementById('photo-filename');
-    if (nameLabel) nameLabel.textContent = '📎 ' + file.name;
+    if (nameLabel) nameLabel.textContent = file.name;
   }).catch(() => alert('Impossible de lire cette image.'));
 }
 
@@ -1112,11 +1408,33 @@ async function saveImportedPhoto(talentId, dataUrl) {
 
 function closeForm() { document.getElementById('form-modal').style.display = 'none'; }
 
+function deleteChapitre() {
+  const { id: pid, kind } = formCtx;
+  if (kind === 'profils') {
+    const used = countInCat(pid);
+    if (!confirm(used ? `Supprimer ce chapitre ? Les ${used} profil(s) restent dans la base, ils perdent juste cette catégorie.` : 'Supprimer ce chapitre ?')) return;
+    db.categories = db.categories.filter(c => c.id !== pid);
+    db.talents.forEach(t => { if (t.cats) t.cats = t.cats.filter(c => c !== pid); });
+  } else {
+    const ch = chapById(pid);
+    const n = ch ? (ch.items || []).length : 0;
+    if (!confirm(n ? `Supprimer ce chapitre et ses ${n} fiche(s) ? C'est définitif, pour toute l'équipe.` : 'Supprimer ce chapitre ?')) return;
+    db.chapitres = chapitresList().filter(c => String(c.id) !== String(pid));
+  }
+  saveDb();
+  closeForm();
+  if (curCatId !== 'settings') curCatId = 'home';
+  buildTabs();
+  render();
+}
+
 function deleteFromForm() {
   const { type, id: pid } = formCtx;
   if (pid === null || pid === undefined) return;
+  if (type === 'chapitre') { deleteChapitre(); return; }
   if (!confirm('Supprimer définitivement ?')) return;
-  if (type === 'talent') { db.talents = db.talents.filter(p => p.id !== pid); deleteSharedPhoto(pid); removeLocalPhoto(pid); }
+  if (type === 'item') { const ch = chapById(formCtx.chap); if (ch) ch.items = (ch.items || []).filter(it => it.id !== pid); }
+  else if (type === 'talent') { db.talents = db.talents.filter(p => p.id !== pid); deleteSharedPhoto(pid); removeLocalPhoto(pid); }
   else if (type === 'club') db.clubs = db.clubs.filter(c => c.id !== pid);
   else if (type === 'lieu') { db.lieux = lieuxList().filter(l => l.id !== pid); deleteAllLieuPhotos(pid); }
   else if (type === 'agence') db.agences = db.agences.filter(a => a.id !== pid);
@@ -1179,6 +1497,40 @@ function submitForm() {
     const obj = { nom:g('f-nom'), pays:g('fa-pays')||'', ville:g('fa-ville')||'', mail:g('f-mail'), site:g('f-site'), notes:g('f-notes') };
     if (isEdit) db.agences = db.agences.map(a => a.id === pid ? { ...obj, id: a.id } : a);
     else        db.agences.push({ ...obj, id: uid() });
+
+  } else if (type === 'item') {
+    if (!g('f-nom')) { alert('Le nom est requis.'); return; }
+    const ch = chapById(formCtx.chap);
+    if (!ch) return;
+    if (!Array.isArray(ch.items)) ch.items = [];
+    const obj = {
+      nom: g('f-nom'), type: g('f-type'), pays: g('fi-pays'), ville: g('f-ville'),
+      contact: g('f-contact'), tel: g('f-tel'), mail: g('f-mail'), insta: g('f-insta').replace(/^@/, ''),
+      site: g('f-site'), photo: normalizePhotoUrl(g('f-photo')), notes: g('f-notes')
+    };
+    if (isEdit) ch.items = ch.items.map(it => it.id === pid ? { ...obj, id: it.id } : it);
+    else        ch.items.push({ ...obj, id: uid() });
+
+  } else if (type === 'chapitre') {
+    const nom = g('f-nom');
+    if (!nom) { alert('Le nom est requis.'); return; }
+    const color = document.getElementById('f-color').value;
+    let goTo = null;
+    if (formCtx.kind === 'profils') {
+      if (isEdit) { const c = catById(pid); if (c) { c.label = nom; c.color = color; } }
+      else {
+        const id = 'custom-' + nom.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/\s+/g,'-').replace(/[^a-z0-9-]/g,'') + '-' + Date.now();
+        db.categories.push({ id, label: nom, color });
+        goTo = id;
+      }
+    } else {
+      if (isEdit) { const c = chapById(pid); if (c) { c.nom = nom; c.color = color; } }
+      else { const id = uid(); chapitresList().push({ id, nom, color, items: [] }); goTo = 'ch:' + id; }
+    }
+    saveDb();
+    closeForm();
+    if (goTo) switchCat(goTo); else { buildTabs(); render(); }
+    return;
 
   } else if (type === 'marque') {
     if (!g('f-nom')) { alert('Le nom est requis.'); return; }

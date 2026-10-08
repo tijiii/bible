@@ -47,16 +47,26 @@ Dans `geo.js`, ajoute une entrée dans `GEO` et son drapeau dans `FLAGS` :
 Tout ce que tu ajoutes/modifies dans l'app est sauvegardé dans le localStorage du navigateur.
 Pour repartir des données initiales : Paramètres → Réinitialiser.
 
+## Accueil et chapitres
+
+L'accueil liste les chapitres (Modèles, Athlètes, Techniciens, Clubs, Lieux, Marques · Agences…) avec leur nombre de fiches. Clique sur un chapitre pour l'ouvrir, sur **+** pour y ajouter directement quelque chose, ou tape dans la barre de recherche pour chercher dans toute la bible. Le bouton **+ AJOUTER** en haut à droite est disponible partout.
+
+**+ NOUVEAU CHAPITRE** crée un chapitre pour toute l'équipe :
+- **Fiches** (comme Clubs) : nom, type, pays/ville, contact, tel, mail, Instagram, site, photo (lien) et notes. Ces chapitres sont stockés dans la base (ligne `db`, liste `chapitres`).
+- **Profils** (comme les talents) : crée une catégorie de talents, avec le même formulaire que les talents.
+
+Dans un chapitre que tu as créé, **MODIFIER LE CHAPITRE** permet de le renommer, changer sa couleur ou le supprimer.
+
 ## Photos des talents
 
 Dans la fiche d'un talent (ÉDITER ou + NOUVEAU TALENT), deux possibilités, toutes deux visibles par toute l'équipe :
 - coller un lien d'image (Google Drive, Imgur…) dans **PHOTO** ;
-- ou cliquer **📷 OU importer depuis cet appareil**, choisir l'image, puis **SAUVEGARDER**.
+- ou cliquer **OU IMPORTER DEPUIS CET APPAREIL**, choisir l'image, puis **SAUVEGARDER**.
 
 Les photos importées sont réduites (700 px) puis envoyées dans la table Airtable, sur une ligne `photo:<id du talent>`, colonne **Attachments**. Ne supprime pas ces lignes dans Airtable.
 
 ## Lieux (scouting)
 
-Onglet **📍 LIEUX** : nom, type, adresse, pays/ville, coordonnées GPS (bouton **📍 MA POSITION** sur place), lien Google Maps, coût estimé et détail des coûts, contact, notes, et plusieurs photos. La fiche d'un lieu affiche ses photos, une carte et un bouton pour l'ouvrir dans Google Maps.
+Chapitre **LIEUX** : nom, type, adresse, pays/ville, coordonnées GPS (bouton **MA POSITION** sur place), lien Google Maps, coût estimé et détail des coûts, contact, notes, et plusieurs photos. La fiche d'un lieu affiche ses photos, une carte et un bouton pour l'ouvrir dans Google Maps.
 
 Les infos des lieux sont stockées avec le reste de la base (ligne `db`). Les photos importées sont envoyées dans la table Airtable, sur une ligne `lieu:<id du lieu>`, colonne **Attachments** (toutes les photos du lieu sur la même ligne). Ne supprime pas ces lignes dans Airtable.

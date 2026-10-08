@@ -5,22 +5,23 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Casting Bible</title>
-  <link rel="stylesheet" href="style.css?v=2026-10-08">
+  <link rel="stylesheet" href="style.css?v=2026-10-08-2">
 </head>
 <body>
 
 <div id="app">
   <header class="hdr">
-    <div>
+    <div class="hdr-home" onclick="goHome()" title="Accueil">
       <div class="hdr-brand">CASTING BIBLE</div>
       <div class="hdr-sub">OUTDOOR · PRODUCTION · TALENT DIRECTORY</div>
     </div>
-    <div style="display:flex;align-items:center;gap:8px">
-      <span class="count-pill" id="total-count"></span>
+    <div class="hdr-right">
+      <span class="count-pill hide-mobile" id="total-count"></span>
       <span class="count-pill" id="sync-status">↻ SYNCHRONISATION...</span>
+      <button class="btn-add" onclick="openAddChooser()">+ AJOUTER</button>
     </div>
   </header>
-  <nav class="tabs" id="tabs-nav"></nav>
+  <nav class="crumbs" id="tabs-nav"></nav>
   <main id="main-content"></main>
 </div>
 
@@ -58,10 +59,10 @@
   </div>
 </div>
 
-<script src="geo.js?v=2026-10-08"></script>
-<script src="data.js?v=2026-10-08"></script>
-<script src="airtable-config.js?v=2026-10-08"></script>
-<script src="airtable-sync.js?v=2026-10-08"></script>
-<script src="app.js?v=2026-10-08"></script>
+<script src="geo.js?v=2026-10-08-2"></script>
+<script src="data.js?v=2026-10-08-2"></script>
+<script src="airtable-config.js?v=2026-10-08-2"></script>
+<script src="airtable-sync.js?v=2026-10-08-2"></script>
+<script src="app.js?v=2026-10-08-2"></script>
 </body>
 </html>
