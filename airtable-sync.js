@@ -282,10 +282,118 @@ async function migrateLocalPhotos() {
 }
 
 async function initSharedPhotos() {
-  await refreshSharedPhotos();
+  await Promise.all([refreshSharedPhotos(), refreshLieuPhotos()]);
   await migrateLocalPhotos();
-  setInterval(refreshSharedPhotos, PHOTO_REFRESH_INTERVAL);
+  setInterval(() => { refreshSharedPhotos(); refreshLieuPhotos(); }, PHOTO_REFRESH_INTERVAL);
   document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState === 'visible') refreshSharedPhotos();
+    if (document.visibilityState === 'visible') { refreshSharedPhotos(); refreshLieuPhotos(); }
   });
+}
+
+// ── PHOTOS DES LIEUX (scouting) ─────────────────────────────────────────────
+// Même principe que pour les talents, mais plusieurs photos par lieu : une
+// ligne par lieu, key = "lieu:<id du lieu>", toutes ses photos dans la
+// colonne "Attachments".
+
+let lieuPhotos = {};      // lieuId -> [{ id, url, full }]
+let lieuRecordIds = {};   // lieuId -> id de la ligne Airtable "lieu:..."
+
+function lieuKey(lieuId) { return 'lieu:' + lieuId; }
+
+function getLieuPhotos(lieuId) {
+  return lieuPhotos[lieuId] || [];
+}
+
+function toLieuPhoto(file) {
+  return { id: file.id, url: file.thumbnails?.large?.url || file.url, full: file.url };
+}
+
+// Récupère toutes les lignes "lieu:..." (avec pagination)
+async function fetchLieuPhotos() {
+  const nextPhotos = {};
+  const nextIds = {};
+  let offset = null;
+  do {
+    const params = new URLSearchParams();
+    params.set('filterByFormula', "LEFT({key},5)='lieu:'");
+    params.append('fields[]', 'key');
+    params.append('fields[]', PHOTO_ATTACHMENT_FIELD);
+    if (offset) params.set('offset', offset);
+    const res = await fetch(`${AIRTABLE_API_URL}?${params}`, {
+      headers: { 'Authorization': 'Bearer ' + AIRTABLE_TOKEN }
+    });
+    if (!res.ok) throw new Error('Airtable lieux fetch failed: ' + res.status);
+    const data = await res.json();
+    for (const rec of data.records || []) {
+      const lieuId = String(rec.fields.key || '').slice(5);
+      if (!lieuId) continue;
+      nextIds[lieuId] = rec.id;
+      nextPhotos[lieuId] = (rec.fields[PHOTO_ATTACHMENT_FIELD] || []).map(toLieuPhoto);
+    }
+    offset = data.offset;
+  } while (offset);
+  lieuPhotos = nextPhotos;
+  lieuRecordIds = nextIds;
+}
+
+function lieuPhotosSignature() {
+  return JSON.stringify(Object.keys(lieuPhotos).sort().map(k => [k, lieuPhotos[k].map(p => p.id)]));
+}
+
+async function refreshLieuPhotos() {
+  try {
+    const before = lieuPhotosSignature();
+    await fetchLieuPhotos();
+    const formOpen = document.getElementById('form-modal').style.display === 'flex';
+    if (before !== lieuPhotosSignature() && !formOpen) render();
+  } catch (e) { console.error(e); }
+}
+
+async function ensureLieuRecord(lieuId) {
+  if (lieuRecordIds[lieuId]) return lieuRecordIds[lieuId];
+  const created = await airtableJson(AIRTABLE_API_URL, {
+    method: 'POST',
+    body: JSON.stringify({ fields: { key: lieuKey(lieuId) } })
+  });
+  lieuRecordIds[lieuId] = created.id;
+  return created.id;
+}
+
+// Ajoute une photo (dataURL base64 JPEG) aux photos du lieu
+async function addLieuPhoto(lieuId, dataUrl) {
+  const recordId = await ensureLieuRecord(lieuId);
+  const [meta, base64] = dataUrl.split(',');
+  const contentType = (meta.match(/^data:([^;]+)/) || [])[1] || 'image/jpeg';
+  const ext = contentType.split('/')[1] || 'jpg';
+  const uploaded = await airtableJson(
+    `${AIRTABLE_CONTENT_URL}/${recordId}/${encodeURIComponent(PHOTO_ATTACHMENT_FIELD)}/uploadAttachment`,
+    {
+      method: 'POST',
+      body: JSON.stringify({ contentType, file: base64, filename: `lieu-${lieuId}-${Date.now()}.${ext}` })
+    }
+  );
+  const files = uploaded?.fields?.[PHOTO_ATTACHMENT_FIELD];
+  if (files) lieuPhotos[lieuId] = files.map(toLieuPhoto);
+}
+
+// Retire certaines photos du lieu (ids des pièces jointes Airtable)
+async function removeLieuPhotos(lieuId, attachmentIds) {
+  const recordId = lieuRecordIds[lieuId];
+  if (!recordId || !attachmentIds.length) return;
+  const remaining = getLieuPhotos(lieuId).filter(p => !attachmentIds.includes(p.id));
+  await airtableJson(`${AIRTABLE_API_URL}/${recordId}`, {
+    method: 'PATCH',
+    body: JSON.stringify({ fields: { [PHOTO_ATTACHMENT_FIELD]: remaining.map(p => ({ id: p.id })) } })
+  });
+  lieuPhotos[lieuId] = remaining;
+}
+
+async function deleteAllLieuPhotos(lieuId) {
+  const recordId = lieuRecordIds[lieuId];
+  delete lieuPhotos[lieuId];
+  delete lieuRecordIds[lieuId];
+  if (!recordId) return;
+  try {
+    await airtableJson(`${AIRTABLE_API_URL}/${recordId}`, { method: 'DELETE' });
+  } catch (e) { console.error(e); }
 }
