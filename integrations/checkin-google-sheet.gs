@@ -383,12 +383,6 @@ function splitName(full) {
     };
   }
   if (words.length === 1) return { prenom: '', nom: words[0].toUpperCase() };
-  // "zanella sebastien" : si le dernier mot est un prénom connu, il passe devant.
-  var lastKey = norm(words[words.length - 1]).replace(/[^a-z]/g, '');
-  var firstKey = norm(words[0]).replace(/[^a-z]/g, '');
-  if (PRENOMS[lastKey] && !PRENOMS[firstKey]) {
-    return { nom: words.slice(0, -1).join(' ').toUpperCase(), prenom: capitalize(words[words.length - 1]) };
-  }
   return {
     nom: words[words.length - 1].toUpperCase(),
     prenom: words.slice(0, -1).map(capitalize).join(' ')
@@ -546,10 +540,12 @@ function applyCheckin(db, row, now, out) {
     created = true;
   }
 
-  // Fiche créée à l'envers par une ancienne version (« Zanella SEBASTIEN ») : on remet dans l'ordre.
-  if (String(t.notes || '').indexOf('Ajouté depuis le check-in') === 0) {
-    var pk = norm(t.prenom).replace(/[^a-z]/g, ''), nk = norm(t.nom).replace(/[^a-z]/g, '');
-    if (PRENOMS[nk] && !PRENOMS[pk] && pk) { var tmp = t.prenom; t.prenom = capitalize(t.nom); t.nom = tmp.toUpperCase(); }
+  // Une version précédente inversait parfois prénom et nom quand le nom de
+  // famille est aussi un prénom (« Malo Thomas » → Thomas MALO). On remet
+  // l'ordre écrit dans le formulaire.
+  if (String(t.notes || '').indexOf('Ajouté depuis le check-in') === 0 && clean(row.nom) !== clean(row.nom).toLowerCase()) {
+    var n = splitName(row.nom);
+    if (norm(t.prenom) === norm(n.nom) && norm(t.nom) === norm(n.prenom)) { t.prenom = n.prenom; t.nom = n.nom; }
   }
   var sexe = sexeFrom(row.sexe) || sexeFromPrenom(db, (t.prenom || '') + ' ' + clean(row.nom));
   if (!t.sexe && sexe) t.sexe = sexe;
