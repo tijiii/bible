@@ -179,9 +179,19 @@ function syncCheckins() {
     pending.forEach(function (r) {
       var row = rowToAnswer(values[r], cols);
       if (row.photo) shareDrivePhoto(row.photo);
-      statuses.push({ r: r, msg: applyCheckin(db, row) });
+      var out = {};
+      statuses.push({ r: r, msg: applyCheckin(db, row, null, out), talent: out.talent });
     });
     saveDb(rec.id, db);
+    // Photo de profil Instagram pour les fiches sans photo (au mieux : Instagram
+    // peut refuser, dans ce cas la fiche reste sans photo).
+    statuses.forEach(function (s) {
+      var t = s.talent;
+      if (!t || !t.insta || String(t.photo || '').trim()) return;
+      var res = attachInstagramPhoto(t.id, t.insta);
+      if (res === 'ok') s.msg += ' · photo Instagram ajoutée';
+      else if (res === 'introuvable') s.msg += ' · photo Instagram introuvable';
+    });
     statuses.forEach(function (s) { sheet.getRange(s.r + 1, statusCol + 1).setValue(s.msg); });
   } finally {
     lock.releaseLock();
@@ -251,6 +261,67 @@ function saveDb(recordId, db) {
     headers: { Authorization: 'Bearer ' + airtableToken() },
     payload: JSON.stringify({ fields: { value: JSON.stringify(db) } })
   });
+}
+
+// ── Photo Instagram ────────────────────────────────────────────────────
+// La photo est enregistrée comme les photos importées depuis le site : une
+// ligne "photo:<id du talent>" avec le fichier dans la colonne Attachments.
+// Airtable télécharge l'image et la garde, donc elle n'expire pas.
+
+function airtableUrl(path) {
+  return 'https://api.airtable.com/v0/' + AIRTABLE_BASE + '/' + AIRTABLE_TABLE + (path || '');
+}
+
+function attachInstagramPhoto(talentId, handle) {
+  var key = 'photo:' + talentId;
+  var headers = { Authorization: 'Bearer ' + airtableToken() };
+  var found = JSON.parse(UrlFetchApp.fetch(airtableUrl('?filterByFormula=' +
+    encodeURIComponent("{key}='" + key + "'") + '&maxRecords=1'), { headers: headers }).getContentText()).records[0];
+  if (found && (found.fields.Attachments || []).length) return 'deja';
+
+  var url = instagramPhotoUrl(handle);
+  if (!url) return 'introuvable';
+  var fields = { key: key, Attachments: [{ url: url, filename: 'talent-' + talentId + '-instagram.jpg' }] };
+  var res = UrlFetchApp.fetch(airtableUrl(found ? '/' + found.id : ''), {
+    method: found ? 'patch' : 'post',
+    contentType: 'application/json',
+    headers: headers,
+    payload: JSON.stringify({ fields: fields }),
+    muteHttpExceptions: true
+  });
+  return res.getResponseCode() < 300 ? 'ok' : 'introuvable';
+}
+
+// Essaie plusieurs façons publiques (sans compte) de trouver la photo de profil.
+function instagramPhotoUrl(handle) {
+  handle = String(handle).replace(/^@/, '').trim();
+  if (!/^[A-Za-z0-9._]+$/.test(handle)) return '';
+  var ua = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36';
+  var tries = [
+    function () {
+      var r = UrlFetchApp.fetch('https://www.instagram.com/api/v1/users/web_profile_info/?username=' + handle,
+        { headers: { 'x-ig-app-id': '936619743392459', 'User-Agent': ua }, muteHttpExceptions: true, followRedirects: false });
+      if (r.getResponseCode() !== 200) return '';
+      var u = JSON.parse(r.getContentText()).data.user;
+      return u.profile_pic_url_hd || u.profile_pic_url || '';
+    },
+    function () {
+      var r = UrlFetchApp.fetch('https://www.instagram.com/' + handle + '/',
+        { headers: { 'User-Agent': ua }, muteHttpExceptions: true, followRedirects: false });
+      if (r.getResponseCode() !== 200) return '';
+      var m = r.getContentText().match(/<meta property="og:image" content="([^"]+)"/);
+      return m ? m[1].replace(/&amp;/g, '&') : '';
+    },
+    function () {
+      var u = 'https://unavatar.io/instagram/' + handle + '?fallback=false';
+      var r = UrlFetchApp.fetch(u, { muteHttpExceptions: true });
+      return r.getResponseCode() === 200 && /^image\//.test(r.getHeaders()['Content-Type'] || '') ? u : '';
+    }
+  ];
+  for (var i = 0; i < tries.length; i++) {
+    try { var url = tries[i](); if (url) return url; } catch (e) { /* essai suivant */ }
+  }
+  return '';
 }
 
 // ── Logique (testable hors Google) ─────────────────────────────────────
@@ -461,7 +532,7 @@ function fixIds(db) {
   });
 }
 
-function applyCheckin(db, row, now) {
+function applyCheckin(db, row, now, out) {
   db.talents = db.talents || [];
   fixIds(db);
   var t = findTalent(db.talents, row);
@@ -506,6 +577,7 @@ function applyCheckin(db, row, now) {
   });
   t.checkin = checkin;
 
+  if (out) out.talent = t;
   var who = [t.prenom, t.nom].filter(Boolean).join(' ');
   return created ? 'Nouveau talent créé (' + who + ')' : 'Lié à ' + who;
 }
