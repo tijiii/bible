@@ -117,9 +117,9 @@ let formSexe   = 'f';
 // depuis l'app (comme Clubs) sont stockés dans db.chapitres et synchronisés
 // avec Airtable comme le reste de la base.
 const TALENT_FAMILIES = [
-  { key:'modele',  label:'Modèles',     color:'#c8f059' },
-  { key:'athlete', label:'Athlètes',    color:'#59d4f0' },
-  { key:'tech',    label:'Techniciens', color:'#f0a059' },
+  { key:'modele',  label:'Modèles',     color:'#b5654a' },
+  { key:'athlete', label:'Athlètes',    color:'#3f6e8c' },
+  { key:'tech',    label:'Techniciens', color:'#c49a2c' },
 ];
 function isFamilyCat(c) { return TALENT_FAMILIES.some(f => c.id.startsWith(f.key + '-')); }
 function chapitresList() { if (!Array.isArray(db.chapitres)) db.chapitres = []; return db.chapitres; }
@@ -138,21 +138,21 @@ function chaptersList() {
     list.push({ key: cat.id, label: cat.label, color: cat.color, count: countInCat(cat.id), custom: 'profils',
       add: () => openForm('talent', undefined, { cats: [cat.id] }) });
   });
-  list.push({ key:'clubs', label:'Clubs', color:'#f0a059', count: db.clubs.length, add: () => openForm('club') });
-  list.push({ key:'lieux', label:'Lieux', color:'#59d4f0', count: lieuxList().length, add: () => openForm('lieu') });
-  list.push({ key:'marques', label:'Marques · Agences', color:'#d066e0', count: db.marques.length + db.agences.length,
+  list.push({ key:'clubs', label:'Clubs', color:'#5e7d4f', count: db.clubs.length, add: () => openForm('club') });
+  list.push({ key:'lieux', label:'Lieux', color:'#8a6fa8', count: lieuxList().length, add: () => openForm('lieu') });
+  list.push({ key:'marques', label:'Marques · Agences', color:'#2b2b2b', count: db.marques.length + db.agences.length,
     add: () => openChooser('AJOUTER DANS MARQUES · AGENCES', [
-      { label:'Marque', color:'#d066e0', run: () => openForm('marque') },
-      { label:'Agence', color:'#d066e0', run: () => openForm('agence') },
+      { label:'Marque', color:'#2b2b2b', run: () => openForm('marque') },
+      { label:'Agence', color:'#2b2b2b', run: () => openForm('agence') },
     ]) });
   chapitresList().forEach(ch => {
-    list.push({ key: 'ch:' + ch.id, label: ch.nom, color: ch.color || '#e8e8e8', count: (ch.items || []).length, custom: 'liste',
+    list.push({ key: 'ch:' + ch.id, label: ch.nom, color: ch.color || '#111111', count: (ch.items || []).length, custom: 'liste',
       add: () => openForm('item', undefined, { chap: ch.id }) });
   });
   return list;
 }
 function chapterByKey(key) {
-  if (key === null) return { key: null, label: 'Tous les talents', color: '#c8f059', count: db.talents.length };
+  if (key === null) return { key: null, label: 'Tous les talents', color: '#9a9a96', count: db.talents.length };
   if (key === 'settings') return { key, label: 'Paramètres', color: '#666666' };
   return chaptersList().find(c => c.key === key);
 }
@@ -251,14 +251,14 @@ function homeResultsHtml(q) {
       (p.cats || []).map(c => catById(c)?.label))) return;
     const cats = (p.cats || []).map(c => catById(c)).filter(Boolean);
     rows.push({ name: [p.nom, p.prenom].filter(Boolean).join(' '), where: cats.map(c => c.label).join(', ') || 'Talent',
-      color: cats[0]?.color || '#c8f059', open: `openDetail('talent',${p.id})` });
+      color: cats[0]?.color || '#9a9a96', open: `openDetail('talent',${p.id})` });
   });
-  db.clubs.forEach(c => { if (hit(c.nom, c.ville, c.pays, c.notes, c.lien)) rows.push({ name: c.nom, where: 'Club · ' + (c.ville || ''), color: '#f0a059', open: `openDetail('club',${c.id})` }); });
-  lieuxList().forEach(l => { if (hit(l.nom, l.type, l.adresse, l.ville, l.pays, l.notes)) rows.push({ name: l.nom, where: 'Lieu · ' + (l.ville || l.type || ''), color: '#59d4f0', open: `openDetail('lieu',${l.id})` }); });
-  db.agences.forEach(a => { if (hit(a.nom, a.ville, a.pays)) rows.push({ name: a.nom, where: 'Agence · ' + (a.ville || ''), color: '#d066e0', open: `openForm('agence',${a.id})` }); });
-  db.marques.forEach((m, i) => { const nom = typeof m === 'string' ? m : m.nom; if (hit(nom)) rows.push({ name: nom, where: 'Marque', color: '#d066e0', open: `openForm('marque',${i})` }); });
+  db.clubs.forEach(c => { if (hit(c.nom, c.ville, c.pays, c.notes, c.lien)) rows.push({ name: c.nom, where: 'Club · ' + (c.ville || ''), color: '#5e7d4f', open: `openDetail('club',${c.id})` }); });
+  lieuxList().forEach(l => { if (hit(l.nom, l.type, l.adresse, l.ville, l.pays, l.notes)) rows.push({ name: l.nom, where: 'Lieu · ' + (l.ville || l.type || ''), color: '#8a6fa8', open: `openDetail('lieu',${l.id})` }); });
+  db.agences.forEach(a => { if (hit(a.nom, a.ville, a.pays)) rows.push({ name: a.nom, where: 'Agence · ' + (a.ville || ''), color: '#2b2b2b', open: `openForm('agence',${a.id})` }); });
+  db.marques.forEach((m, i) => { const nom = typeof m === 'string' ? m : m.nom; if (hit(nom)) rows.push({ name: nom, where: 'Marque', color: '#2b2b2b', open: `openForm('marque',${i})` }); });
   chapitresList().forEach(ch => (ch.items || []).forEach(it => {
-    if (hit(it.nom, it.type, it.ville, it.pays, it.contact, it.notes)) rows.push({ name: it.nom, where: ch.nom + (it.ville ? ' · ' + it.ville : ''), color: ch.color || '#e8e8e8', open: `openDetail('item',${it.id},'${esc(String(ch.id))}')` });
+    if (hit(it.nom, it.type, it.ville, it.pays, it.contact, it.notes)) rows.push({ name: it.nom, where: ch.nom + (it.ville ? ' · ' + it.ville : ''), color: ch.color || '#111111', open: `openDetail('item',${it.id},'${esc(String(ch.id))}')` });
   }));
   if (!rows.length) return `<div class="empty">AUCUN RÉSULTAT</div>`;
   return `<div class="home-head"><span>RÉSULTATS</span><span>${rows.length}</span></div>
@@ -667,7 +667,7 @@ function renderItemForm(v) {
     <div class="field full"><label>NOTES</label><textarea id="f-notes" rows="3">${esc(v.notes||'')}</textarea></div>`;
 }
 
-const CHAPTER_COLORS = ['#c8f059','#59d4f0','#f0a059','#d066e0','#e24b4a','#f0e059','#e8e8e8'];
+const CHAPTER_COLORS = ['#b5654a','#3f6e8c','#c49a2c','#5e7d4f','#8a6fa8','#b3261e','#111111'];
 
 function renderChapitreForm(v, isEdit, kind) {
   const color = v.color || CHAPTER_COLORS[chapitresList().length % CHAPTER_COLORS.length];
@@ -799,7 +799,7 @@ function renderSettings(main) {
     <div class="settings-section">
       <div class="settings-title">CHAPITRES (${chapitresList().length})</div>
       <div class="settings-list">${chapitresList().map(ch => `<div class="settings-item">
-        <div class="dot" style="background:${esc(ch.color||'#e8e8e8')}"></div>
+        <div class="dot" style="background:${esc(ch.color||'#111111')}"></div>
         <span>${esc(ch.nom)} (${(ch.items||[]).length})</span>
         <button onclick="openForm('chapitre','${esc(String(ch.id))}',{kind:'liste'})" title="Modifier">✎</button>
       </div>`).join('')}</div>
@@ -949,7 +949,7 @@ function openDetail(type, pid, chapId) {
     </div>`;
   } else {
     body = `<div style="padding:20px">
-      <div style="font-family:'Barlow Condensed',sans-serif;font-size:22px;font-weight:900;color:#fff;letter-spacing:.04em">${esc(p.nom)}</div>
+      <div style="font-family:var(--serif);font-size:26px;font-weight:500;color:var(--text);letter-spacing:0">${esc(p.nom)}</div>
       <div class="detail-tags" style="margin-top:8px">
         <span class="tag">${FLAGS[p.pays]||''} ${esc(p.pays||'')}</span>
         <span class="tag">${esc(p.ville||'')}</span>
@@ -1101,7 +1101,7 @@ function renderTalentForm(v) {
   let catsHtml = '';
   families.forEach(fam => {
     catsHtml += `<div style="margin-bottom:8px">
-      <div style="font-family:'Barlow Condensed',sans-serif;font-size:10px;letter-spacing:.12em;color:var(--muted);margin-bottom:6px">${fam.label.toUpperCase()}</div>
+      <div style="font-family:var(--serif);font-size:13px;letter-spacing:.01em;text-transform:lowercase;color:var(--muted);margin-bottom:6px">${fam.label.toUpperCase()}</div>
       <div class="cats-grid">`;
     fam.cats.forEach(cat => {
       const checked = selectedCats.includes(cat.id) ? 'checked' : '';
