@@ -351,3 +351,8 @@ a { color:inherit; }
 #qa-go:disabled { opacity:.5; cursor:wait; }
 #qa-status { color:var(--red); font-size:14px; }
 .quick-note { background:var(--bg3); border-left:2px solid #111; padding:10px 12px; font-size:14px; font-style:italic; }
+
+/* ── CHECK-IN ── */
+.checkin-block { margin-top: 18px; padding-top: 14px; border-top: 1px solid var(--border, #e5e5e5); }
+.checkin-title { font-family: var(--serif); font-size: 13px; letter-spacing: .12em; margin-bottom: 6px; }
+.checkin-title span { color: var(--muted, #888); letter-spacing: 0; margin-left: 6px; }
