@@ -38,7 +38,22 @@ var COLS = {
   logistique: 'any logistics questions',
   equipement: 'do you need any specific equipment',
   photo: 'photo',
-  sexe: ['gender', 'genre', 'sexe', 'sex']
+  sexe: ['gender', 'genre', 'sexe', 'sex'],
+  insta: 'instagram',
+  activites: ['main activit', 'activit', 'sport'],
+  agence: ['agency', 'agence'],
+  papiers: 'do you have a valid id',
+  permis: 'do you have a driving',
+  // Mensurations
+  m_taille: 'height',
+  m_poids: 'weight',
+  m_poitrine: 'chest',
+  m_tourTaille: 'waist',
+  m_hanches: 'hips',
+  m_pointure: 'shoe size',
+  m_tete: 'head size',
+  m_haut: 'top size',
+  m_bas: 'bottom size'
 };
 
 var CHECKIN_FIELDS = ['voyage', 'allergies', 'intolerances', 'plat', 'snack',
@@ -99,7 +114,7 @@ var PRENOMS = {
 var MIXTES = ['camille', 'dominique', 'claude', 'alex', 'charlie', 'sacha', 'sasha', 'andrea',
   'eden', 'noa', 'morgan', 'yael', 'ange', 'jo', 'sam', 'kim', 'robin'];
 
-var EMPTY_ANSWERS = ['', 'non', 'no', 'none', 'aucun', 'aucune', 'rien', 'nc', 'n/a', 'na',
+var EMPTY_ANSWERS = ['', 'aucune idee', 'no idea', 'x', '0', 'non', 'no', 'none', 'aucun', 'aucune', 'rien', 'nc', 'n/a', 'na',
   '-', '/', '?', 'nope', 'pas de', 'nothing', 'no thanks', 'non merci', 'ras',
   'idk', 'je sais pas', 'all good', 'tout roule', 'rien de special'];
 
@@ -127,7 +142,7 @@ function installTrigger() {
 
 // Vide la colonne « Bible » puis renvoie tout (met à jour les profils déjà liés).
 function resyncAll() {
-  var sheet = SpreadsheetApp.getActive().getSheets()[0];
+  var sheet = responseSheet();
   var headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0].map(String);
   var statusCol = headers.indexOf(STATUS_HEADER);
   if (statusCol !== -1 && sheet.getLastRow() > 1) {
@@ -140,7 +155,7 @@ function syncCheckins() {
   var lock = LockService.getScriptLock();
   lock.waitLock(30000);
   try {
-    var sheet = SpreadsheetApp.getActive().getSheets()[0];
+    var sheet = responseSheet();
     var values = sheet.getDataRange().getValues();
     var headers = values[0].map(String);
     var statusCol = headers.indexOf(STATUS_HEADER);
@@ -171,6 +186,17 @@ function syncCheckins() {
   } finally {
     lock.releaseLock();
   }
+}
+
+// L'onglet des réponses : celui qui a la colonne « Full name / Nom complet ».
+function responseSheet() {
+  var sheets = SpreadsheetApp.getActive().getSheets();
+  for (var i = 0; i < sheets.length; i++) {
+    if (!sheets[i].getLastColumn()) continue;
+    var headers = sheets[i].getRange(1, 1, 1, sheets[i].getLastColumn()).getValues()[0];
+    if (findColumns(headers.map(String)).nom !== undefined) return sheets[i];
+  }
+  return sheets[0];
 }
 
 function findColumns(headers) {
@@ -249,6 +275,8 @@ function clean(v) { return String(v == null ? '' : v).trim(); }
 
 function parseDate(v) {
   if (v instanceof Date) return v;
+  var digits = clean(v).match(/^(\d{2})(\d{2})(\d{4})$/);
+  if (digits) return new Date(+digits[3], +digits[2] - 1, +digits[1]);
   var m = clean(v).match(/^(\d{1,2})[\/.-](\d{1,2})[\/.-](\d{2,4})(?:\D|$)/);
   if (!m) return null;
   var y = +m[3]; if (y < 100) y += y > 30 ? 1900 : 2000;
@@ -364,6 +392,65 @@ function modelCategory(db, sexe) {
 }
 
 // Même format que le site (un nombre) : le site met l'id tel quel dans ses onclick.
+function ouiNon(v) {
+  var s = norm(v);
+  if (/^(oui|yes|y|o)\b/.test(s)) return 'Oui';
+  if (/^(non|no|n)\b/.test(s)) return 'Non';
+  return '';
+}
+
+function splitList(v) {
+  return clean(v).split(/[,;\/+&\n]| et | and /i).map(function (x) { return x.trim(); }).filter(function (x) { return x && meaningful(x); });
+}
+
+// Retrouve une valeur dans une liste existante (sans tenir compte des accents ni
+// des majuscules) ; sinon l'ajoute, pour qu'elle soit cochable dans le site.
+function pickFromList(list, value, makeEntry, nameOf) {
+  var key = norm(value);
+  for (var i = 0; i < list.length; i++) if (norm(nameOf(list[i])) === key) return nameOf(list[i]);
+  var entry = makeEntry(value.charAt(0).toUpperCase() + value.slice(1));
+  list.push(entry);
+  return nameOf(entry);
+}
+
+// Mensurations, Instagram, activités (= sports), agence.
+function applyProfil(db, t, row) {
+  var mens = {};
+  Object.keys(row).forEach(function (k) {
+    if (k.indexOf('m_') === 0 && meaningful(row[k])) mens[k.slice(2)] = clean(row[k]);
+  });
+  if (Object.keys(mens).length) {
+    var old = t.mensurations || {};
+    Object.keys(mens).forEach(function (k) { old[k] = mens[k]; });
+    t.mensurations = old;
+  }
+
+  if (!clean(t.insta) && meaningful(row.insta)) {
+    var ig = clean(row.insta).replace(/^https?:\/\/(www\.)?instagram\.com\//i, '').replace(/^@/, '').replace(/[\/?].*$/, '');
+    if (ig) t.insta = ig;
+  }
+
+  if (meaningful(row.activites)) {
+    db.sports = db.sports || [];
+    var sports = Array.isArray(t.sports) ? t.sports.slice() : (t.sport ? [t.sport] : []);
+    splitList(row.activites).forEach(function (a) {
+      var name = pickFromList(db.sports, a, function (x) { return x; }, function (x) { return x; });
+      if (sports.indexOf(name) === -1) sports.push(name);
+    });
+    t.sports = sports;
+  }
+
+  var agences = Array.isArray(t.agence) ? t.agence : (t.agence ? [t.agence] : []);
+  if (!agences.length && meaningful(row.agence)) {
+    db.agences = db.agences || [];
+    t.agence = splitList(row.agence).map(function (a) {
+      return pickFromList(db.agences, a, function (x) {
+        return { id: newId(), nom: x, pays: '', ville: '', mail: '', site: '' };
+      }, function (x) { return x.nom; });
+    });
+  }
+}
+
 function newId() { return Date.now() + Math.floor(Math.random() * 9999); }
 
 // Répare les fiches créées par une ancienne version du script (id en texte).
@@ -404,11 +491,16 @@ function applyCheckin(db, row, now) {
   if (age) t.age = age;
   var pays = Array.isArray(t.pays) ? t.pays : (t.pays ? [t.pays] : []);
   if (!pays.length && meaningful(row.nationalite)) t.pays = countryFrom(row.nationalite);
+  applyProfil(db, t, row);
   if (!clean(t.photo) && meaningful(row.photo)) t.photo = clean(String(row.photo).split(',')[0]);
 
   var checkin = {};
   var d = row.date instanceof Date ? row.date : parseDate(row.date);
   if (d && !isNaN(d)) checkin.date = d.toISOString().slice(0, 10);
+  ['papiers', 'permis'].forEach(function (k) {
+    var v = ouiNon(row[k]);
+    if (v) checkin[k] = v;
+  });
   CHECKIN_FIELDS.forEach(function (k) {
     if (meaningful(row[k])) checkin[k] = clean(row[k]);
   });
