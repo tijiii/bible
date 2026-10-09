@@ -356,3 +356,8 @@ a { color:inherit; }
 .checkin-block { margin-top: 18px; padding-top: 14px; border-top: 1px solid var(--border, #e5e5e5); }
 .checkin-title { font-family: var(--serif); font-size: 13px; letter-spacing: .12em; margin-bottom: 6px; }
 .checkin-title span { color: var(--muted, #888); letter-spacing: 0; margin-left: 6px; }
+.mens-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px 16px; }
+.mens-item { display: flex; flex-direction: column; padding: 4px 0; border-bottom: 1px solid var(--border); }
+.mens-form { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.mens-lbl { display: block; font-size: 11px; color: var(--muted); margin-bottom: 2px; }
+@media (max-width: 600px) { .mens-grid, .mens-form { grid-template-columns: repeat(2, 1fr); } }

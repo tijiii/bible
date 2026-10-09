@@ -897,7 +897,29 @@ function delAgence(id) {
 
 // ── DETAIL MODAL ──────────────────────────────────────────────────────────────
 // Réponses au formulaire de check-in (remplies par integrations/checkin-google-sheet.gs).
+const MENSURATIONS = [
+  ['taille', 'TAILLE', 'cm'], ['poids', 'POIDS', 'kg'], ['poitrine', 'POITRINE', 'cm'],
+  ['tourTaille', 'TOUR DE TAILLE', 'cm'], ['hanches', 'HANCHES', 'cm'], ['pointure', 'POINTURE', ''],
+  ['tete', 'TOUR DE TÊTE', 'cm'], ['haut', 'TAILLE HAUT', ''], ['bas', 'TAILLE BAS', ''],
+];
+function mensurationsHtml(m) {
+  if (!m) return '';
+  const rows = MENSURATIONS.filter(([k]) => m[k]).map(([k, lbl, unit]) => {
+    const v = String(m[k]);
+    const withUnit = unit && /^[\d.,\s-]+$/.test(v) ? `${v} ${unit}` : v;
+    return `<div class="mens-item"><span class="detail-lbl">${lbl}</span><span class="detail-val">${esc(withUnit)}</span></div>`;
+  }).join('');
+  return rows ? `<div class="checkin-block"><div class="checkin-title">MENSURATIONS</div><div class="mens-grid">${rows}</div></div>` : '';
+}
+function mensurationsFields(m) {
+  m = m || {};
+  return `<div class="field full"><label>MENSURATIONS</label><div class="mens-form">` +
+    MENSURATIONS.map(([k, lbl, unit]) => `<div><span class="mens-lbl">${lbl}${unit ? ' (' + unit + ')' : ''}</span><input id="f-m-${k}" value="${esc(m[k]||'')}"></div>`).join('') +
+    `</div></div>`;
+}
+
 const CHECKIN_LABELS = [
+  ['papiers', 'PIÈCE D\'IDENTITÉ'], ['permis', 'PERMIS'],
   ['voyage', 'VOYAGE'], ['allergies', 'ALLERGIES'], ['intolerances', 'INTOLÉRANCES'],
   ['plat', 'PLAT PRÉFÉRÉ'], ['snack', 'SNACK'], ['boisson', 'BOISSON'],
   ['boissonChaude', 'BOISSON CHAUDE'], ['logistique', 'LOGISTIQUE'], ['equipement', 'MATÉRIEL'],
@@ -971,6 +993,7 @@ function openDetail(type, pid, chapId) {
         </span></div>
         ${p.site ? `<div class="detail-row"><span class="detail-lbl">LIEN / SITE</span><span class="detail-val"><a href="${esc(p.site)}" target="_blank">${esc(p.site)}</a></span></div>` : ''}
         ${p.notes ? `<div class="detail-row"><span class="detail-lbl">NOTES</span><span class="detail-val">${esc(p.notes)}</span></div>` : ''}
+        ${mensurationsHtml(p.mensurations)}
         ${checkinHtml(p.checkin)}
         ${ig ? `<a class="btn-ig" href="https://instagram.com/${esc(p.insta)}" target="_blank">INSTAGRAM ↗</a>` : ''}
         ${p.site ? `<a class="btn-ig" href="${esc(p.site)}" target="_blank" style="margin-left:${ig?'8px':'0'}">SITE ↗</a>` : ''}
@@ -1196,6 +1219,7 @@ function renderTalentForm(v) {
       <div class="field-hint">Colle directement un lien de partage Google Drive classique (celui du bouton "Partager") — il sera converti automatiquement. Vérifie juste que l'accès est sur "Tous les utilisateurs disposant du lien". Tu peux aussi importer une photo depuis ton ordinateur ou ton téléphone : elle est envoyée en ligne et visible par toute l'équipe.</div>
       <img id="photo-preview" class="photo-preview-img ${photoFor(v)?'show':''}" src="${esc(photoFor(v))}" alt="">
     </div>
+    ${mensurationsFields(v.mensurations)}
     <div class="field full"><label>NOTES</label><input id="f-notes" value="${esc(v.notes||'')}"></div>`;
 }
 
@@ -1491,7 +1515,8 @@ function submitForm() {
       tel: g('f-tel') || '', mail: g('f-mail') || '',
       agence, pays, ville,
       insta: g('f-insta'), site: g('f-site'), sports,
-      photo: normalizePhotoUrl(g('f-photo')), notes: g('f-notes')
+      photo: normalizePhotoUrl(g('f-photo')), notes: g('f-notes'),
+      mensurations: Object.fromEntries(MENSURATIONS.map(([k]) => [k, g('f-m-' + k)]).filter(([, val]) => val)),
     };
     let finalId;
     if (isEdit) { db.talents = db.talents.map(p => p.id === pid ? { ...p, ...obj, id: p.id } : p); finalId = pid; }
