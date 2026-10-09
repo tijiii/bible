@@ -37,7 +37,8 @@ var COLS = {
   boissonChaude: 'hot drink',
   logistique: 'any logistics questions',
   equipement: 'do you need any specific equipment',
-  photo: 'photo'
+  photo: 'photo',
+  sexe: ['gender', 'genre', 'sexe', 'sex']
 };
 
 var CHECKIN_FIELDS = ['voyage', 'allergies', 'intolerances', 'plat', 'snack',
@@ -71,6 +72,7 @@ function onOpen() {
   SpreadsheetApp.getUi().createMenu('Bible')
     .addItem('Envoyer les nouvelles réponses vers la bible', 'syncCheckins')
     .addItem('Activer l\'envoi automatique', 'installTrigger')
+    .addItem('Renvoyer toutes les réponses', 'resyncAll')
     .addToUi();
 }
 
@@ -85,6 +87,17 @@ function installTrigger() {
 }
 
 // ── Synchronisation ────────────────────────────────────────────────────
+
+// Vide la colonne « Bible » puis renvoie tout (met à jour les profils déjà liés).
+function resyncAll() {
+  var sheet = SpreadsheetApp.getActive().getSheets()[0];
+  var headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0].map(String);
+  var statusCol = headers.indexOf(STATUS_HEADER);
+  if (statusCol !== -1 && sheet.getLastRow() > 1) {
+    sheet.getRange(2, statusCol + 1, sheet.getLastRow() - 1, 1).clearContent();
+  }
+  syncCheckins();
+}
 
 function syncCheckins() {
   var lock = LockService.getScriptLock();
@@ -127,9 +140,9 @@ function findColumns(headers) {
   var cols = {};
   var lower = headers.map(function (h) { return norm(h); });
   Object.keys(COLS).forEach(function (k) {
-    var prefix = norm(COLS[k]);
-    for (var i = 0; i < lower.length; i++) {
-      if (lower[i].indexOf(prefix) === 0) { cols[k] = i; break; }
+    var prefixes = [].concat(COLS[k]).map(norm);
+    for (var i = 0; i < lower.length && cols[k] === undefined; i++) {
+      prefixes.forEach(function (prefix) { if (lower[i].indexOf(prefix) === 0) cols[k] = i; });
     }
   });
   return cols;
@@ -268,6 +281,26 @@ function findTalent(talents, row) {
   return partial.length === 1 ? partial[0] : null;
 }
 
+function sexeFrom(v) {
+  var s = norm(v);
+  if (!s) return '';
+  if (/^(f|fem|wom|nana)/.test(s)) return 'f';
+  if (/^(h|m|man|male|gar)/.test(s)) return 'h';
+  return '';
+}
+
+// Le formulaire est envoyé aux modèles : Modèle Femme / Homme selon le sexe,
+// sinon « Modèle à classer » (créée si besoin) pour qu'il apparaisse dans Modèles.
+function modelCategory(db, sexe) {
+  if (sexe) return 'modele-' + sexe;
+  db.categories = db.categories || [];
+  var id = 'modele-a-classer';
+  if (!db.categories.some(function (c) { return c.id === id; })) {
+    db.categories.push({ id: id, label: 'Modèle à classer', color: '#9a9a96' });
+  }
+  return id;
+}
+
 function newId() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 7); }
 
 function applyCheckin(db, row, now) {
@@ -278,10 +311,14 @@ function applyCheckin(db, row, now) {
     var n = splitName(row.nom);
     t = { id: newId(), nom: n.nom, prenom: n.prenom, sexe: '', cats: [], agence: [], pays: [],
       ville: [], sports: [], insta: '', site: '', photo: '', tel: '', mail: '',
-      notes: 'Ajouté depuis le check-in : vérifier la catégorie et le sexe.' };
+      notes: 'Ajouté depuis le check-in.' };
     db.talents.push(t);
     created = true;
   }
+
+  var sexe = sexeFrom(row.sexe);
+  if (!t.sexe && sexe) t.sexe = sexe;
+  if (!t.cats || !t.cats.length) t.cats = [modelCategory(db, t.sexe)];
 
   if (!clean(t.tel) && meaningful(row.tel)) t.tel = clean(row.tel);
   if (!clean(t.mail) && meaningful(row.mail)) t.mail = clean(row.mail).toLowerCase();
@@ -305,5 +342,5 @@ function applyCheckin(db, row, now) {
 
 if (typeof module !== 'undefined') {
   module.exports = { applyCheckin: applyCheckin, findTalent: findTalent, splitName: splitName,
-    countryFrom: countryFrom, ageFrom: ageFrom, meaningful: meaningful, findColumns: findColumns };
+    countryFrom: countryFrom, sexeFrom: sexeFrom, ageFrom: ageFrom, meaningful: meaningful, findColumns: findColumns };
 }
