@@ -886,6 +886,23 @@ function delAgence(id) {
 }
 
 // ── DETAIL MODAL ──────────────────────────────────────────────────────────────
+// Réponses au formulaire de check-in (remplies par integrations/checkin-google-sheet.gs).
+const CHECKIN_LABELS = [
+  ['voyage', 'VOYAGE'], ['allergies', 'ALLERGIES'], ['intolerances', 'INTOLÉRANCES'],
+  ['plat', 'PLAT PRÉFÉRÉ'], ['snack', 'SNACK'], ['boisson', 'BOISSON'],
+  ['boissonChaude', 'BOISSON CHAUDE'], ['logistique', 'LOGISTIQUE'], ['equipement', 'MATÉRIEL'],
+];
+function checkinHtml(c) {
+  if (!c) return '';
+  const rows = CHECKIN_LABELS.filter(([k]) => c[k]).map(([k, lbl]) =>
+    `<div class="detail-row"><span class="detail-lbl">${lbl}</span><span class="detail-val pre">${esc(c[k])}</span></div>`).join('');
+  const date = c.date ? new Date(c.date).toLocaleDateString('fr-FR') : '';
+  return `<div class="checkin-block">
+    <div class="checkin-title">CHECK-IN${date ? ` <span>${esc(date)}</span>` : ''}</div>
+    ${rows || '<div class="detail-row"><span class="detail-val">Rien de particulier à signaler.</span></div>'}
+  </div>`;
+}
+
 function openDetail(type, pid, chapId) {
   detailType = type;
   detailId   = pid;
@@ -944,6 +961,7 @@ function openDetail(type, pid, chapId) {
         </span></div>
         ${p.site ? `<div class="detail-row"><span class="detail-lbl">LIEN / SITE</span><span class="detail-val"><a href="${esc(p.site)}" target="_blank">${esc(p.site)}</a></span></div>` : ''}
         ${p.notes ? `<div class="detail-row"><span class="detail-lbl">NOTES</span><span class="detail-val">${esc(p.notes)}</span></div>` : ''}
+        ${checkinHtml(p.checkin)}
         ${ig ? `<a class="btn-ig" href="https://instagram.com/${esc(p.insta)}" target="_blank">INSTAGRAM ↗</a>` : ''}
         ${p.site ? `<a class="btn-ig" href="${esc(p.site)}" target="_blank" style="margin-left:${ig?'8px':'0'}">SITE ↗</a>` : ''}
       </div>
@@ -1466,7 +1484,7 @@ function submitForm() {
       photo: normalizePhotoUrl(g('f-photo')), notes: g('f-notes')
     };
     let finalId;
-    if (isEdit) { db.talents = db.talents.map(p => p.id === pid ? { ...obj, id: p.id } : p); finalId = pid; }
+    if (isEdit) { db.talents = db.talents.map(p => p.id === pid ? { ...p, ...obj, id: p.id } : p); finalId = pid; }
     else        { finalId = uid(); db.talents.push({ ...obj, id: finalId }); }
 
     // Envoie la photo importée depuis l'appareil pour que toute l'équipe la voie

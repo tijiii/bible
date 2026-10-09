@@ -84,3 +84,17 @@ Mise en place, une seule fois :
 5. Mettre cette adresse dans `QUICK_ADD_URL` (fichier `airtable-config.js`). Le bouton apparaît alors sur le site.
 
 Le serveur n'accepte que les demandes venant de `https://tijiii.github.io` (variable `ALLOWED_ORIGINS` dans `worker/wrangler.toml`).
+
+## Check-in → profils
+
+Le script `integrations/checkin-google-sheet.gs` relie les réponses du formulaire de check-in aux profils de la bible (par email, puis par nom) et crée le profil s'il n'existe pas.
+
+Copié dans la bible : téléphone, email, âge, nationalité (seulement si vides), la photo si le formulaire contient une question « Photo », et les infos pratiques (voyage, allergies, intolérances, repas, boissons, logistique, matériel). Les infos médicales, phobies, limitations physiques, mal des transports, altitude et médicaments restent uniquement dans le Google Sheet.
+
+Installation (une seule fois) :
+1. Ouvrir le Google Sheet des réponses → Extensions → Apps Script.
+2. Remplacer le contenu par celui de `integrations/checkin-google-sheet.gs`, puis enregistrer.
+3. Paramètres du projet (roue dentée) → Propriétés du script → ajouter `AIRTABLE_TOKEN` avec le même token que dans `airtable-config.js`.
+4. Recharger le Google Sheet : un menu « Bible » apparaît. Cliquer « Activer l'envoi automatique » et accepter les autorisations Google.
+
+Les réponses déjà présentes sont envoyées tout de suite, puis chaque nouvelle réponse arrive automatiquement. Une colonne « Bible » indique pour chaque ligne le profil lié ou créé ; vider la case d'une ligne pour la renvoyer.
