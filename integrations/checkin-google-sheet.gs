@@ -363,10 +363,20 @@ function modelCategory(db, sexe) {
   return id;
 }
 
-function newId() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 7); }
+// Même format que le site (un nombre) : le site met l'id tel quel dans ses onclick.
+function newId() { return Date.now() + Math.floor(Math.random() * 9999); }
+
+// Répare les fiches créées par une ancienne version du script (id en texte).
+function fixIds(db) {
+  (db.talents || []).forEach(function (t) {
+    if (typeof t.id !== 'number' && isNaN(Number(t.id))) t.id = newId();
+    else if (typeof t.id === 'string') t.id = Number(t.id);
+  });
+}
 
 function applyCheckin(db, row, now) {
   db.talents = db.talents || [];
+  fixIds(db);
   var t = findTalent(db.talents, row);
   var created = false;
   if (!t) {
@@ -378,9 +388,15 @@ function applyCheckin(db, row, now) {
     created = true;
   }
 
+  // Fiche créée à l'envers par une ancienne version (« Zanella SEBASTIEN ») : on remet dans l'ordre.
+  if (String(t.notes || '').indexOf('Ajouté depuis le check-in') === 0) {
+    var pk = norm(t.prenom).replace(/[^a-z]/g, ''), nk = norm(t.nom).replace(/[^a-z]/g, '');
+    if (PRENOMS[nk] && !PRENOMS[pk] && pk) { var tmp = t.prenom; t.prenom = capitalize(t.nom); t.nom = tmp.toUpperCase(); }
+  }
   var sexe = sexeFrom(row.sexe) || sexeFromPrenom(db, (t.prenom || '') + ' ' + clean(row.nom));
   if (!t.sexe && sexe) t.sexe = sexe;
-  if (!t.cats || !t.cats.length) t.cats = [modelCategory(db, t.sexe)];
+  var aClasser = t.cats && t.cats.length === 1 && t.cats[0] === 'modele-a-classer';
+  if (!t.cats || !t.cats.length || (aClasser && t.sexe)) t.cats = [modelCategory(db, t.sexe)];
 
   if (!clean(t.tel) && meaningful(row.tel)) t.tel = clean(row.tel);
   if (!clean(t.mail) && meaningful(row.mail)) t.mail = clean(row.mail).toLowerCase();

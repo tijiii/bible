@@ -183,7 +183,17 @@ function switchCat(catId) {
 function goHome() { homeQ = ''; switchCat('home'); }
 
 // ── RENDER ────────────────────────────────────────────────────────────────────
+// Les ids de talents sont des nombres (ils sont écrits tels quels dans les
+// onclick). Une fiche avec un id en texte ne s'ouvrirait pas : on la répare.
+function fixTalentIds() {
+  (db.talents || []).forEach(t => {
+    if (typeof t.id === 'number') return;
+    t.id = isNaN(Number(t.id)) || t.id === '' ? uid() : Number(t.id);
+  });
+}
+
 function render() {
+  fixTalentIds();
   updateCounts();
   const main = document.getElementById('main-content');
 
