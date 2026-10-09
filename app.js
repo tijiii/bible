@@ -302,6 +302,7 @@ function openAddChooser() {
     }
   });
   items.push({ label: '+ Nouveau chapitre', color: '#666666', run: () => openForm('chapitre') });
+  if (quickAddEnabled()) items.unshift({ label: 'Ajout rapide (lien, capture, texte)', color: '#111111', run: () => openQuickAdd() });
   openChooser('QUE VEUX-TU AJOUTER ?', items);
 }
 
@@ -994,7 +995,7 @@ function openForm(type, pid, opts) {
   document.getElementById('btn-save').style.display = '';
 
   if (type === 'talent') {
-    const p = isEdit ? db.talents.find(x => x.id === pid) : { cats: opts.cats || [] };
+    const p = isEdit ? db.talents.find(x => x.id === pid) : { cats: opts.cats || [], ...(opts.prefill || {}) };
     formSexe = p?.sexe || 'f';
     pendingLocalPhoto = null; // reset à chaque ouverture
     document.getElementById('form-title').textContent = isEdit ? 'ÉDITER PROFIL' : '+ NOUVEAU TALENT';
@@ -1006,7 +1007,7 @@ function openForm(type, pid, opts) {
     document.getElementById('btn-save').style.background = 'var(--accent3)';
     renderClubForm(c || {});
   } else if (type === 'lieu') {
-    const l = isEdit ? lieuxList().find(x => x.id === pid) : {};
+    const l = isEdit ? lieuxList().find(x => x.id === pid) : { ...(opts.prefill || {}) };
     pendingLieuPhotos = [];
     pendingLieuRemovals = [];
     document.getElementById('form-title').textContent = isEdit ? 'ÉDITER LIEU' : '+ NOUVEAU LIEU';
@@ -1550,3 +1551,115 @@ function submitForm() {
 buildTabs();
 render();
 initRemoteSync();
+
+
+// ── AJOUT RAPIDE ─────────────────────────────────────────────────────────────
+// On colle un lien Instagram, une capture d'écran ou un texte libre : le petit
+// serveur « ajout rapide » (dossier worker/) demande à Claude d'en tirer une fiche,
+// puis on ouvre le formulaire talent ou lieu pré-rempli, à vérifier avant d'enregistrer.
+let quickImage = null; // data URL JPEG compressée
+
+function quickAddEnabled() { return typeof QUICK_ADD_URL === 'string' && QUICK_ADD_URL.trim() !== ''; }
+
+function openQuickAdd() {
+  quickImage = null;
+  formCtx = { type: 'quick', id: null };
+  document.getElementById('form-title').textContent = 'AJOUT RAPIDE';
+  document.getElementById('form-btn-del').style.display = 'none';
+  document.getElementById('btn-save').style.display = 'none';
+  document.getElementById('form-body').innerHTML = `
+    <div class="field full">
+      <label>LIEN, TEXTE OU CAPTURE</label>
+      <textarea id="qa-text" rows="4" placeholder="Colle un lien Instagram, une description (« athlète trail, Annecy »), ou une capture d'écran (Ctrl+V / ⌘V)" onpaste="quickPaste(event)"></textarea>
+      <div class="field-hint">Avec un lien seul, Instagram ne donne souvent que le pseudo : une capture du profil donne plus d'infos.</div>
+    </div>
+    <div class="field full">
+      <div class="photo-upload-row">
+        <button type="button" class="btn-upload" onclick="document.getElementById('qa-file').click()">Choisir une image</button>
+        <input type="file" id="qa-file" accept="image/*" style="display:none" onchange="quickPick(this.files[0]); this.value=''">
+        <button type="button" class="btn-clear-photo" id="qa-clear" style="display:none" onclick="quickSetImage(null)">Retirer l'image</button>
+      </div>
+      <img id="qa-preview" class="photo-preview-img" alt="">
+    </div>
+    <div class="field full">
+      <button type="button" class="btn-save" id="qa-go" onclick="runQuickAdd()">Analyser</button>
+      <div class="field-hint" id="qa-status"></div>
+    </div>`;
+  document.getElementById('form-modal').style.display = 'flex';
+  setTimeout(() => document.getElementById('qa-text')?.focus(), 50);
+}
+
+function quickSetImage(dataUrl) {
+  quickImage = dataUrl;
+  const img = document.getElementById('qa-preview');
+  img.src = dataUrl || '';
+  img.classList.toggle('show', !!dataUrl);
+  document.getElementById('qa-clear').style.display = dataUrl ? '' : 'none';
+}
+async function quickPick(file) {
+  if (!file || !file.type.startsWith('image/')) return;
+  try { quickSetImage(await compressImage(file, 1600)); }
+  catch (e) { alert('Impossible de lire cette image.'); }
+}
+function quickPaste(e) {
+  const file = [...(e.clipboardData?.files || [])].find(f => f.type.startsWith('image/'));
+  if (file) { e.preventDefault(); quickPick(file); }
+}
+
+async function runQuickAdd() {
+  const text = document.getElementById('qa-text').value.trim();
+  if (!text && !quickImage) { alert('Colle un lien, un texte ou une image.'); return; }
+  const btn = document.getElementById('qa-go');
+  const status = document.getElementById('qa-status');
+  btn.disabled = true; btn.textContent = 'Analyse en cours…'; status.textContent = '';
+  const body = {
+    text,
+    image: quickImage ? { media_type: 'image/jpeg', data: quickImage.split(',')[1] } : null,
+    vocab: {
+      categories: db.categories.map(c => ({ id: c.id, label: c.label })),
+      sports: db.sports,
+      pays: COUNTRIES,
+      agences: agenceNames(),
+    },
+  };
+  try {
+    const res = await fetch(QUICK_ADD_URL, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    const out = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(out.error || 'Erreur ' + res.status);
+    openQuickResult(out);
+  } catch (e) {
+    status.textContent = e.message || 'Le service ne répond pas.';
+    btn.disabled = false; btn.textContent = 'Analyser';
+  }
+}
+
+function openQuickResult(out) {
+  // On ne garde que les valeurs connues du site (en ignorant la casse)
+  const keep = (vals, allowed) => [...new Set((vals || [])
+    .map(v => allowed.find(a => a.toLowerCase() === String(v).trim().toLowerCase()))
+    .filter(Boolean))];
+  const image = quickImage;
+  if (out.type === 'talent' && out.talent) {
+    const t = out.talent;
+    const prefill = {
+      nom: t.nom, prenom: t.prenom, sexe: t.sexe || undefined, age: t.age || '',
+      sports: keep(t.sports, db.sports), pays: keep(t.pays, COUNTRIES),
+      ville: t.ville || [], agence: keep(t.agence, agenceNames()),
+      tel: t.tel, mail: t.mail, insta: (t.insta || '').replace(/^@/, ''), site: t.site, notes: t.notes,
+    };
+    openForm('talent', undefined, { cats: keep(t.cats, db.categories.map(c => c.id)), prefill });
+  } else if (out.type === 'lieu' && out.lieu) {
+    const l = out.lieu;
+    openForm('lieu', undefined, { prefill: { ...l, pays: keep([l.pays], COUNTRIES)[0] || '' } });
+    if (image) { pendingLieuPhotos.push(image); renderLieuThumbs(); }
+  } else {
+    document.getElementById('qa-status').textContent = out.remarque || "Je n'ai pas reconnu un talent ou un lieu. Ajoute un mot d'explication.";
+    const btn = document.getElementById('qa-go'); btn.disabled = false; btn.textContent = 'Analyser';
+    return;
+  }
+  const note = document.createElement('div');
+  note.className = 'field full quick-note';
+  note.textContent = 'Fiche pré-remplie automatiquement : vérifie avant d\'enregistrer.' + (out.remarque ? ' ' + out.remarque : '');
+  document.getElementById('form-body').prepend(note);
+}
+if (quickAddEnabled()) document.getElementById('btn-quick').style.display = '';
