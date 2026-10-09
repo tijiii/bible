@@ -146,7 +146,7 @@ function chaptersList() {
       { label:'Agence', color:'#d066e0', run: () => openForm('agence') },
     ]) });
   chapitresList().forEach(ch => {
-    list.push({ key: 'ch:' + ch.id, label: ch.nom, color: ch.color || '#e8e8e8', count: (ch.items || []).length, custom: 'liste',
+    list.push({ key: 'ch:' + ch.id, label: ch.nom, color: ch.color || '#111111', count: (ch.items || []).length, custom: 'liste',
       add: () => openForm('item', undefined, { chap: ch.id }) });
   });
   return list;
@@ -258,7 +258,7 @@ function homeResultsHtml(q) {
   db.agences.forEach(a => { if (hit(a.nom, a.ville, a.pays)) rows.push({ name: a.nom, where: 'Agence · ' + (a.ville || ''), color: '#d066e0', open: `openForm('agence',${a.id})` }); });
   db.marques.forEach((m, i) => { const nom = typeof m === 'string' ? m : m.nom; if (hit(nom)) rows.push({ name: nom, where: 'Marque', color: '#d066e0', open: `openForm('marque',${i})` }); });
   chapitresList().forEach(ch => (ch.items || []).forEach(it => {
-    if (hit(it.nom, it.type, it.ville, it.pays, it.contact, it.notes)) rows.push({ name: it.nom, where: ch.nom + (it.ville ? ' · ' + it.ville : ''), color: ch.color || '#e8e8e8', open: `openDetail('item',${it.id},'${esc(String(ch.id))}')` });
+    if (hit(it.nom, it.type, it.ville, it.pays, it.contact, it.notes)) rows.push({ name: it.nom, where: ch.nom + (it.ville ? ' · ' + it.ville : ''), color: ch.color || '#111111', open: `openDetail('item',${it.id},'${esc(String(ch.id))}')` });
   }));
   if (!rows.length) return `<div class="empty">AUCUN RÉSULTAT</div>`;
   return `<div class="home-head"><span>RÉSULTATS</span><span>${rows.length}</span></div>
@@ -667,7 +667,7 @@ function renderItemForm(v) {
     <div class="field full"><label>NOTES</label><textarea id="f-notes" rows="3">${esc(v.notes||'')}</textarea></div>`;
 }
 
-const CHAPTER_COLORS = ['#c8f059','#59d4f0','#f0a059','#d066e0','#e24b4a','#f0e059','#e8e8e8'];
+const CHAPTER_COLORS = ['#c8f059','#59d4f0','#f0a059','#d066e0','#e24b4a','#f0e059','#111111'];
 
 function renderChapitreForm(v, isEdit, kind) {
   const color = v.color || CHAPTER_COLORS[chapitresList().length % CHAPTER_COLORS.length];
@@ -799,7 +799,7 @@ function renderSettings(main) {
     <div class="settings-section">
       <div class="settings-title">CHAPITRES (${chapitresList().length})</div>
       <div class="settings-list">${chapitresList().map(ch => `<div class="settings-item">
-        <div class="dot" style="background:${esc(ch.color||'#e8e8e8')}"></div>
+        <div class="dot" style="background:${esc(ch.color||'#111111')}"></div>
         <span>${esc(ch.nom)} (${(ch.items||[]).length})</span>
         <button onclick="openForm('chapitre','${esc(String(ch.id))}',{kind:'liste'})" title="Modifier">✎</button>
       </div>`).join('')}</div>
@@ -949,7 +949,7 @@ function openDetail(type, pid, chapId) {
     </div>`;
   } else {
     body = `<div style="padding:20px">
-      <div style="font-family:'Barlow Condensed',sans-serif;font-size:22px;font-weight:900;color:#fff;letter-spacing:.04em">${esc(p.nom)}</div>
+      <div style="font-family:var(--serif);font-size:26px;font-weight:500;color:var(--text);letter-spacing:0">${esc(p.nom)}</div>
       <div class="detail-tags" style="margin-top:8px">
         <span class="tag">${FLAGS[p.pays]||''} ${esc(p.pays||'')}</span>
         <span class="tag">${esc(p.ville||'')}</span>
@@ -1101,7 +1101,7 @@ function renderTalentForm(v) {
   let catsHtml = '';
   families.forEach(fam => {
     catsHtml += `<div style="margin-bottom:8px">
-      <div style="font-family:'Barlow Condensed',sans-serif;font-size:10px;letter-spacing:.12em;color:var(--muted);margin-bottom:6px">${fam.label.toUpperCase()}</div>
+      <div style="font-family:var(--serif);font-size:13px;letter-spacing:.01em;text-transform:lowercase;color:var(--muted);margin-bottom:6px">${fam.label.toUpperCase()}</div>
       <div class="cats-grid">`;
     fam.cats.forEach(cat => {
       const checked = selectedCats.includes(cat.id) ? 'checked' : '';
