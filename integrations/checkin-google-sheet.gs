@@ -37,7 +37,8 @@ var COLS = {
   boissonChaude: 'hot drink',
   logistique: 'any logistics questions',
   equipement: 'do you need any specific equipment',
-  photo: 'photo'
+  photo: 'photo',
+  sexe: ['gender', 'genre', 'sexe', 'sex']
 };
 
 var CHECKIN_FIELDS = ['voyage', 'allergies', 'intolerances', 'plat', 'snack',
@@ -61,8 +62,46 @@ var NATIONALITES = {
   'suedoise': 'Suède', 'suedois': 'Suède', 'swedish': 'Suède', 'se': 'Suède'
 };
 
+// Prénoms courants → sexe. Complété au moment de l'envoi par les prénoms déjà
+// présents dans la bible. Les prénoms mixtes (Camille, Dominique…) n'y sont pas.
+var PRENOMS = {
+  'alice': 'f', 'alix': 'f', 'amandine': 'f', 'amelie': 'f', 'anais': 'f', 'anna': 'f', 'anne': 'f', 'annabelle': 'f',
+  'aurelie': 'f', 'axelle': 'f', 'beatrice': 'f', 'capucine': 'f', 'caroline': 'f', 'cassandra': 'f', 'catherine': 'f', 'cecile': 'f',
+  'celia': 'f', 'celine': 'f', 'chantal': 'f', 'charlotte': 'f', 'chloe': 'f', 'clara': 'f', 'clarisse': 'f', 'claire': 'f',
+  'clemence': 'f', 'constance': 'f', 'coralie': 'f', 'delphine': 'f', 'diane': 'f', 'elena': 'f', 'eleonore': 'f', 'elisa': 'f',
+  'elise': 'f', 'eloise': 'f', 'elodie': 'f', 'emilie': 'f', 'emma': 'f', 'estelle': 'f', 'eva': 'f', 'fanny': 'f',
+  'faustine': 'f', 'flora': 'f', 'florence': 'f', 'gabrielle': 'f', 'helene': 'f', 'ines': 'f', 'irene': 'f', 'isabelle': 'f',
+  'jade': 'f', 'jeanne': 'f', 'josephine': 'f', 'julia': 'f', 'julie': 'f', 'juliette': 'f', 'justine': 'f', 'laetitia': 'f',
+  'lara': 'f', 'laura': 'f', 'laure': 'f', 'lea': 'f', 'leila': 'f', 'lena': 'f', 'lina': 'f', 'lisa': 'f',
+  'lola': 'f', 'lou': 'f', 'louise': 'f', 'louna': 'f', 'lucie': 'f', 'lucile': 'f', 'luna': 'f', 'lydia': 'f',
+  'madeleine': 'f', 'maelle': 'f', 'manon': 'f', 'margaux': 'f', 'margot': 'f', 'marie': 'f', 'marine': 'f', 'marion': 'f',
+  'mathilde': 'f', 'maya': 'f', 'melanie': 'f', 'melissa': 'f', 'mia': 'f', 'morgane': 'f', 'nadia': 'f', 'natacha': 'f',
+  'nathalie': 'f', 'noemie': 'f', 'oceane': 'f', 'olivia': 'f', 'ophelie': 'f', 'pauline': 'f', 'penelope': 'f', 'rachel': 'f',
+  'rebecca': 'f', 'romane': 'f', 'rose': 'f', 'salome': 'f', 'sandra': 'f', 'sara': 'f', 'sarah': 'f', 'selena': 'f',
+  'sofia': 'f', 'solene': 'f', 'sophie': 'f', 'stephanie': 'f', 'suzanne': 'f', 'tatiana': 'f', 'valentine': 'f', 'valerie': 'f',
+  'vanessa': 'f', 'victoire': 'f', 'victoria': 'f', 'violette': 'f', 'virginie': 'f', 'yasmine': 'f', 'zoe': 'f', 'louliana': 'f',
+  'adam': 'h', 'adrien': 'h', 'alexandre': 'h', 'alexis': 'h', 'antoine': 'h', 'anthony': 'h', 'arnaud': 'h', 'arthur': 'h',
+  'augustin': 'h', 'aurelien': 'h', 'axel': 'h', 'baptiste': 'h', 'basile': 'h', 'benjamin': 'h', 'benoit': 'h', 'bruno': 'h',
+  'cedric': 'h', 'charles': 'h', 'christophe': 'h', 'clement': 'h', 'corentin': 'h', 'cyril': 'h', 'damien': 'h', 'daniel': 'h',
+  'david': 'h', 'denis': 'h', 'didier': 'h', 'dylan': 'h', 'edouard': 'h', 'emile': 'h', 'emmanuel': 'h', 'eric': 'h',
+  'etienne': 'h', 'fabien': 'h', 'felix': 'h', 'florian': 'h', 'francois': 'h', 'frederic': 'h', 'gabriel': 'h', 'gael': 'h',
+  'gaspard': 'h', 'gauthier': 'h', 'geoffrey': 'h', 'gilles': 'h', 'gregoire': 'h', 'guillaume': 'h', 'hugo': 'h', 'jacques': 'h',
+  'jean': 'h', 'jeremy': 'h', 'jerome': 'h', 'jonathan': 'h', 'jordan': 'h', 'joseph': 'h', 'jules': 'h', 'julien': 'h',
+  'kevin': 'h', 'killian': 'h', 'leo': 'h', 'leon': 'h', 'loic': 'h', 'louis': 'h', 'luc': 'h', 'lucas': 'h',
+  'marc': 'h', 'marco': 'h', 'martin': 'h', 'mathieu': 'h', 'matteo': 'h', 'matthieu': 'h', 'maxime': 'h', 'michel': 'h',
+  'mickael': 'h', 'nathan': 'h', 'nicolas': 'h', 'noah': 'h', 'olivier': 'h', 'oscar': 'h', 'pascal': 'h', 'patrick': 'h',
+  'paul': 'h', 'philippe': 'h', 'pierre': 'h', 'quentin': 'h', 'raphael': 'h', 'remi': 'h', 'robin': 'h', 'romain': 'h',
+  'samuel': 'h', 'sebastien': 'h', 'simon': 'h', 'stephane': 'h', 'theo': 'h', 'thibault': 'h', 'thomas': 'h', 'timothee': 'h',
+  'tom': 'h', 'tristan': 'h', 'valentin': 'h', 'victor': 'h', 'vincent': 'h', 'william': 'h', 'xavier': 'h', 'yann': 'h',
+  'yannick': 'h', 'yves': 'h', 'roger': 'h'
+};
+
+var MIXTES = ['camille', 'dominique', 'claude', 'alex', 'charlie', 'sacha', 'sasha', 'andrea',
+  'eden', 'noa', 'morgan', 'yael', 'ange', 'jo', 'sam', 'kim', 'robin'];
+
 var EMPTY_ANSWERS = ['', 'non', 'no', 'none', 'aucun', 'aucune', 'rien', 'nc', 'n/a', 'na',
-  '-', '/', 'nope', 'pas de', 'nothing', 'no thanks', 'non merci', 'ras'];
+  '-', '/', '?', 'nope', 'pas de', 'nothing', 'no thanks', 'non merci', 'ras',
+  'idk', 'je sais pas', 'all good', 'tout roule', 'rien de special'];
 
 // ── Menu et déclencheur ────────────────────────────────────────────────
 
@@ -70,6 +109,7 @@ function onOpen() {
   SpreadsheetApp.getUi().createMenu('Bible')
     .addItem('Envoyer les nouvelles réponses vers la bible', 'syncCheckins')
     .addItem('Activer l\'envoi automatique', 'installTrigger')
+    .addItem('Renvoyer toutes les réponses', 'resyncAll')
     .addToUi();
 }
 
@@ -84,6 +124,17 @@ function installTrigger() {
 }
 
 // ── Synchronisation ────────────────────────────────────────────────────
+
+// Vide la colonne « Bible » puis renvoie tout (met à jour les profils déjà liés).
+function resyncAll() {
+  var sheet = SpreadsheetApp.getActive().getSheets()[0];
+  var headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0].map(String);
+  var statusCol = headers.indexOf(STATUS_HEADER);
+  if (statusCol !== -1 && sheet.getLastRow() > 1) {
+    sheet.getRange(2, statusCol + 1, sheet.getLastRow() - 1, 1).clearContent();
+  }
+  syncCheckins();
+}
 
 function syncCheckins() {
   var lock = LockService.getScriptLock();
@@ -126,9 +177,9 @@ function findColumns(headers) {
   var cols = {};
   var lower = headers.map(function (h) { return norm(h); });
   Object.keys(COLS).forEach(function (k) {
-    var prefix = norm(COLS[k]);
-    for (var i = 0; i < lower.length; i++) {
-      if (lower[i].indexOf(prefix) === 0) { cols[k] = i; break; }
+    var prefixes = [].concat(COLS[k]).map(norm);
+    for (var i = 0; i < lower.length && cols[k] === undefined; i++) {
+      prefixes.forEach(function (prefix) { if (lower[i].indexOf(prefix) === 0) cols[k] = i; });
     }
   });
   return cols;
@@ -233,6 +284,12 @@ function splitName(full) {
     };
   }
   if (words.length === 1) return { prenom: '', nom: words[0].toUpperCase() };
+  // "zanella sebastien" : si le dernier mot est un prénom connu, il passe devant.
+  var lastKey = norm(words[words.length - 1]).replace(/[^a-z]/g, '');
+  var firstKey = norm(words[0]).replace(/[^a-z]/g, '');
+  if (PRENOMS[lastKey] && !PRENOMS[firstKey]) {
+    return { nom: words.slice(0, -1).join(' ').toUpperCase(), prenom: capitalize(words[words.length - 1]) };
+  }
   return {
     nom: words[words.length - 1].toUpperCase(),
     prenom: words.slice(0, -1).map(capitalize).join(' ')
@@ -267,20 +324,79 @@ function findTalent(talents, row) {
   return partial.length === 1 ? partial[0] : null;
 }
 
-function newId() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 7); }
+// Devine le sexe à partir du prénom ; '' si inconnu ou ambigu.
+function sexeFromPrenom(db, prenom) {
+  var known = {};
+  (db.talents || []).forEach(function (t) {
+    var tokens = nameTokens(t.prenom);
+    var p = tokens.length === 1 ? tokens[0] : '';
+    if (!p || !t.sexe || MIXTES.indexOf(p) !== -1) return;
+    known[p] = known[p] && known[p] !== t.sexe ? '?' : t.sexe;
+  });
+  var found = '';
+  var words = norm(prenom).replace(/[^a-z -]/g, ' ').split(/[\s-]+/).filter(Boolean);
+  for (var i = 0; i < words.length; i++) {
+    if (MIXTES.indexOf(words[i]) !== -1) continue;
+    var sx = known[words[i]] || PRENOMS[words[i]] || '';
+    if (sx === 'f' || sx === 'h') { found = sx; break; }
+  }
+  return found;
+}
+
+function sexeFrom(v) {
+  var s = norm(v);
+  if (!s) return '';
+  if (/^(f|fem|wom|nana)/.test(s)) return 'f';
+  if (/^(h|m|man|male|gar)/.test(s)) return 'h';
+  return '';
+}
+
+// Le formulaire est envoyé aux modèles : Modèle Femme / Homme selon le sexe,
+// sinon « Modèle à classer » (créée si besoin) pour qu'il apparaisse dans Modèles.
+function modelCategory(db, sexe) {
+  if (sexe) return 'modele-' + sexe;
+  db.categories = db.categories || [];
+  var id = 'modele-a-classer';
+  if (!db.categories.some(function (c) { return c.id === id; })) {
+    db.categories.push({ id: id, label: 'Modèle à classer', color: '#9a9a96' });
+  }
+  return id;
+}
+
+// Même format que le site (un nombre) : le site met l'id tel quel dans ses onclick.
+function newId() { return Date.now() + Math.floor(Math.random() * 9999); }
+
+// Répare les fiches créées par une ancienne version du script (id en texte).
+function fixIds(db) {
+  (db.talents || []).forEach(function (t) {
+    if (typeof t.id !== 'number' && isNaN(Number(t.id))) t.id = newId();
+    else if (typeof t.id === 'string') t.id = Number(t.id);
+  });
+}
 
 function applyCheckin(db, row, now) {
   db.talents = db.talents || [];
+  fixIds(db);
   var t = findTalent(db.talents, row);
   var created = false;
   if (!t) {
     var n = splitName(row.nom);
     t = { id: newId(), nom: n.nom, prenom: n.prenom, sexe: '', cats: [], agence: [], pays: [],
       ville: [], sports: [], insta: '', site: '', photo: '', tel: '', mail: '',
-      notes: 'Ajouté depuis le check-in : vérifier la catégorie et le sexe.' };
+      notes: 'Ajouté depuis le check-in.' };
     db.talents.push(t);
     created = true;
   }
+
+  // Fiche créée à l'envers par une ancienne version (« Zanella SEBASTIEN ») : on remet dans l'ordre.
+  if (String(t.notes || '').indexOf('Ajouté depuis le check-in') === 0) {
+    var pk = norm(t.prenom).replace(/[^a-z]/g, ''), nk = norm(t.nom).replace(/[^a-z]/g, '');
+    if (PRENOMS[nk] && !PRENOMS[pk] && pk) { var tmp = t.prenom; t.prenom = capitalize(t.nom); t.nom = tmp.toUpperCase(); }
+  }
+  var sexe = sexeFrom(row.sexe) || sexeFromPrenom(db, (t.prenom || '') + ' ' + clean(row.nom));
+  if (!t.sexe && sexe) t.sexe = sexe;
+  var aClasser = t.cats && t.cats.length === 1 && t.cats[0] === 'modele-a-classer';
+  if (!t.cats || !t.cats.length || (aClasser && t.sexe)) t.cats = [modelCategory(db, t.sexe)];
 
   if (!clean(t.tel) && meaningful(row.tel)) t.tel = clean(row.tel);
   if (!clean(t.mail) && meaningful(row.mail)) t.mail = clean(row.mail).toLowerCase();
@@ -304,5 +420,5 @@ function applyCheckin(db, row, now) {
 
 if (typeof module !== 'undefined') {
   module.exports = { applyCheckin: applyCheckin, findTalent: findTalent, splitName: splitName,
-    countryFrom: countryFrom, ageFrom: ageFrom, meaningful: meaningful, findColumns: findColumns };
+    countryFrom: countryFrom, sexeFrom: sexeFrom, ageFrom: ageFrom, meaningful: meaningful, findColumns: findColumns };
 }
