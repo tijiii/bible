@@ -62,7 +62,8 @@ var NATIONALITES = {
 };
 
 var EMPTY_ANSWERS = ['', 'non', 'no', 'none', 'aucun', 'aucune', 'rien', 'nc', 'n/a', 'na',
-  '-', '/', 'nope', 'pas de', 'nothing', 'no thanks', 'non merci', 'ras'];
+  '-', '/', '?', 'nope', 'pas de', 'nothing', 'no thanks', 'non merci', 'ras',
+  'idk', 'je sais pas', 'all good', 'tout roule', 'rien de special'];
 
 // ── Menu et déclencheur ────────────────────────────────────────────────
 
