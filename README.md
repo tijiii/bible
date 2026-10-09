@@ -70,3 +70,17 @@ Les photos importées sont réduites (700 px) puis envoyées dans la table Airta
 Chapitre **LIEUX** : nom, type, adresse, pays/ville, coordonnées GPS (bouton **MA POSITION** sur place), lien Google Maps, coût estimé et détail des coûts, contact, notes, et plusieurs photos. La fiche d'un lieu affiche ses photos, une carte et un bouton pour l'ouvrir dans Google Maps.
 
 Les infos des lieux sont stockées avec le reste de la base (ligne `db`). Les photos importées sont envoyées dans la table Airtable, sur une ligne `lieu:<id du lieu>`, colonne **Attachments** (toutes les photos du lieu sur la même ligne). Ne supprime pas ces lignes dans Airtable.
+
+## Ajout rapide (lien, capture, texte)
+
+Le bouton « ajout rapide » permet à toute l'équipe de coller un lien Instagram, une capture d'écran ou une description : Claude en tire une fiche talent ou lieu, et le formulaire s'ouvre pré-rempli, à vérifier avant d'enregistrer. La clé Anthropic n'est jamais dans le site : elle reste sur un petit serveur Cloudflare (dossier `worker/`).
+
+Mise en place, une seule fois :
+
+1. Créer une clé API sur [console.anthropic.com](https://console.anthropic.com) (et y fixer une limite de dépense mensuelle).
+2. Créer un compte gratuit sur [cloudflare.com](https://dash.cloudflare.com), puis un jeton API avec le modèle « Edit Cloudflare Workers ». Noter aussi l'Account ID (page d'accueil Workers).
+3. Dans le dépôt GitHub : Settings → Secrets and variables → Actions, ajouter `ANTHROPIC_API_KEY`, `CLOUDFLARE_API_TOKEN` et `CLOUDFLARE_ACCOUNT_ID`.
+4. Onglet Actions → « Déployer l'ajout rapide » → Run workflow. À la fin, l'adresse du serveur s'affiche (`https://bible-ajout-rapide.<compte>.workers.dev`).
+5. Mettre cette adresse dans `QUICK_ADD_URL` (fichier `airtable-config.js`). Le bouton apparaît alors sur le site.
+
+Le serveur n'accepte que les demandes venant de `https://tijiii.github.io` (variable `ALLOWED_ORIGINS` dans `worker/wrangler.toml`).

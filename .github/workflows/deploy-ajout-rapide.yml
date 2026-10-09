@@ -1,0 +1,30 @@
+# Déploie le serveur « ajout rapide » (dossier worker/) sur Cloudflare Workers
+# à chaque modification de ce dossier sur main, ou à la main depuis l'onglet Actions.
+# Secrets du dépôt nécessaires : CLOUDFLARE_API_TOKEN, CLOUDFLARE_ACCOUNT_ID, ANTHROPIC_API_KEY.
+name: Déployer l'ajout rapide
+
+on:
+  push:
+    branches: [main]
+    paths: ['worker/**']
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm ci
+        working-directory: worker
+      - uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          workingDirectory: worker
+          secrets: |
+            ANTHROPIC_API_KEY
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}

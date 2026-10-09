@@ -341,3 +341,13 @@ a { color:inherit; }
 }
 .cat-check span { color:var(--text) !important; }
 #form-title { text-transform:lowercase; }
+
+/* ── AJOUT RAPIDE ── */
+.btn-quick { background:#fff; border:1px solid #111; color:#111; padding:7px 14px; font-family:var(--serif); font-size:14px; cursor:pointer; white-space:nowrap; text-transform:lowercase; }
+.btn-quick:hover { background:var(--bg3); }
+#qa-text { background:#fff; border:1px solid var(--border); color:var(--text); padding:10px; font-family:var(--serif); font-size:16px; width:100%; outline:none; resize:vertical; }
+#qa-text:focus { border-color:#111; }
+#qa-go { width:100%; padding:12px; font-size:16px; text-transform:lowercase; }
+#qa-go:disabled { opacity:.5; cursor:wait; }
+#qa-status { color:var(--red); font-size:14px; }
+.quick-note { background:var(--bg3); border-left:2px solid #111; padding:10px 12px; font-size:14px; font-style:italic; }

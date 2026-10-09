@@ -8,3 +8,6 @@ const AIRTABLE_TOKEN    = 'patnQaTGz94V7HLta.df4792ab5262313f864f193f5ee3b580661
 
 // Intervalle de vérification des mises à jour des autres membres (ms)
 const SYNC_POLL_INTERVAL = 8000;
+
+// Adresse du serveur « ajout rapide » (dossier worker/). Vide = bouton masqué.
+const QUICK_ADD_URL = '';
