@@ -37,7 +37,7 @@ var COLS = {
   boissonChaude: 'hot drink',
   logistique: 'any logistics questions',
   equipement: 'do you need any specific equipment',
-  photo: 'photo',
+  photo: ['recent polas', 'polas', 'photo'],
   sexe: ['gender', 'genre', 'sexe', 'sex'],
   insta: 'instagram',
   activites: ['main activit', 'activit', 'sport'],
@@ -178,16 +178,25 @@ function syncCheckins() {
     var statuses = [];
     pending.forEach(function (r) {
       var row = rowToAnswer(values[r], cols);
-      if (row.photo) shareDrivePhoto(row.photo);
       var out = {};
-      statuses.push({ r: r, msg: applyCheckin(db, row, null, out), talent: out.talent });
+      statuses.push({ r: r, msg: applyCheckin(db, row, null, out), talent: out.talent, photoId: driveFileId(row.photo) });
     });
     saveDb(rec.id, db);
+    // Photo envoyée dans le formulaire : copiée dans Airtable comme une photo
+    // importée depuis le site (pas besoin de partager le fichier Drive).
+    statuses.forEach(function (s) {
+      if (!s.talent || !s.photoId) return;
+      var res;
+      try { res = attachFormPhoto(s.talent.id, s.photoId); } catch (e) { res = 'erreur'; }
+      if (res === 'ok') s.msg += ' · photo du formulaire ajoutée';
+      else if (res === 'erreur') s.msg += ' · photo du formulaire illisible';
+      if (res !== 'erreur') s.formPhoto = true;
+    });
     // Photo de profil Instagram pour les fiches sans photo (au mieux : Instagram
     // peut refuser, dans ce cas la fiche reste sans photo).
     statuses.forEach(function (s) {
       var t = s.talent;
-      if (!t || !t.insta || String(t.photo || '').trim()) return;
+      if (!t || s.formPhoto || !t.insta || String(t.photo || '').trim()) return;
       var res = attachInstagramPhoto(t.id, t.insta);
       if (res === 'ok') s.msg += ' · photo Instagram ajoutée';
       else if (res === 'introuvable') s.msg += ' · photo Instagram introuvable';
@@ -227,14 +236,10 @@ function rowToAnswer(values, cols) {
   return row;
 }
 
-// Les photos envoyées via le formulaire sont privées : on les rend visibles
-// par lien pour que la bible puisse les afficher.
-function shareDrivePhoto(link) {
-  var m = String(link).match(/[?&]id=([a-zA-Z0-9_-]+)/) || String(link).match(/\/d\/([a-zA-Z0-9_-]+)/);
-  if (!m) return;
-  try {
-    DriveApp.getFileById(m[1]).setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
-  } catch (e) { /* pas bloquant : la photo ne s'affichera simplement pas */ }
+function driveFileId(link) {
+  link = String(link || '').split(',')[0];
+  var m = link.match(/[?&]id=([a-zA-Z0-9_-]+)/) || link.match(/\/d\/([a-zA-Z0-9_-]+)/);
+  return m ? m[1] : '';
 }
 
 // ── Airtable ───────────────────────────────────────────────────────────
@@ -290,6 +295,61 @@ function attachInstagramPhoto(talentId, handle) {
     muteHttpExceptions: true
   });
   return res.getResponseCode() < 300 ? 'ok' : 'introuvable';
+}
+
+// Photo du formulaire : le fichier est lu dans Drive puis envoyé à Airtable.
+// Elle remplace une photo Instagram ou une ancienne photo du formulaire, mais
+// jamais une photo importée à la main depuis le site.
+var MAX_UPLOAD = 5 * 1024 * 1024;
+
+function attachFormPhoto(talentId, fileId) {
+  var key = 'photo:' + talentId;
+  var headers = { Authorization: 'Bearer ' + airtableToken() };
+  var found = JSON.parse(UrlFetchApp.fetch(airtableUrl('?filterByFormula=' +
+    encodeURIComponent("{key}='" + key + "'") + '&maxRecords=1'), { headers: headers }).getContentText()).records[0];
+  var current = found ? (found.fields.Attachments || []) : [];
+  if (current.length) {
+    var name = String(current[0].filename || '');
+    if (name.indexOf(fileId) !== -1) return 'deja';
+    if (name.indexOf('-form-') === -1 && name.indexOf('-instagram') === -1) return 'deja';
+  }
+
+  var blob = drivePhotoBlob(fileId);
+  var ext = (String(blob.getContentType()).split('/')[1] || 'jpg').replace('jpeg', 'jpg');
+  var res = UrlFetchApp.fetch(airtableUrl(found ? '/' + found.id : ''), {
+    method: found ? 'patch' : 'post',
+    contentType: 'application/json',
+    headers: headers,
+    payload: JSON.stringify({ fields: { key: key, Attachments: [] } })
+  });
+  var recordId = found ? found.id : JSON.parse(res.getContentText()).id;
+  UrlFetchApp.fetch('https://content.airtable.com/v0/' + AIRTABLE_BASE + '/' + recordId + '/Attachments/uploadAttachment', {
+    method: 'post',
+    contentType: 'application/json',
+    headers: headers,
+    payload: JSON.stringify({
+      contentType: blob.getContentType(),
+      file: Utilities.base64Encode(blob.getBytes()),
+      filename: 'talent-' + talentId + '-form-' + fileId + '.' + ext
+    })
+  });
+  return 'ok';
+}
+
+// Le fichier d'origine s'il fait moins de 5 Mo (limite Airtable), sinon une
+// version réduite fournie par Drive.
+function drivePhotoBlob(fileId) {
+  var file = DriveApp.getFileById(fileId);
+  if (file.getSize() <= MAX_UPLOAD && /^image\//.test(file.getMimeType())) return file.getBlob();
+  var token = ScriptApp.getOAuthToken();
+  var meta = JSON.parse(UrlFetchApp.fetch('https://www.googleapis.com/drive/v3/files/' + fileId +
+    '?fields=thumbnailLink&supportsAllDrives=true', { headers: { Authorization: 'Bearer ' + token } }).getContentText());
+  if (meta.thumbnailLink) {
+    var r = UrlFetchApp.fetch(meta.thumbnailLink.replace(/=s\d+$/, '=s1600'),
+      { headers: { Authorization: 'Bearer ' + token }, muteHttpExceptions: true });
+    if (r.getResponseCode() === 200) return r.getBlob();
+  }
+  return file.getThumbnail();
 }
 
 // Essaie plusieurs façons publiques (sans compte) de trouver la photo de profil.
@@ -563,7 +623,9 @@ function applyCheckin(db, row, now, out) {
   var pays = Array.isArray(t.pays) ? t.pays : (t.pays ? [t.pays] : []);
   if (!pays.length && meaningful(row.nationalite)) t.pays = countryFrom(row.nationalite);
   applyProfil(db, t, row);
-  if (!clean(t.photo) && meaningful(row.photo)) t.photo = clean(String(row.photo).split(',')[0]);
+  // Ancienne version : le lien Drive était mis dans la fiche. La photo passe
+  // maintenant par Airtable, donc on retire ce lien pour qu'elle s'affiche.
+  if (/drive\.google\.com/.test(clean(t.photo)) && meaningful(row.photo)) t.photo = '';
 
   var checkin = {};
   var d = row.date instanceof Date ? row.date : parseDate(row.date);
@@ -584,5 +646,5 @@ function applyCheckin(db, row, now, out) {
 
 if (typeof module !== 'undefined') {
   module.exports = { applyCheckin: applyCheckin, findTalent: findTalent, splitName: splitName,
-    countryFrom: countryFrom, sexeFrom: sexeFrom, ageFrom: ageFrom, meaningful: meaningful, findColumns: findColumns };
+    countryFrom: countryFrom, sexeFrom: sexeFrom, ageFrom: ageFrom, meaningful: meaningful, findColumns: findColumns, driveFileId: driveFileId };
 }
