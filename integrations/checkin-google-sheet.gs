@@ -247,7 +247,7 @@ function driveFileId(link) {
 function storeHeaders() {
   var key = PropertiesService.getScriptProperties().getProperty('BIBLE_KEY');
   if (!key) throw new Error('Ajoute la propriété de script BIBLE_KEY (Paramètres du projet → Propriétés du script).');
-  return { Authorization: 'Bearer ' + key };
+  return { Authorization: 'Bearer ' + String(key).replace(/\s/g, '') };
 }
 
 function fetchDb() {
