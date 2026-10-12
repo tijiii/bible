@@ -63,13 +63,13 @@ Dans la fiche d'un talent (ÉDITER ou + NOUVEAU TALENT), deux possibilités, tou
 - coller un lien d'image (Google Drive, Imgur…) dans **PHOTO** ;
 - ou cliquer **OU IMPORTER DEPUIS CET APPAREIL**, choisir l'image, puis **SAUVEGARDER**.
 
-Les photos importées sont réduites (700 px) puis envoyées dans la table Airtable, sur une ligne `photo:<id du talent>`, colonne **Attachments**. Ne supprime pas ces lignes dans Airtable.
+Les photos importées sont réduites (700 px) puis envoyées au serveur Cloudflare (voir « Base partagée »).
 
 ## Lieux (scouting)
 
 Chapitre **LIEUX** : nom, type, adresse, pays/ville, coordonnées GPS (bouton **MA POSITION** sur place), lien Google Maps, coût estimé et détail des coûts, contact, notes, et plusieurs photos. La fiche d'un lieu affiche ses photos, une carte et un bouton pour l'ouvrir dans Google Maps.
 
-Les infos des lieux sont stockées avec le reste de la base (ligne `db`). Les photos importées sont envoyées dans la table Airtable, sur une ligne `lieu:<id du lieu>`, colonne **Attachments** (toutes les photos du lieu sur la même ligne). Ne supprime pas ces lignes dans Airtable.
+Les infos des lieux sont stockées avec le reste de la base. Les photos importées sont envoyées au serveur Cloudflare, comme celles des talents.
 
 ## Ajout rapide (lien, capture, texte)
 
@@ -81,20 +81,30 @@ Mise en place, une seule fois :
 2. Créer un compte gratuit sur [cloudflare.com](https://dash.cloudflare.com), puis un jeton API avec le modèle « Edit Cloudflare Workers ». Noter aussi l'Account ID (page d'accueil Workers).
 3. Dans le dépôt GitHub : Settings → Secrets and variables → Actions, ajouter `ANTHROPIC_API_KEY`, `CLOUDFLARE_API_TOKEN` et `CLOUDFLARE_ACCOUNT_ID`.
 4. Onglet Actions → « Déployer l'ajout rapide » → Run workflow. À la fin, l'adresse du serveur s'affiche (`https://bible-ajout-rapide.<compte>.workers.dev`).
-5. Mettre cette adresse dans `QUICK_ADD_URL` (fichier `airtable-config.js`). Le bouton apparaît alors sur le site.
+5. Mettre cette adresse dans `SERVER_URL` (fichier `config.js`). Le bouton apparaît alors sur le site.
 
 Le serveur n'accepte que les demandes venant de `https://tijiii.github.io` (variable `ALLOWED_ORIGINS` dans `worker/wrangler.toml`).
+
+## Base partagée
+
+La base (talents, clubs, lieux…) et les photos importées sont gardées par le même serveur Cloudflare, dans un espace Workers KV appelé `BIBLE`, créé automatiquement au premier déploiement (plan gratuit : 100 000 lectures par jour). Le site relit la base toutes les 30 secondes, seulement quand l'onglet est visible.
+
+- Une copie de sécurité de la base est gardée chaque heure pendant 30 jours (clés `backup:<date>` dans Workers KV, visibles dans le tableau de bord Cloudflare).
+- Le serveur refuse une sauvegarde qui ferait perdre plus de la moitié des talents d'un coup.
+- Si la base du serveur est vide, le premier appareil qui ouvre le site et en a une copie l'y envoie.
+
+Le script du check-in écrit aussi dans cette base. Il utilise une clé : choisir un mot de passe long, l'ajouter dans GitHub (Settings → Secrets and variables → Actions) sous le nom `BIBLE_KEY`, relancer « Déployer l'ajout rapide », et mettre la même valeur dans les propriétés du script Apps Script (`BIBLE_KEY`).
 
 ## Check-in → profils
 
 Le script `integrations/checkin-google-sheet.gs` relie les réponses du formulaire de check-in aux profils de la bible (par email, puis par nom) et crée le profil s'il n'existe pas.
 
-Copié dans la bible : téléphone, email, âge, nationalité (seulement si vides), la photo si le formulaire contient une question « Photo », et les infos pratiques (voyage, allergies, intolérances, repas, boissons, logistique, matériel). Les infos médicales, phobies, limitations physiques, mal des transports, altitude et médicaments restent uniquement dans le Google Sheet.
+Copié dans la bible : téléphone, email, âge, nationalité (seulement si vides), la photo si le formulaire contient une question « Photo » ou « Polas », et les infos pratiques (voyage, allergies, intolérances, repas, boissons, logistique, matériel). Les infos médicales, phobies, limitations physiques, mal des transports, altitude et médicaments restent uniquement dans le Google Sheet.
 
 Installation (une seule fois) :
 1. Ouvrir le Google Sheet des réponses → Extensions → Apps Script.
 2. Remplacer le contenu par celui de `integrations/checkin-google-sheet.gs`, puis enregistrer.
-3. Paramètres du projet (roue dentée) → Propriétés du script → ajouter `AIRTABLE_TOKEN` avec le même token que dans `airtable-config.js`.
+3. Paramètres du projet (roue dentée) → Propriétés du script → ajouter `BIBLE_KEY` avec la même valeur que le secret GitHub `BIBLE_KEY` (voir « Base partagée »).
 4. Recharger le Google Sheet : un menu « Bible » apparaît. Cliquer « Activer l'envoi automatique » et accepter les autorisations Google.
 
 Les réponses déjà présentes sont envoyées tout de suite, puis chaque nouvelle réponse arrive automatiquement. Une colonne « Bible » indique pour chaque ligne le profil lié ou créé ; vider la case d'une ligne pour la renvoyer.

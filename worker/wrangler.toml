@@ -5,3 +5,8 @@ compatibility_flags = ["nodejs_compat"]
 
 [vars]
 ALLOWED_ORIGINS = "https://tijiii.github.io"
+
+# Base partagée de la bible (remplace Airtable). Créée automatiquement au
+# premier déploiement.
+[[kv_namespaces]]
+binding = "BIBLE"

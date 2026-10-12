@@ -1,7 +1,7 @@
 // ── STORAGE ───────────────────────────────────────────────────────────────────
-// La base est stockée sur Airtable (partagée avec toute l'équipe).
-// localStorage sert uniquement de cache pour afficher quelque chose instantanément
-// avant que la synchronisation avec Airtable soit terminée.
+// La base est gardée par le serveur Cloudflare (partagée avec toute l'équipe).
+// localStorage sert de cache pour afficher quelque chose instantanément
+// avant que la synchronisation soit terminée.
 const STORAGE_KEY = 'casting_bible_v2_cache';
 
 function loadDb() {
@@ -24,7 +24,7 @@ function loadDb() {
 function saveDb() {
   // Cache local instantané
   try { localStorage.setItem(STORAGE_KEY, JSON.stringify(db)); } catch(e) {}
-  // Puis on pousse vers Airtable pour que toute l'équipe voie le changement
+  // Puis on l'envoie au serveur pour que toute l'équipe voie le changement
   saveDbRemote();
 }
 
@@ -43,8 +43,8 @@ function agenceNames() { return db.agences.map(a => a.nom).sort(); }
 function lieuxList() { if (!Array.isArray(db.lieux)) db.lieux = []; return db.lieux; }
 
 // ── PHOTOS ────────────────────────────────────────────────────────────────────
-// Les photos importées depuis un appareil sont envoyées sur Airtable (voir
-// airtable-sync.js) pour être visibles par toute l'équipe. Le stockage local
+// Les photos importées depuis un appareil sont envoyées au serveur (voir
+// sync.js) pour être visibles par toute l'équipe. Le stockage local
 // ci-dessous ne sert plus que de secours si l'envoi échoue.
 const LOCAL_PHOTOS_KEY = 'casting_bible_local_photos';
 let pendingLocalPhoto = null; // base64 en attente d'envoi lors du submit
@@ -115,7 +115,7 @@ let formSexe   = 'f';
 // ── CHAPITRES ─────────────────────────────────────────────────────────────────
 // Un chapitre = une entrée de la page d'accueil. Les chapitres "liste" créés
 // depuis l'app (comme Clubs) sont stockés dans db.chapitres et synchronisés
-// avec Airtable comme le reste de la base.
+// avec le serveur comme le reste de la base.
 const TALENT_FAMILIES = [
   { key:'modele',  label:'Modèles',     color:'#b5654a' },
   { key:'athlete', label:'Athlètes',    color:'#3f6e8c' },
@@ -490,7 +490,7 @@ function renderClubs(main) {
 
 // ── LIEUX (scouting) ──────────────────────────────────────────────────────────
 function lieuPhotoUrls(l) {
-  // Photos importées (Airtable) puis liens collés à la main
+  // Photos importées (serveur) puis liens collés à la main
   const imported = getLieuPhotos(l.id).map(p => ({ url: p.url, full: p.full }));
   const links = (l.photos || []).map(normalizePhotoUrl).filter(Boolean).map(u => ({ url: u, full: u }));
   return [...imported, ...links];
@@ -1241,7 +1241,7 @@ function renderClubForm(v) {
 
 // ── FORMULAIRE LIEU ──────────────────────────────────────────────────────────
 let pendingLieuPhotos   = []; // dataURLs importées, envoyées au SAUVEGARDER
-let pendingLieuRemovals = []; // ids des photos Airtable à retirer au SAUVEGARDER
+let pendingLieuRemovals = []; // ids des photos du serveur à retirer au SAUVEGARDER
 
 function renderLieuForm(v) {
   const paysl = `<option value="">—</option>` + COUNTRIES.map(p => `<option value="${esc(p)}"${(v.pays||'')===p?' selected':''}>${FLAGS[p]||''} ${esc(p)}</option>`).join('');
@@ -1385,7 +1385,7 @@ function previewPhoto(url) {
   else img.classList.remove('show');
 }
 
-// ── PHOTO UPLOAD (envoyée sur Airtable au SAUVEGARDER) + COMPRESSION ────────────────────────
+// ── PHOTO UPLOAD (envoyée au serveur au SAUVEGARDER) + COMPRESSION ────────────────────────
 function handlePhotoUpload(input) {
   const file = input.files && input.files[0];
   if (!file) return;
@@ -1600,7 +1600,7 @@ function submitForm() {
 }
 
 // ── INIT ──────────────────────────────────────────────────────────────────────
-// Affiche immédiatement le cache local, puis synchronise avec Airtable
+// Affiche immédiatement le cache local, puis synchronise avec le serveur
 buildTabs();
 render();
 initRemoteSync();

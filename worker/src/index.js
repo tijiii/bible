@@ -7,6 +7,7 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { betaZodOutputFormat } from '@anthropic-ai/sdk/helpers/beta/zod';
 import * as z from 'zod/v4';
+import { handleStore } from './store.js';
 
 const MAX_BODY_BYTES = 8 * 1024 * 1024;
 const IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
@@ -97,6 +98,8 @@ async function instagramHints(text) {
 
 export default {
   async fetch(request, env) {
+    const url = new URL(request.url);
+    if (url.pathname === '/store' || url.pathname.startsWith('/store/')) return handleStore(request, env, url);
     const origin = request.headers.get('Origin') || '';
     const cors = corsHeaders(origin, env);
     if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers: (({ ok, ...h }) => h)(cors) });
