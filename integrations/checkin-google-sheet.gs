@@ -16,8 +16,8 @@
  * Installation : voir README.md, section « Check-in → profils ».
  */
 
-var AIRTABLE_BASE = 'app1raCeBH8oqHbY9';
-var AIRTABLE_TABLE = 'tblT4pu9h0qaainyT';
+// Serveur de la bible (dossier worker/ du dépôt), qui garde la base partagée.
+var STORE_URL = 'https://bible-ajout-rapide.tom-9dd.workers.dev/store';
 var STATUS_HEADER = 'Bible';
 
 // Colonnes du formulaire, reconnues par le début de leur titre.
@@ -182,7 +182,7 @@ function syncCheckins() {
       statuses.push({ r: r, msg: applyCheckin(db, row, null, out), talent: out.talent, photoId: driveFileId(row.photo) });
     });
     saveDb(rec.id, db);
-    // Photo envoyée dans le formulaire : copiée dans Airtable comme une photo
+    // Photo envoyée dans le formulaire : envoyée au serveur comme une photo
     // importée depuis le site (pas besoin de partager le fichier Drive).
     statuses.forEach(function (s) {
       if (!s.talent || !s.photoId) return;
@@ -242,101 +242,78 @@ function driveFileId(link) {
   return m ? m[1] : '';
 }
 
-// ── Airtable ───────────────────────────────────────────────────────────
+// ── Base partagée (serveur Cloudflare) ─────────────────────────────────
 
-function airtableToken() {
-  var token = PropertiesService.getScriptProperties().getProperty('AIRTABLE_TOKEN');
-  if (!token) throw new Error('Ajoute la propriété de script AIRTABLE_TOKEN (Paramètres du projet → Propriétés du script).');
-  return token;
+function storeHeaders() {
+  var key = PropertiesService.getScriptProperties().getProperty('BIBLE_KEY');
+  if (!key) throw new Error('Ajoute la propriété de script BIBLE_KEY (Paramètres du projet → Propriétés du script).');
+  return { Authorization: 'Bearer ' + key };
 }
 
 function fetchDb() {
-  var url = 'https://api.airtable.com/v0/' + AIRTABLE_BASE + '/' + AIRTABLE_TABLE +
-    '?filterByFormula=' + encodeURIComponent("{key}='db'") + '&maxRecords=1';
-  var res = UrlFetchApp.fetch(url, { headers: { Authorization: 'Bearer ' + airtableToken() } });
-  var rec = JSON.parse(res.getContentText()).records[0];
-  if (!rec) throw new Error('Base de la bible introuvable sur Airtable.');
-  return { id: rec.id, db: JSON.parse(rec.fields.value) };
+  var res = UrlFetchApp.fetch(STORE_URL + '/db', { headers: storeHeaders() });
+  var db = JSON.parse(res.getContentText());
+  if (!db) throw new Error('La base de la bible est vide : ouvre d\'abord le site une fois.');
+  return { id: 'db', db: db };
 }
 
 function saveDb(recordId, db) {
-  UrlFetchApp.fetch('https://api.airtable.com/v0/' + AIRTABLE_BASE + '/' + AIRTABLE_TABLE + '/' + recordId, {
-    method: 'patch',
+  UrlFetchApp.fetch(STORE_URL + '/db', {
+    method: 'put',
     contentType: 'application/json',
-    headers: { Authorization: 'Bearer ' + airtableToken() },
-    payload: JSON.stringify({ fields: { value: JSON.stringify(db) } })
+    headers: storeHeaders(),
+    payload: JSON.stringify(db)
   });
+}
+
+// Source de la photo actuelle du talent : 'site', 'insta', 'form:<id Drive>'
+// ou '' s'il n'en a pas.
+function photoSource(talentId) {
+  var idx = JSON.parse(UrlFetchApp.fetch(STORE_URL + '/photos', { headers: storeHeaders() }).getContentText());
+  var info = (idx.talents || {})[talentId];
+  return info ? String(info.src || 'site') : '';
+}
+
+function putTalentPhoto(talentId, blob, source) {
+  var headers = storeHeaders();
+  headers['X-Photo-Source'] = source;
+  var res = UrlFetchApp.fetch(STORE_URL + '/photo/talent/' + encodeURIComponent(talentId), {
+    method: 'put',
+    contentType: blob.getContentType(),
+    headers: headers,
+    payload: blob.getBytes(),
+    muteHttpExceptions: true
+  });
+  return res.getResponseCode() < 300;
 }
 
 // ── Photo Instagram ────────────────────────────────────────────────────
-// La photo est enregistrée comme les photos importées depuis le site : une
-// ligne "photo:<id du talent>" avec le fichier dans la colonne Attachments.
-// Airtable télécharge l'image et la garde, donc elle n'expire pas.
-
-function airtableUrl(path) {
-  return 'https://api.airtable.com/v0/' + AIRTABLE_BASE + '/' + AIRTABLE_TABLE + (path || '');
-}
+// Rangée comme les photos importées depuis le site.
 
 function attachInstagramPhoto(talentId, handle) {
-  var key = 'photo:' + talentId;
-  var headers = { Authorization: 'Bearer ' + airtableToken() };
-  var found = JSON.parse(UrlFetchApp.fetch(airtableUrl('?filterByFormula=' +
-    encodeURIComponent("{key}='" + key + "'") + '&maxRecords=1'), { headers: headers }).getContentText()).records[0];
-  if (found && (found.fields.Attachments || []).length) return 'deja';
-
+  if (photoSource(talentId)) return 'deja';
   var url = instagramPhotoUrl(handle);
   if (!url) return 'introuvable';
-  var fields = { key: key, Attachments: [{ url: url, filename: 'talent-' + talentId + '-instagram.jpg' }] };
-  var res = UrlFetchApp.fetch(airtableUrl(found ? '/' + found.id : ''), {
-    method: found ? 'patch' : 'post',
-    contentType: 'application/json',
-    headers: headers,
-    payload: JSON.stringify({ fields: fields }),
-    muteHttpExceptions: true
-  });
-  return res.getResponseCode() < 300 ? 'ok' : 'introuvable';
+  var img = UrlFetchApp.fetch(url, { muteHttpExceptions: true });
+  if (img.getResponseCode() !== 200) return 'introuvable';
+  var blob = img.getBlob();
+  if (!/^image\//.test(blob.getContentType() || '')) blob.setContentType('image/jpeg');
+  return putTalentPhoto(talentId, blob, 'insta') ? 'ok' : 'introuvable';
 }
 
-// Photo du formulaire : le fichier est lu dans Drive puis envoyé à Airtable.
+// Photo du formulaire : le fichier est lu dans Drive puis envoyé au serveur.
 // Elle remplace une photo Instagram ou une ancienne photo du formulaire, mais
 // jamais une photo importée à la main depuis le site.
 var MAX_UPLOAD = 5 * 1024 * 1024;
 
 function attachFormPhoto(talentId, fileId) {
-  var key = 'photo:' + talentId;
-  var headers = { Authorization: 'Bearer ' + airtableToken() };
-  var found = JSON.parse(UrlFetchApp.fetch(airtableUrl('?filterByFormula=' +
-    encodeURIComponent("{key}='" + key + "'") + '&maxRecords=1'), { headers: headers }).getContentText()).records[0];
-  var current = found ? (found.fields.Attachments || []) : [];
-  if (current.length) {
-    var name = String(current[0].filename || '');
-    if (name.indexOf(fileId) !== -1) return 'deja';
-    if (name.indexOf('-form-') === -1 && name.indexOf('-instagram') === -1) return 'deja';
-  }
-
-  var blob = drivePhotoBlob(fileId);
-  var ext = (String(blob.getContentType()).split('/')[1] || 'jpg').replace('jpeg', 'jpg');
-  var res = UrlFetchApp.fetch(airtableUrl(found ? '/' + found.id : ''), {
-    method: found ? 'patch' : 'post',
-    contentType: 'application/json',
-    headers: headers,
-    payload: JSON.stringify({ fields: { key: key, Attachments: [] } })
-  });
-  var recordId = found ? found.id : JSON.parse(res.getContentText()).id;
-  UrlFetchApp.fetch('https://content.airtable.com/v0/' + AIRTABLE_BASE + '/' + recordId + '/Attachments/uploadAttachment', {
-    method: 'post',
-    contentType: 'application/json',
-    headers: headers,
-    payload: JSON.stringify({
-      contentType: blob.getContentType(),
-      file: Utilities.base64Encode(blob.getBytes()),
-      filename: 'talent-' + talentId + '-form-' + fileId + '.' + ext
-    })
-  });
+  var src = photoSource(talentId);
+  if (src === 'form:' + fileId || src === 'site') return 'deja';
+  if (!putTalentPhoto(talentId, drivePhotoBlob(fileId), 'form:' + fileId)) throw new Error('envoi refusé');
   return 'ok';
 }
 
-// Le fichier d'origine s'il fait moins de 5 Mo (limite Airtable), sinon une
+// Le fichier d'origine s'il fait moins de 5 Mo, sinon une
 // version réduite fournie par Drive.
 function drivePhotoBlob(fileId) {
   var file = DriveApp.getFileById(fileId);
@@ -624,7 +601,7 @@ function applyCheckin(db, row, now, out) {
   if (!pays.length && meaningful(row.nationalite)) t.pays = countryFrom(row.nationalite);
   applyProfil(db, t, row);
   // Ancienne version : le lien Drive était mis dans la fiche. La photo passe
-  // maintenant par Airtable, donc on retire ce lien pour qu'elle s'affiche.
+  // maintenant par le serveur, donc on retire ce lien pour qu'elle s'affiche.
   if (/drive\.google\.com/.test(clean(t.photo)) && meaningful(row.photo)) t.photo = '';
 
   var checkin = {};
