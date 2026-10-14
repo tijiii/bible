@@ -601,9 +601,10 @@ function initLieuxMap(list) {
   const map = L.map(el, { worldCopyJump: true, zoomControl: true, minZoom: 2 });
   map.attributionControl.setPrefix(false);
   lieuxMap = map;
-  L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
-    subdomains: 'abcd', maxZoom: 19,
-    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions" target="_blank">CARTO</a>'
+  // Fond OpenStreetMap : gratuit et sans clé (Google Maps en demande une, avec carte bancaire)
+  L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    maxZoom: 19,
+    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank">OpenStreetMap</a>'
   }).addTo(map);
 
   const pts = [];
