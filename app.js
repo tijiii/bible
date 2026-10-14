@@ -104,6 +104,7 @@ let homeQ      = '';
 let fSport     = '';
 let fSexe      = '';
 let fPays      = '';
+let fLieuCat   = '';
 let fAgence    = '';
 let fTri       = '';    // '' (ordre habituel), 'age-asc' ou 'age-desc'
 let fSubCat    = '';    // sous-catégorie dans un groupe (ex: DOP chez les techniciens)
@@ -176,7 +177,7 @@ function buildTabs() {
 
 function switchCat(catId) {
   curCatId = catId;
-  searchQ = ''; fSport = ''; fSexe = ''; fPays = ''; fAgence = ''; fSubCat = '';
+  searchQ = ''; fSport = ''; fSexe = ''; fPays = ''; fAgence = ''; fSubCat = ''; fLieuCat = '';
   buildTabs();
   render();
   window.scrollTo(0, 0);
@@ -514,6 +515,19 @@ function renderClubs(main) {
 }
 
 // ── LIEUX (scouting) ──────────────────────────────────────────────────────────
+// Catégories de lieux, pour trier la carte et la liste
+const LIEU_CATEGORIES = ['Rue / Urbain', 'Nature', 'Forêt', 'Montagne', 'Mer / Plage', 'Lac / Rivière', 'Désert',
+  'Campagne', 'Neige', 'Stade / Sport', 'Intérieur', 'Rooftop', 'Industriel', 'Autre'];
+
+// Les lieux créés avant les catégories n'ont qu'un « type » libre : on le rattache à une catégorie si possible
+function lieuCats(l) {
+  if (Array.isArray(l.categories)) return l.categories;
+  const t = String(l.type || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+  if (!t) return [];
+  return LIEU_CATEGORIES.filter(c => c !== 'Autre' && c.split(' / ').some(part =>
+    t.includes(part.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, ''))));
+}
+
 const LIEU_PHOTOS_MAX = 3; // par type : 3 photos de campagne, 3 photos iPhone
 const LIEU_PHOTO_KINDS = [['campagne', 'PHOTOS DE CAMPAGNE'], ['iphone', 'PHOTOS IPHONE']];
 
@@ -654,9 +668,10 @@ document.addEventListener('keydown', e => {
 function lieuxFiltered(withSearch) {
   const q = searchQ.toLowerCase();
   return lieuxList().filter(l => {
-    if (withSearch && q && ![l.nom,l.type,l.adresse,l.ville,l.pays,l.contact,l.description,l.notes,l.coutDetail]
+    if (withSearch && q && ![l.nom,l.type,lieuCats(l).join(' '),l.adresse,l.ville,l.pays,l.contact,l.description,l.notes,l.coutDetail]
       .some(v => String(v||'').toLowerCase().includes(q))) return false;
     if (fPays && l.pays !== fPays) return false;
+    if (fLieuCat && !lieuCats(l).includes(fLieuCat)) return false;
     return true;
   });
 }
@@ -672,6 +687,10 @@ function renderLieux(main) {
              oninput="lieuxSearchInput(this.value)" onkeydown="lieuxSearchKey(event)">
       <div class="world-results" id="world-results"></div>
     </div>
+    <select class="filter-sel" onchange="fLieuCat=this.value;renderLieux(document.getElementById('main-content'))">
+      <option value="">CATÉGORIE</option>
+      ${LIEU_CATEGORIES.map(c=>`<option value="${esc(c)}"${fLieuCat===c?' selected':''}>${esc(c)} (${lieuxList().filter(l=>lieuCats(l).includes(c)).length})</option>`).join('')}
+    </select>
     <select class="filter-sel" onchange="fPays=this.value;renderLieux(document.getElementById('main-content'))">
       <option value="">PAYS</option>
       ${pays.map(p=>`<option value="${esc(p)}"${fPays===p?' selected':''}>${FLAGS[p]||''} ${esc(p)}</option>`).join('')}
@@ -716,7 +735,8 @@ function renderLieuxList() {
       html += `<div class="card-body">
         <div class="card-name">${esc(l.nom)}</div>
         <div class="card-meta">
-          ${l.type ? `<span class="tag agence">${esc(l.type)}</span>` : ''}
+          ${lieuCats(l).map(c => `<span class="tag agence">${esc(c)}</span>`).join('')}
+          ${!lieuCats(l).length && l.type ? `<span class="tag agence">${esc(l.type)}</span>` : ''}
           ${l.ville ? `<span class="tag">${esc(l.ville)}</span>` : ''}
           ${l.pays ? `<span class="tag">${FLAGS[l.pays]||''} ${esc(l.pays)}</span>` : ''}
         </div>
@@ -868,7 +888,8 @@ function lieuDetailHtml(l) {
     <div class="detail-info">
       <div class="detail-name">${esc(l.nom)}</div>
       <div class="detail-tags">
-        ${l.type ? `<span class="tag agence">${esc(l.type)}</span>` : ''}
+        ${lieuCats(l).map(c => `<span class="tag agence">${esc(c)}</span>`).join('')}
+        ${l.type ? `<span class="tag">${esc(l.type)}</span>` : ''}
         ${l.pays ? `<span class="tag">${FLAGS[l.pays]||''} ${esc(l.pays)}</span>` : ''}
         ${l.ville ? `<span class="tag">${esc(l.ville)}</span>` : ''}
       </div>
@@ -1569,7 +1590,12 @@ function renderLieuForm(v) {
     </div>
     <div class="field full"><label>BRÈVE DESCRIPTION</label><textarea id="f-description" rows="2" placeholder="ex: Grande plage face à l'ouest, dunes, très ventée l'après-midi">${esc(v.description||'')}</textarea></div>
     ${LIEU_PHOTO_KINDS.map(photoField).join('')}
-    <div class="field"><label>TYPE</label><input id="f-type" value="${esc(v.type||'')}" placeholder="ex: Plage, forêt, rooftop, stade..."></div>
+    <div class="field full">
+      <label>CATÉGORIES</label>
+      <div class="cats-grid">${LIEU_CATEGORIES.map(c => `<label class="cat-check">
+        <input type="checkbox" name="lieu-cat" value="${esc(c)}" ${lieuCats(v).includes(c) ? 'checked' : ''}><span>${esc(c)}</span></label>`).join('')}</div>
+    </div>
+    <div class="field"><label>PRÉCISION (optionnel)</label><input id="f-type" value="${esc(v.type||'')}" placeholder="ex: crique, sentier, parking..."></div>
     <div class="field"><label>PAYS</label><select id="fl-pays">${paysl}</select></div>
     <div class="field"><label>VILLE</label><input id="f-ville" value="${esc(v.ville||'')}"></div>
     <div class="field"><label>ADRESSE</label><input id="f-adresse" value="${esc(v.adresse||'')}" placeholder="ex: 29120 Plomeur"></div>
@@ -1918,6 +1944,7 @@ function submitForm() {
     if (!g('f-nom')) { alert('Le nom est requis.'); return; }
     const obj = {
       nom: g('f-nom'), type: g('f-type'), adresse: g('f-adresse'),
+      categories: [...document.querySelectorAll('input[name="lieu-cat"]:checked')].map(el => el.value),
       pays: g('fl-pays'), ville: g('f-ville'), gps: g('f-gps'), maps: g('f-maps'), description: g('f-description'),
       cout: g('f-cout'), coutDetail: g('f-cout-detail'),
       contact: g('f-contact'), tel: g('f-tel'), mail: g('f-mail'),
