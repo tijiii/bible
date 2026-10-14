@@ -4,9 +4,16 @@
   <link rel="icon" type="image/png" href="favicon.svg">
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="manifest" href="manifest.json">
+  <meta name="theme-color" content="#ffffff">
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="Bible">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
   <title>Casting Bible</title>
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
-  <link rel="stylesheet" href="style.css?v=2026-10-14-5">
+  <link rel="stylesheet" href="style.css?v=2026-10-14-6">
 </head>
 <body>
 
@@ -20,6 +27,7 @@
     <div class="hdr-right">
       <span class="count-pill hide-mobile" id="total-count"></span>
       <span class="count-pill" id="sync-status">↻ SYNCHRONISATION...</span>
+      <button class="btn-quick" id="btn-install" style="display:none" onclick="installApp()">INSTALLER L'APP</button>
       <button class="btn-quick" id="btn-quick" style="display:none" onclick="openQuickAdd()">AJOUT RAPIDE</button>
       <button class="btn-add" onclick="openAddChooser()">+ AJOUTER</button>
     </div>
@@ -63,10 +71,10 @@
 </div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
-<script src="geo.js?v=2026-10-14-5"></script>
-<script src="data.js?v=2026-10-14-5"></script>
-<script src="config.js?v=2026-10-14-5"></script>
-<script src="sync.js?v=2026-10-14-5"></script>
-<script src="app.js?v=2026-10-14-5"></script>
+<script src="geo.js?v=2026-10-14-6"></script>
+<script src="data.js?v=2026-10-14-6"></script>
+<script src="config.js?v=2026-10-14-6"></script>
+<script src="sync.js?v=2026-10-14-6"></script>
+<script src="app.js?v=2026-10-14-6"></script>
 </body>
 </html>

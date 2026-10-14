@@ -1908,3 +1908,29 @@ function openQuickResult(out) {
   document.getElementById('form-body').prepend(note);
 }
 if (quickAddEnabled()) document.getElementById('btn-quick').style.display = '';
+
+
+// ── APP TÉLÉPHONE ────────────────────────────────────────────────────────────
+// Le site s'installe comme une app (manifest.json + sw.js). Sur Android/Chrome,
+// le navigateur propose l'installation : on l'affiche dans un bouton. Sur iPhone,
+// ça passe par Partager → « Sur l'écran d'accueil ».
+if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost')) {
+  navigator.serviceWorker.register('sw.js').catch(e => console.warn('Service worker :', e));
+}
+let installPrompt = null;
+window.addEventListener('beforeinstallprompt', e => {
+  e.preventDefault();
+  installPrompt = e;
+  document.getElementById('btn-install').style.display = '';
+});
+window.addEventListener('appinstalled', () => {
+  installPrompt = null;
+  document.getElementById('btn-install').style.display = 'none';
+});
+async function installApp() {
+  if (!installPrompt) return;
+  installPrompt.prompt();
+  await installPrompt.userChoice;
+  installPrompt = null;
+  document.getElementById('btn-install').style.display = 'none';
+}
