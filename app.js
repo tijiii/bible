@@ -890,18 +890,116 @@ function lieuProjets(l) {
 
 function lieuProjetsHtml(l) {
   const projets = lieuProjets(l);
-  if (!projets.length) return '';
-  return `<div class="lieu-projets"><div class="lieu-projets-lbl">PROJETS TOURNÉS ICI</div>` + projets.map(p => {
+  return `<div class="lieu-projets"><div class="lieu-projets-lbl">PROJETS TOURNÉS ICI</div>` + projets.map((p, i) => {
     const titre = `<span class="lieu-projet-nom">${esc(p.nom || 'Projet')}</span>${p.annee ? `<span class="lieu-projet-annee">${esc(p.annee)}</span>` : ''}`;
+    const dossier = p.dossier && p.dossier !== p.lien ? `<a class="lieu-projet-dossier" href="${esc(p.dossier)}" target="_blank" rel="noopener">DOSSIER DU PROJET ↗</a>` : '';
+    const del = `<button type="button" class="lieu-projet-del" title="Retirer ce projet" onclick="removeLieuProjet(${l.id},${i})">✕</button>`;
     return p.lien
-      ? `<a class="lieu-projet" href="${esc(p.lien)}" target="_blank" rel="noopener">${titre}<span class="lieu-projet-go">▶ VOIR LA VIDÉO FINALE ↗</span></a>`
-      : `<div class="lieu-projet">${titre}</div>`;
-  }).join('') + `</div>`;
+      ? `<div class="lieu-projet-wrap"><a class="lieu-projet" href="${esc(p.lien)}" target="_blank" rel="noopener">${titre}<span class="lieu-projet-go">▶ VOIR LA VIDÉO FINALE ↗</span></a>${del}</div>${dossier}`
+      : `<div class="lieu-projet-wrap"><div class="lieu-projet">${titre}</div>${del}</div>`;
+  }).join('') + `
+    <div class="projet-search">
+      <input id="projet-q" placeholder="Nom du projet (ex : Salomon, Rossignol 2024…)" autocomplete="off"
+             onkeydown="if(event.key==='Enter')searchDropboxProjet(${l.id})">
+      <button type="button" class="btn-add" onclick="searchDropboxProjet(${l.id})">CHERCHER DANS DROPBOX</button>
+    </div>
+    <div id="projet-results" class="projet-results"></div>
+  </div>`;
+}
+
+// Recherche du projet dans Dropbox (via le serveur) : dossier, dossier LIVRAISON et vidéos
+let dropboxResults = [];
+let dropboxQuery = '';
+
+function lieuById(id) { return lieuxList().find(l => l.id === id); }
+
+function shortDropboxPath(p) { return String(p || '').replace(/^\/WIDEN\/01_PROJETS\//i, ''); }
+
+function formatSize(b) {
+  if (!b) return '';
+  return b >= 1e9 ? (b / 1e9).toFixed(1).replace('.', ',') + ' Go' : Math.round(b / 1e6) + ' Mo';
+}
+
+async function searchDropboxProjet(lieuId) {
+  const input = document.getElementById('projet-q');
+  const box = document.getElementById('projet-results');
+  const q = (input && input.value || '').trim();
+  if (!box || !q) { if (input) input.focus(); return; }
+  dropboxQuery = q;
+  dropboxResults = [];
+  box.innerHTML = `<div class="projet-msg">Recherche de « ${esc(q)} » dans Dropbox…</div>`;
+  const sansLien = `<button type="button" class="btn-ig projet-sans-lien" onclick="addLieuProjet(${lieuId},-1)">AJOUTER « ${esc(q)} » SANS LIEN</button>`;
+  let data;
+  try {
+    const res = await fetch(SERVER_URL + '/dropbox/search?q=' + encodeURIComponent(q));
+    data = await res.json();
+  } catch {
+    box.innerHTML = `<div class="projet-msg">Impossible de joindre le serveur. Vérifie ta connexion.</div>${sansLien}`;
+    return;
+  }
+  if (dropboxQuery !== q) return;
+  if (data.error === 'not_configured') {
+    box.innerHTML = `<div class="projet-msg">La recherche Dropbox n'est pas encore branchée.</div>${sansLien}`;
+    return;
+  }
+  if (data.error === 'not_connected') {
+    box.innerHTML = `<div class="projet-msg">Dropbox n'est pas encore connecté. Connecte-le une fois avec un compte Widen, puis relance la recherche.</div>
+      <a class="btn-add projet-connect" href="${SERVER_URL}/dropbox/connect" target="_blank" rel="noopener">CONNECTER DROPBOX</a>${sansLien}`;
+    return;
+  }
+  if (data.error) { box.innerHTML = `<div class="projet-msg">${esc(data.error)}</div>${sansLien}`; return; }
+  dropboxResults = data.results || [];
+  if (!dropboxResults.length) {
+    box.innerHTML = `<div class="projet-msg">Rien trouvé dans Dropbox pour « ${esc(q)} ».</div>${sansLien}`;
+    return;
+  }
+  box.innerHTML = `<div class="projet-msg">Choisis ce que tu veux mettre sur le lieu :</div>` + dropboxResults.map((r, i) => {
+    const base = shortDropboxPath(r.path);
+    return `<div class="projet-result">
+      <div class="projet-result-path">${esc(base)}</div>
+      ${r.videos.map((v, j) => {
+        const dir = shortDropboxPath(v.path.slice(0, v.path.lastIndexOf('/'))).slice(base.length + 1);
+        return `<button type="button" class="projet-choice video" onclick="addLieuProjet(${lieuId},${i},'video',${j})">
+          <span>▶ ${esc(v.name)}</span><span class="projet-choice-sub">${esc(dir || 'dossier du projet')}${v.size ? ' · ' + formatSize(v.size) : ''}</span></button>`;
+      }).join('')}
+      ${!r.videos.length ? `<div class="projet-msg">Pas de vidéo montée trouvée dans ce dossier.</div>` : ''}
+      ${r.livraison ? `<button type="button" class="projet-choice" onclick="addLieuProjet(${lieuId},${i},'livraison')"><span>📁 Dossier LIVRAISON</span></button>` : ''}
+      <button type="button" class="projet-choice" onclick="addLieuProjet(${lieuId},${i},'dossier')"><span>📁 Dossier du projet</span></button>
+    </div>`;
+  }).join('') + sansLien;
+}
+
+function addLieuProjet(lieuId, i, kind, j) {
+  const l = lieuById(lieuId);
+  if (!l) return;
+  let projet;
+  if (i < 0) projet = { nom: dropboxQuery, annee: '', lien: '' };
+  else {
+    const r = dropboxResults[i];
+    if (!r) return;
+    const lien = kind === 'video' ? r.videos[j].url : kind === 'livraison' ? r.livraison.url : r.url;
+    projet = { nom: r.name, annee: r.annee || '', lien, dossier: r.url };
+  }
+  l.projets = [...lieuProjets(l), projet];
+  saveDb();
+  render();
+  openDetail('lieu', lieuId);
+}
+
+function removeLieuProjet(lieuId, i) {
+  const l = lieuById(lieuId);
+  if (!l || !confirm('Retirer ce projet du lieu ?')) return;
+  const list = lieuProjets(l);
+  list.splice(i, 1);
+  l.projets = list;
+  saveDb();
+  render();
+  openDetail('lieu', lieuId);
 }
 
 function projetRowHtml(p) {
   p = p || {};
-  return `<div class="projet-row">
+  return `<div class="projet-row" data-dossier="${esc(p.dossier||'')}">
     <input class="proj-nom" value="${esc(p.nom||'')}" placeholder="Nom du projet">
     <input class="proj-annee" value="${esc(p.annee||'')}" placeholder="Année" inputmode="numeric">
     <input class="proj-lien" value="${esc(p.lien||'')}" placeholder="Lien Dropbox de la vidéo finale">
@@ -920,7 +1018,8 @@ function readProjetRows() {
   return [...document.querySelectorAll('#projets-rows .projet-row')].map(r => ({
     nom: r.querySelector('.proj-nom').value.trim(),
     annee: r.querySelector('.proj-annee').value.trim(),
-    lien: r.querySelector('.proj-lien').value.trim()
+    lien: r.querySelector('.proj-lien').value.trim(),
+    ...(r.dataset.dossier ? { dossier: r.dataset.dossier } : {})
   })).filter(p => p.nom || p.lien);
 }
 
