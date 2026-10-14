@@ -266,7 +266,6 @@ body { background: var(--bg); color: var(--text); font-family: var(--serif); min
 .card, .club-card { outline:1px solid var(--border); }
 
 /* ── DA WIDEN (widenproduction.fr) ── */
-body::before { content:''; position:fixed; inset:0; z-index:-1; pointer-events:none; background:linear-gradient(180deg,#e9e9e7 0%,#f6f6f5 40%,#fff 75%); clip-path:polygon(21% 0,79% 0,73% 100%,27% 100%); }
 ::selection { background:#111; color:#fff; }
 a { color:inherit; }
 
@@ -337,7 +336,6 @@ a { color:inherit; }
   .crumbs { padding:2px 12px 14px; }
   .crumb-back, .crumb-title { font-size:18px; }
   .ch-name { font-size:24px; }
-  body::before { clip-path:polygon(8% 0,92% 0,82% 100%,18% 100%); }
 }
 .cat-check span { color:var(--text) !important; }
 #form-title { text-transform:lowercase; }
