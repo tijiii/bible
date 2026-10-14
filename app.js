@@ -603,8 +603,8 @@ async function addLieuFromMapsLink() {
 let lieuxMap = null;
 let lieuxMapView = null; // { center, zoom } gardé entre deux affichages
 
-function lieuxMapPinIcon() {
-  return L.divIcon({ className: 'lieu-pin', html: '<span></span>', iconSize: [18, 18], iconAnchor: [9, 9], popupAnchor: [0, -10] });
+function lieuxMapPinIcon(tourne) {
+  return L.divIcon({ className: 'lieu-pin' + (tourne ? ' tourne' : ''), html: '<span></span>', iconSize: [18, 18], iconAnchor: [9, 9], popupAnchor: [0, -10] });
 }
 
 function initLieuxMap(list) {
@@ -626,7 +626,7 @@ function initLieuxMap(list) {
     const c = parseGps(l.gps);
     if (!c) return;
     pts.push([c.lat, c.lng]);
-    L.marker([c.lat, c.lng], { icon: lieuxMapPinIcon(), title: l.nom })
+    L.marker([c.lat, c.lng], { icon: lieuxMapPinIcon(lieuProjets(l).length > 0), title: l.nom })
       .bindTooltip(esc(l.nom), { direction: 'top', offset: [0, -8] })
       .on('click', () => openDetail('lieu', l.id))
       .addTo(map);
@@ -668,10 +668,12 @@ document.addEventListener('keydown', e => {
 function lieuxFiltered(withSearch) {
   const q = searchQ.toLowerCase();
   return lieuxList().filter(l => {
-    if (withSearch && q && ![l.nom,l.type,lieuCats(l).join(' '),l.adresse,l.ville,l.pays,l.contact,l.description,l.notes,l.coutDetail]
+    if (withSearch && q && ![l.nom,l.type,lieuCats(l).join(' '),l.adresse,l.ville,l.pays,l.contact,l.description,l.notes,l.coutDetail,
+        lieuProjets(l).map(p => p.nom + ' ' + p.annee).join(' ')]
       .some(v => String(v||'').toLowerCase().includes(q))) return false;
     if (fPays && l.pays !== fPays) return false;
-    if (fLieuCat && !lieuCats(l).includes(fLieuCat)) return false;
+    if (fLieuCat === LIEU_DEJA_TOURNE) { if (!lieuProjets(l).length) return false; }
+    else if (fLieuCat && !lieuCats(l).includes(fLieuCat)) return false;
     return true;
   });
 }
@@ -689,6 +691,7 @@ function renderLieux(main) {
     </div>
     <select class="filter-sel" onchange="fLieuCat=this.value;renderLieux(document.getElementById('main-content'))">
       <option value="">CATÉGORIE</option>
+      <option value="${LIEU_DEJA_TOURNE}"${fLieuCat===LIEU_DEJA_TOURNE?' selected':''}>★ Déjà tourné ici (${lieuxList().filter(l=>lieuProjets(l).length).length})</option>
       ${LIEU_CATEGORIES.map(c=>`<option value="${esc(c)}"${fLieuCat===c?' selected':''}>${esc(c)} (${lieuxList().filter(l=>lieuCats(l).includes(c)).length})</option>`).join('')}
     </select>
     <select class="filter-sel" onchange="fPays=this.value;renderLieux(document.getElementById('main-content'))">
@@ -731,6 +734,7 @@ function renderLieuxList() {
         html += `<div class="card-ph lieu">${initials(l.nom,'')}</div>`;
       }
       if (photos.length > 1) html += `<span class="card-age">${photos.length} PHOTOS</span>`;
+      if (lieuProjets(l).length) html += `<span class="card-tourne">★ DÉJÀ TOURNÉ</span>`;
       if (l.cout !== '' && l.cout !== undefined) html += `<div class="card-ig-hover" style="color:var(--accent2)">≈ ${esc(formatCout(l.cout))}</div>`;
       html += `<div class="card-body">
         <div class="card-name">${esc(l.nom)}</div>
@@ -877,6 +881,49 @@ function lieuVideosHtml(l) {
   }).join('') + `</div>`;
 }
 
+// ── Projets déjà tournés sur un lieu : nom, année et lien Dropbox vers la vidéo finale
+const LIEU_DEJA_TOURNE = '__tourne';
+
+function lieuProjets(l) {
+  return (Array.isArray(l.projets) ? l.projets : []).filter(p => p && (p.nom || p.lien));
+}
+
+function lieuProjetsHtml(l) {
+  const projets = lieuProjets(l);
+  if (!projets.length) return '';
+  return `<div class="lieu-projets"><div class="lieu-projets-lbl">PROJETS TOURNÉS ICI</div>` + projets.map(p => {
+    const titre = `<span class="lieu-projet-nom">${esc(p.nom || 'Projet')}</span>${p.annee ? `<span class="lieu-projet-annee">${esc(p.annee)}</span>` : ''}`;
+    return p.lien
+      ? `<a class="lieu-projet" href="${esc(p.lien)}" target="_blank" rel="noopener">${titre}<span class="lieu-projet-go">▶ VOIR LA VIDÉO FINALE ↗</span></a>`
+      : `<div class="lieu-projet">${titre}</div>`;
+  }).join('') + `</div>`;
+}
+
+function projetRowHtml(p) {
+  p = p || {};
+  return `<div class="projet-row">
+    <input class="proj-nom" value="${esc(p.nom||'')}" placeholder="Nom du projet">
+    <input class="proj-annee" value="${esc(p.annee||'')}" placeholder="Année" inputmode="numeric">
+    <input class="proj-lien" value="${esc(p.lien||'')}" placeholder="Lien Dropbox de la vidéo finale">
+    <button type="button" class="projet-del" title="Retirer" onclick="this.parentElement.remove()">✕</button>
+  </div>`;
+}
+
+function addProjetRow() {
+  const box = document.getElementById('projets-rows');
+  if (!box) return;
+  box.insertAdjacentHTML('beforeend', projetRowHtml());
+  box.lastElementChild.querySelector('.proj-nom').focus();
+}
+
+function readProjetRows() {
+  return [...document.querySelectorAll('#projets-rows .projet-row')].map(r => ({
+    nom: r.querySelector('.proj-nom').value.trim(),
+    annee: r.querySelector('.proj-annee').value.trim(),
+    lien: r.querySelector('.proj-lien').value.trim()
+  })).filter(p => p.nom || p.lien);
+}
+
 function lieuDetailHtml(l) {
   const photos = lieuPhotoUrls(l);
   const mapQ = lieuMapQuery(l);
@@ -894,6 +941,7 @@ function lieuDetailHtml(l) {
         ${l.ville ? `<span class="tag">${esc(l.ville)}</span>` : ''}
       </div>
       ${l.description ? `<div class="lieu-description">${esc(l.description)}</div>` : ''}
+      ${lieuProjetsHtml(l)}
       <div class="detail-row"><span class="detail-lbl">GPS</span><span class="detail-val">${gps ? esc(formatGps(gps)) : esc(l.gps || '—')}</span></div>
       ${mapsLink ? `<div class="detail-row"><span class="detail-lbl">LIEN MAPS</span><span class="detail-val"><a href="${esc(mapsLink)}" target="_blank">${esc(mapsLink)}</a></span></div>` : ''}
       ${l.adresse ? `<div class="detail-row"><span class="detail-lbl">ADRESSE</span><span class="detail-val">${esc(l.adresse)}</span></div>` : ''}
@@ -1605,6 +1653,12 @@ function renderLieuForm(v) {
     <div class="field"><label>TEL</label><input id="f-tel" value="${esc(v.tel||'')}" placeholder="+33 6..."></div>
     <div class="field"><label>MAIL</label><input id="f-mail" type="email" value="${esc(v.mail||'')}"></div>
     <div class="field full">
+      <label>PROJETS DÉJÀ TOURNÉS ICI</label>
+      <div id="projets-rows">${lieuProjets(v).map(projetRowHtml).join('')}</div>
+      <button type="button" class="btn-ig projet-add" onclick="addProjetRow()">+ AJOUTER UN PROJET</button>
+      <div class="field-hint">Dans Dropbox, clic droit sur la vidéo finale (ou le dossier du projet), « Copier le lien », puis colle-le ici.</div>
+    </div>
+    <div class="field full">
       <label>VIDÉOS (liens)</label>
       <textarea id="f-videos" rows="2" placeholder="Un lien par ligne : YouTube, Vimeo, Google Drive, Dropbox...">${esc((v.videos||[]).join('\n'))}</textarea>
       <div class="field-hint">Mets la vidéo sur Google Drive ou YouTube (en non répertoriée), puis colle le lien de partage ici.</div>
@@ -1950,6 +2004,7 @@ function submitForm() {
       contact: g('f-contact'), tel: g('f-tel'), mail: g('f-mail'),
       photos: g('f-photo-links').split('\n').map(s => s.trim()).filter(Boolean),
       videos: g('f-videos').split('\n').map(s => s.trim()).filter(Boolean),
+      projets: readProjetRows(),
       notes: g('f-notes')
     };
     let finalId;
