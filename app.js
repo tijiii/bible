@@ -644,26 +644,33 @@ function initLieuxMap(list) {
 // Clic en dehors de la carte ou touche Échap : on ferme le cadre « ajouter un lieu ici »
 document.addEventListener('click', e => {
   if (lieuxMap && !e.target.closest('#lieux-map')) lieuxMap.closePopup();
+  const wr = document.getElementById('world-results');
+  if (wr && !e.target.closest('.lieux-search')) wr.style.display = 'none';
 });
 document.addEventListener('keydown', e => {
   if (e.key === 'Escape' && lieuxMap) lieuxMap.closePopup();
 });
 
-function renderLieux(main) {
+function lieuxFiltered(withSearch) {
   const q = searchQ.toLowerCase();
-  const list = lieuxList().filter(l => {
-    if (q && ![l.nom,l.type,l.adresse,l.ville,l.pays,l.contact,l.description,l.notes,l.coutDetail]
+  return lieuxList().filter(l => {
+    if (withSearch && q && ![l.nom,l.type,l.adresse,l.ville,l.pays,l.contact,l.description,l.notes,l.coutDetail]
       .some(v => String(v||'').toLowerCase().includes(q))) return false;
     if (fPays && l.pays !== fPays) return false;
     return true;
   });
-  const pays = [...new Set(lieuxList().map(l => l.pays).filter(Boolean))].sort();
-  const sansGps = list.filter(l => !parseGps(l.gps));
+}
 
-  let html = `<div class="toolbar">
-    <div class="search-wrap">
-      <input placeholder="Nom, ville, type..." value="${esc(searchQ)}"
-             oninput="searchQ=this.value;renderLieux(document.getElementById('main-content'))">
+function renderLieux(main) {
+  const pays = [...new Set(lieuxList().map(l => l.pays).filter(Boolean))].sort();
+  const onMap = lieuxFiltered(false); // la carte montre tous les lieux, la recherche ne trie que la liste
+  const sansGps = onMap.filter(l => !parseGps(l.gps));
+
+  main.innerHTML = `<div class="toolbar">
+    <div class="search-wrap lieux-search">
+      <input id="lieux-q" placeholder="Chercher un lieu, une ville, n'importe où…" value="${esc(searchQ)}" autocomplete="off"
+             oninput="lieuxSearchInput(this.value)" onkeydown="lieuxSearchKey(event)">
+      <div class="world-results" id="world-results"></div>
     </div>
     <select class="filter-sel" onchange="fPays=this.value;renderLieux(document.getElementById('main-content'))">
       <option value="">PAYS</option>
@@ -676,10 +683,21 @@ function renderLieux(main) {
     </div>
   </div>
   <div id="lieux-map" class="lieux-map"></div>
-  <div class="lieux-map-hint">Clique sur un pin pour ouvrir le lieu, ou n'importe où sur la carte pour en ajouter un.${sansGps.length ? ` ${sansGps.length} lieu${sansGps.length > 1 ? 'x' : ''} sans coordonnées GPS ne ${sansGps.length > 1 ? 'sont' : 'est'} pas sur la carte.` : ''}</div>`;
+  <div class="lieux-map-hint">Clique sur un pin pour ouvrir le lieu, ou n'importe où sur la carte pour en ajouter un. La recherche trouve tes lieux et n'importe quel endroit du monde.${sansGps.length ? ` ${sansGps.length} lieu${sansGps.length > 1 ? 'x' : ''} sans coordonnées GPS ne ${sansGps.length > 1 ? 'sont' : 'est'} pas sur la carte.` : ''}</div>
+  <div id="lieux-list"></div>`;
+  renderLieuxList();
+  initLieuxMap(onMap);
+  if (searchQ.trim().length >= 3) scheduleWorldSearch();
+}
 
+// Seule la liste est redessinée pendant la frappe : le champ garde le focus et la carte ne bouge pas
+function renderLieuxList() {
+  const box = document.getElementById('lieux-list');
+  if (!box) return;
+  const list = lieuxFiltered(true);
+  let html = '';
   if (!list.length) {
-    html += `<div class="empty">AUCUN LIEU${lieuxList().length ? ' TROUVÉ' : ' POUR LE MOMENT'}</div>`;
+    html += `<div class="empty">${lieuxList().length ? (searchQ ? 'AUCUN DE TES LIEUX NE CORRESPOND' : 'AUCUN LIEU TROUVÉ') : 'AUCUN LIEU POUR LE MOMENT'}</div>`;
   } else {
     html += `<div class="grid lieux-grid">`;
     list.forEach(l => {
@@ -706,8 +724,94 @@ function renderLieux(main) {
     });
     html += `</div>`;
   }
-  main.innerHTML = html;
-  initLieuxMap(list);
+  box.innerHTML = html;
+}
+
+// ── Recherche dans le monde entier (OpenStreetMap / Nominatim, gratuit, sans clé)
+let worldSearchTimer = null;
+let worldSearchSeq = 0;
+let worldResults = [];
+
+function lieuxSearchInput(v) {
+  searchQ = v;
+  renderLieuxList();
+  scheduleWorldSearch();
+}
+
+function scheduleWorldSearch() {
+  clearTimeout(worldSearchTimer);
+  const q = searchQ.trim();
+  if (q.length < 3) { showWorldResults([], ''); return; }
+  worldSearchTimer = setTimeout(() => runWorldSearch(q), 500); // au plus une requête par pause de frappe
+}
+
+async function runWorldSearch(q) {
+  const seq = ++worldSearchSeq;
+  showWorldResults(null, q);
+  try {
+    const url = 'https://nominatim.openstreetmap.org/search?format=jsonv2&addressdetails=1&limit=5&accept-language=fr&q=' + encodeURIComponent(q);
+    const res = await fetch(url, { headers: { 'Accept': 'application/json' } });
+    const data = res.ok ? await res.json() : [];
+    if (seq !== worldSearchSeq) return; // une recherche plus récente est partie entre-temps
+    showWorldResults(data.map(r => ({
+      nom: r.name || String(r.display_name || '').split(',')[0],
+      detail: r.display_name || '',
+      lat: Number(r.lat), lng: Number(r.lon),
+      bbox: (r.boundingbox || []).map(Number),
+      pays: (r.address && r.address.country) || '',
+      ville: (r.address && (r.address.city || r.address.town || r.address.village || r.address.municipality)) || '',
+    })).filter(r => !isNaN(r.lat) && !isNaN(r.lng)), q);
+  } catch (e) {
+    if (seq === worldSearchSeq) showWorldResults([], q, true);
+  }
+}
+
+function showWorldResults(results, q, failed) {
+  const box = document.getElementById('world-results');
+  if (!box) return;
+  if (results === null) { box.innerHTML = `<div class="world-results-msg">Recherche de « ${esc(q)} » dans le monde…</div>`; box.style.display = 'block'; return; }
+  worldResults = results;
+  if (!q) { box.innerHTML = ''; box.style.display = 'none'; return; }
+  box.innerHTML = `<div class="world-results-lbl">DANS LE MONDE</div>` + (results.length
+    ? results.map((r, i) => `<button type="button" class="world-result" onclick="goToWorldResult(${i})">
+        <span class="world-result-nom">${esc(r.nom)}</span><span class="world-result-detail">${esc(r.detail)}</span></button>`).join('')
+    : `<div class="world-results-msg">${failed ? 'La recherche dans le monde ne répond pas.' : 'Aucun endroit trouvé.'}</div>`);
+  box.style.display = 'block';
+}
+
+function lieuxSearchKey(e) {
+  if (e.key === 'Enter') {
+    e.preventDefault();
+    if (worldResults.length) goToWorldResult(0);
+    else { clearTimeout(worldSearchTimer); if (searchQ.trim().length >= 2) runWorldSearch(searchQ.trim()); }
+  } else if (e.key === 'Escape') {
+    showWorldResults([], '');
+  }
+}
+
+function goToWorldResult(i) {
+  const r = worldResults[i];
+  if (!r || !lieuxMap) return;
+  showWorldResults([], '');
+  document.getElementById('lieux-q')?.blur();
+  const [s, n, w, e] = r.bbox;
+  if (r.bbox.length === 4 && !r.bbox.some(isNaN) && (n - s > 0.002 || e - w > 0.002)) lieuxMap.fitBounds([[s, w], [n, e]], { maxZoom: 15 });
+  else lieuxMap.setView([r.lat, r.lng], 15);
+  document.getElementById('lieux-map').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  const c = { lat: r.lat, lng: r.lng };
+  const box = document.createElement('div');
+  box.className = 'lieu-popup';
+  box.innerHTML = `<div class="lieu-popup-nom">${esc(r.nom)}</div><div class="lieu-popup-gps">${formatGps(c)}</div><button type="button" class="btn-add">+ AJOUTER CE LIEU</button>`;
+  box.querySelector('button').onclick = () => {
+    lieuxMap.closePopup();
+    openForm('lieu', undefined, { prefill: {
+      nom: r.nom, gps: formatGps(c), ville: r.ville,
+      pays: COUNTRIES.includes(r.pays) ? r.pays : '',
+      maps: 'https://www.google.com/maps/search/?api=1&query=' + c.lat.toFixed(6) + ',' + c.lng.toFixed(6),
+    } });
+  };
+  // Ouvert juste après le déplacement de la carte, pour que le clic qui l'a demandé ne le referme pas
+  setTimeout(() => L.popup({ closeButton: false }).setLatLng([r.lat, r.lng]).setContent(box).openOn(lieuxMap), 0);
 }
 
 function lieuGalleryHtml(photos, label) {
