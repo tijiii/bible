@@ -7,7 +7,7 @@
 //   GET    /store/photos                  → index des photos
 //   PUT    /store/photo/talent/<id>       → photo du talent (corps = image)
 //   DELETE /store/photo/talent/<id>
-//   POST   /store/photo/lieu/<id>         → ajoute une photo au lieu
+//   POST   /store/photo/lieu/<id>[?kind=iphone] → ajoute une photo au lieu
 //   DELETE /store/photo/lieu/<id>/<photo> → retire une photo du lieu
 //   DELETE /store/photo/lieu/<id>         → retire toutes les photos du lieu
 //   GET    /store/img/t/<id>, /store/img/l/<id>/<photo> → l'image
@@ -159,7 +159,9 @@ export async function handleStore(request, env, url) {
       const list = idx.lieux[id] || [];
       if (request.method === 'POST' && !parts[3]) {
         const { bytes, type } = await readBody(request);
-        const photoId = Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+        // Les photos iPhone ont un identifiant qui commence par « ip », les autres sont les photos de campagne
+        const prefix = url.searchParams.get('kind') === 'iphone' ? 'ip' : '';
+        const photoId = prefix + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
         await env.BIBLE.put(`img:l:${id}:${photoId}`, bytes, { metadata: { type } });
         idx.lieux[id] = [...list, photoId];
         await env.BIBLE.put(INDEX_KEY, JSON.stringify(idx));

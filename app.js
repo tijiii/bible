@@ -514,12 +514,23 @@ function renderClubs(main) {
 }
 
 // ── LIEUX (scouting) ──────────────────────────────────────────────────────────
+const LIEU_PHOTOS_MAX = 3; // par type : 3 photos de campagne, 3 photos iPhone
+const LIEU_PHOTO_KINDS = [['campagne', 'PHOTOS DE CAMPAGNE'], ['iphone', 'PHOTOS IPHONE']];
+
 function lieuPhotoUrls(l) {
   // Photos importées (serveur) puis liens collés à la main
-  const imported = getLieuPhotos(l.id).map(p => ({ url: p.url, full: p.full }));
-  const links = (l.photos || []).map(normalizePhotoUrl).filter(Boolean).map(u => ({ url: u, full: u }));
+  const imported = getLieuPhotos(l.id).map(p => ({ url: p.url, full: p.full, kind: p.kind }));
+  const links = (l.photos || []).map(normalizePhotoUrl).filter(Boolean).map(u => ({ url: u, full: u, kind: 'campagne' }));
   return [...imported, ...links];
 }
+// « 47.8389, -4.3519 » → { lat, lng }
+function parseGps(v) {
+  const m = String(v || '').match(/(-?\d{1,3}(?:[.,]\d+)?)\s*[,; ]\s*(-?\d{1,3}(?:[.,]\d+)?)/);
+  if (!m) return null;
+  const lat = Number(m[1].replace(',', '.')), lng = Number(m[2].replace(',', '.'));
+  return Math.abs(lat) <= 90 && Math.abs(lng) <= 180 ? { lat, lng } : null;
+}
+function formatGps(c) { return c.lat.toFixed(6) + ', ' + c.lng.toFixed(6); }
 function lieuMapQuery(l) {
   if (l.gps) return l.gps;
   return [l.adresse, l.ville, l.pays].filter(Boolean).join(', ');
@@ -535,15 +546,106 @@ function formatCout(v) {
   return isNaN(n) ? String(v) : n.toLocaleString('fr-FR') + ' €';
 }
 
+// Lien Google Maps → coordonnées. Les liens longs se lisent directement ; les
+// liens courts (maps.app.goo.gl) passent par le serveur qui suit la redirection.
+async function resolveMapsLink(link) {
+  link = String(link || '').trim();
+  if (!link) throw new Error('Colle un lien Google Maps.');
+  const direct = parseGps(link);
+  if (direct && !/^https?:/i.test(link)) return { ...direct, nom: '', url: '' };
+  let decoded = link; try { decoded = decodeURIComponent(link); } catch {}
+  const num = '(-?\\d{1,3}(?:\\.\\d+)?)';
+  for (const re of [new RegExp(`!3d${num}!4d${num}`), new RegExp(`[?&](?:q|query|ll|destination|center)=${num},\\s*\\+?${num}`),
+                    new RegExp(`/search/${num},\\s*\\+?${num}`), new RegExp(`@${num},${num}`)]) {
+    const m = decoded.match(re);
+    if (m) {
+      const place = decoded.match(/\/maps\/place\/([^/@?]+)/);
+      return { lat: Number(m[1]), lng: Number(m[2]), nom: place ? place[1].replace(/\+/g, ' ') : '', url: link };
+    }
+  }
+  const res = await fetch(SERVER_URL + '/maps?url=' + encodeURIComponent(link));
+  const out = await res.json().catch(() => ({}));
+  if (!res.ok || out.error || typeof out.lat !== 'number') throw new Error(out.error || 'Lien illisible.');
+  return { lat: out.lat, lng: out.lng, nom: out.nom || '', url: link };
+}
+
+async function addLieuFromMapsLink() {
+  const input = document.getElementById('lieu-maps-link');
+  const btn = document.getElementById('lieu-maps-go');
+  const link = input.value.trim();
+  if (!link) { input.focus(); return; }
+  btn.disabled = true; btn.textContent = 'LECTURE…';
+  try {
+    const r = await resolveMapsLink(link);
+    openForm('lieu', undefined, { prefill: { nom: r.nom, gps: formatGps(r), maps: /^https?:/i.test(link) ? link : '' } });
+  } catch (e) {
+    alert(e.message);
+  } finally {
+    btn.disabled = false; btn.textContent = 'AJOUTER';
+  }
+}
+
+// ── Grande carte des lieux (Leaflet)
+let lieuxMap = null;
+let lieuxMapView = null; // { center, zoom } gardé entre deux affichages
+
+function lieuxMapPinIcon() {
+  return L.divIcon({ className: 'lieu-pin', html: '<span></span>', iconSize: [18, 18], iconAnchor: [9, 9], popupAnchor: [0, -10] });
+}
+
+function initLieuxMap(list) {
+  const el = document.getElementById('lieux-map');
+  if (lieuxMap) { lieuxMapView = { center: lieuxMap.getCenter(), zoom: lieuxMap.getZoom() }; lieuxMap.remove(); lieuxMap = null; }
+  if (!el || typeof L === 'undefined') { if (el) el.innerHTML = '<div class="empty">CARTE INDISPONIBLE</div>'; return; }
+
+  const map = L.map(el, { worldCopyJump: true, zoomControl: true, minZoom: 2 });
+  map.attributionControl.setPrefix(false);
+  lieuxMap = map;
+  L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
+    subdomains: 'abcd', maxZoom: 19,
+    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions" target="_blank">CARTO</a>'
+  }).addTo(map);
+
+  const pts = [];
+  list.forEach(l => {
+    const c = parseGps(l.gps);
+    if (!c) return;
+    pts.push([c.lat, c.lng]);
+    L.marker([c.lat, c.lng], { icon: lieuxMapPinIcon(), title: l.nom })
+      .bindTooltip(esc(l.nom), { direction: 'top', offset: [0, -8] })
+      .on('click', () => openDetail('lieu', l.id))
+      .addTo(map);
+  });
+
+  if (lieuxMapView) map.setView(lieuxMapView.center, lieuxMapView.zoom);
+  else if (pts.length === 1) map.setView(pts[0], 9);
+  else if (pts.length) map.fitBounds(pts, { padding: [40, 40], maxZoom: 9 });
+  else map.setView([30, 5], 2);
+
+  // Clic sur la carte : proposer d'ajouter un lieu à cet endroit
+  map.on('click', e => {
+    const c = { lat: e.latlng.lat, lng: ((e.latlng.lng + 540) % 360) - 180 };
+    const box = document.createElement('div');
+    box.className = 'lieu-popup';
+    box.innerHTML = `<div class="lieu-popup-gps">${formatGps(c)}</div><button type="button" class="btn-add">+ AJOUTER UN LIEU ICI</button>`;
+    box.querySelector('button').onclick = () => {
+      map.closePopup();
+      openForm('lieu', undefined, { prefill: { gps: formatGps(c), maps: 'https://www.google.com/maps/search/?api=1&query=' + c.lat.toFixed(6) + ',' + c.lng.toFixed(6) } });
+    };
+    L.popup({ closeButton: false }).setLatLng(e.latlng).setContent(box).openOn(map);
+  });
+}
+
 function renderLieux(main) {
   const q = searchQ.toLowerCase();
   const list = lieuxList().filter(l => {
-    if (q && ![l.nom,l.type,l.adresse,l.ville,l.pays,l.contact,l.notes,l.coutDetail]
+    if (q && ![l.nom,l.type,l.adresse,l.ville,l.pays,l.contact,l.description,l.notes,l.coutDetail]
       .some(v => String(v||'').toLowerCase().includes(q))) return false;
     if (fPays && l.pays !== fPays) return false;
     return true;
   });
   const pays = [...new Set(lieuxList().map(l => l.pays).filter(Boolean))].sort();
+  const sansGps = list.filter(l => !parseGps(l.gps));
 
   let html = `<div class="toolbar">
     <div class="search-wrap">
@@ -555,8 +657,13 @@ function renderLieux(main) {
       ${pays.map(p=>`<option value="${esc(p)}"${fPays===p?' selected':''}>${FLAGS[p]||''} ${esc(p)}</option>`).join('')}
     </select>
     <div class="spacer"></div>
-    <button class="btn-add" style="background:var(--accent2)" onclick="openForm('lieu')">+ AJOUTER</button>
-  </div>`;
+    <div class="lieu-maps-add">
+      <input id="lieu-maps-link" placeholder="Colle un lien Google Maps" onkeydown="if(event.key==='Enter')addLieuFromMapsLink()">
+      <button class="btn-add" id="lieu-maps-go" style="background:var(--accent2)" onclick="addLieuFromMapsLink()">AJOUTER</button>
+    </div>
+  </div>
+  <div id="lieux-map" class="lieux-map"></div>
+  <div class="lieux-map-hint">Clique sur un pin pour ouvrir le lieu, ou n'importe où sur la carte pour en ajouter un.${sansGps.length ? ` ${sansGps.length} lieu${sansGps.length > 1 ? 'x' : ''} sans coordonnées GPS ne ${sansGps.length > 1 ? 'sont' : 'est'} pas sur la carte.` : ''}</div>`;
 
   if (!list.length) {
     html += `<div class="empty">AUCUN LIEU${lieuxList().length ? ' TROUVÉ' : ' POUR LE MOMENT'}</div>`;
@@ -587,16 +694,24 @@ function renderLieux(main) {
     html += `</div>`;
   }
   main.innerHTML = html;
+  initLieuxMap(list);
+}
+
+function lieuGalleryHtml(photos, label) {
+  if (!photos.length) return '';
+  return `<div class="lieu-gallery-lbl">${label}</div>
+    <div class="lieu-gallery">
+      ${photos.map(p => `<a href="${esc(p.full)}" target="_blank"><img src="${esc(p.url)}" alt="" onerror="this.parentElement.style.display='none'"></a>`).join('')}
+    </div>`;
 }
 
 function lieuDetailHtml(l) {
   const photos = lieuPhotoUrls(l);
   const mapQ = lieuMapQuery(l);
   const mapsLink = lieuMapsLink(l);
+  const gps = parseGps(l.gps);
   return `<div class="lieu-detail">
-    ${photos.length ? `<div class="lieu-gallery">
-      ${photos.map(p => `<a href="${esc(p.full)}" target="_blank"><img src="${esc(p.url)}" alt="" onerror="this.parentElement.style.display='none'"></a>`).join('')}
-    </div>` : ''}
+    ${LIEU_PHOTO_KINDS.map(([k, label]) => lieuGalleryHtml(photos.filter(p => p.kind === k), label)).join('')}
     <div class="detail-info">
       <div class="detail-name">${esc(l.nom)}</div>
       <div class="detail-tags">
@@ -604,9 +719,11 @@ function lieuDetailHtml(l) {
         ${l.pays ? `<span class="tag">${FLAGS[l.pays]||''} ${esc(l.pays)}</span>` : ''}
         ${l.ville ? `<span class="tag">${esc(l.ville)}</span>` : ''}
       </div>
-      <div class="detail-row"><span class="detail-lbl">ADRESSE</span><span class="detail-val">${esc(l.adresse||'—')}</span></div>
-      ${l.gps ? `<div class="detail-row"><span class="detail-lbl">GPS</span><span class="detail-val">${esc(l.gps)}</span></div>` : ''}
-      <div class="detail-row"><span class="detail-lbl">COÛT ESTIMÉ</span><span class="detail-val" style="color:var(--accent2)">${esc(formatCout(l.cout) || '—')}</span></div>
+      ${l.description ? `<div class="lieu-description">${esc(l.description)}</div>` : ''}
+      <div class="detail-row"><span class="detail-lbl">GPS</span><span class="detail-val">${gps ? esc(formatGps(gps)) : esc(l.gps || '—')}</span></div>
+      ${mapsLink ? `<div class="detail-row"><span class="detail-lbl">LIEN MAPS</span><span class="detail-val"><a href="${esc(mapsLink)}" target="_blank">${esc(mapsLink)}</a></span></div>` : ''}
+      ${l.adresse ? `<div class="detail-row"><span class="detail-lbl">ADRESSE</span><span class="detail-val">${esc(l.adresse)}</span></div>` : ''}
+      ${l.cout !== '' && l.cout !== undefined ? `<div class="detail-row"><span class="detail-lbl">COÛT ESTIMÉ</span><span class="detail-val" style="color:var(--accent2)">${esc(formatCout(l.cout))}</span></div>` : ''}
       ${l.coutDetail ? `<div class="detail-row"><span class="detail-lbl">DÉTAIL COÛTS</span><span class="detail-val pre">${esc(l.coutDetail)}</span></div>` : ''}
       ${l.contact ? `<div class="detail-row"><span class="detail-lbl">CONTACT</span><span class="detail-val">${esc(l.contact)}</span></div>` : ''}
       ${l.tel ? `<div class="detail-row"><span class="detail-lbl">TEL</span><span class="detail-val"><a href="tel:${esc(l.tel)}">${esc(l.tel)}</a></span></div>` : ''}
@@ -1265,65 +1382,102 @@ function renderClubForm(v) {
 }
 
 // ── FORMULAIRE LIEU ──────────────────────────────────────────────────────────
-let pendingLieuPhotos   = []; // dataURLs importées, envoyées au SAUVEGARDER
+let pendingLieuPhotos   = []; // { data, kind } importées, envoyées au SAUVEGARDER
 let pendingLieuRemovals = []; // ids des photos du serveur à retirer au SAUVEGARDER
 
 function renderLieuForm(v) {
   const paysl = `<option value="">—</option>` + COUNTRIES.map(p => `<option value="${esc(p)}"${(v.pays||'')===p?' selected':''}>${FLAGS[p]||''} ${esc(p)}</option>`).join('');
+  const photoField = ([kind, label]) => `
+    <div class="field full">
+      <label>${label} (${LIEU_PHOTOS_MAX} max)</label>
+      <div class="photo-upload-row">
+        <label class="btn-upload" for="f-lieu-files-${kind}">IMPORTER</label>
+        <input type="file" id="f-lieu-files-${kind}" accept="image/*" multiple style="display:none" onchange="handleLieuPhotos(this,'${kind}')">
+      </div>
+      <div class="lieu-thumbs" id="lieu-thumbs-${kind}"></div>
+    </div>`;
 
   document.getElementById('form-body').innerHTML = `
-    <div class="field"><label>NOM DU LIEU *</label><input id="f-nom" value="${esc(v.nom||'')}" placeholder="ex: Plage de la Torche"></div>
-    <div class="field"><label>TYPE</label><input id="f-type" value="${esc(v.type||'')}" placeholder="ex: Plage, forêt, rooftop, stade..."></div>
-    <div class="field full"><label>ADRESSE</label><input id="f-adresse" value="${esc(v.adresse||'')}" placeholder="ex: 29120 Plomeur"></div>
-    <div class="field"><label>PAYS</label><select id="fl-pays">${paysl}</select></div>
-    <div class="field"><label>VILLE</label><input id="f-ville" value="${esc(v.ville||'')}"></div>
+    <div class="field full"><label>NOM DU LIEU *</label><input id="f-nom" value="${esc(v.nom||'')}" placeholder="ex: Plage de la Torche"></div>
     <div class="field full">
-      <label>COORDONNÉES GPS (optionnel)</label>
+      <label>LIEN GOOGLE MAPS</label>
+      <div class="photo-upload-row">
+        <input id="f-maps" value="${esc(v.maps||'')}" placeholder="https://maps.app.goo.gl/..." style="flex:1" onchange="fillGpsFromMapsLink(true)">
+        <button type="button" class="btn-upload" id="f-maps-go" onclick="fillGpsFromMapsLink()">LIRE LE LIEN</button>
+      </div>
+    </div>
+    <div class="field full">
+      <label>COORDONNÉES GPS</label>
       <div class="photo-upload-row">
         <input id="f-gps" value="${esc(v.gps||'')}" placeholder="ex: 47.8389, -4.3519" style="flex:1">
         <button type="button" class="btn-upload" onclick="fillGpsFromDevice()">MA POSITION</button>
       </div>
-      <div class="field-hint">Sur place, appuie sur « MA POSITION » pour enregistrer l'endroit exact. Sinon l'adresse suffit pour la carte.</div>
+      <div class="field-hint">Remplies toutes seules depuis le lien Maps. Sur place, « MA POSITION » enregistre l'endroit exact. Le lieu n'apparaît sur la carte qu'avec des coordonnées.</div>
     </div>
-    <div class="field full"><label>LIEN GOOGLE MAPS (optionnel)</label><input id="f-maps" value="${esc(v.maps||'')}" placeholder="https://maps.app.goo.gl/..."></div>
+    <div class="field full"><label>BRÈVE DESCRIPTION</label><textarea id="f-description" rows="2" placeholder="ex: Grande plage face à l'ouest, dunes, très ventée l'après-midi">${esc(v.description||'')}</textarea></div>
+    ${LIEU_PHOTO_KINDS.map(photoField).join('')}
+    <div class="field"><label>TYPE</label><input id="f-type" value="${esc(v.type||'')}" placeholder="ex: Plage, forêt, rooftop, stade..."></div>
+    <div class="field"><label>PAYS</label><select id="fl-pays">${paysl}</select></div>
+    <div class="field"><label>VILLE</label><input id="f-ville" value="${esc(v.ville||'')}"></div>
+    <div class="field"><label>ADRESSE</label><input id="f-adresse" value="${esc(v.adresse||'')}" placeholder="ex: 29120 Plomeur"></div>
     <div class="field"><label>COÛT ESTIMÉ (€)</label><input id="f-cout" type="number" min="0" step="any" value="${esc(String(v.cout ?? ''))}" placeholder="ex: 1500"></div>
     <div class="field"><label>CONTACT (propriétaire, mairie...)</label><input id="f-contact" value="${esc(v.contact||'')}"></div>
     <div class="field full"><label>DÉTAIL DES COÛTS</label><textarea id="f-cout-detail" rows="3" placeholder="ex: Location 1000 €/jour, autorisation mairie 300 €, parking régie 200 €">${esc(v.coutDetail||'')}</textarea></div>
     <div class="field"><label>TEL</label><input id="f-tel" value="${esc(v.tel||'')}" placeholder="+33 6..."></div>
     <div class="field"><label>MAIL</label><input id="f-mail" type="email" value="${esc(v.mail||'')}"></div>
-    <div class="field full">
-      <label>PHOTOS DU LIEU (visibles par toute l'équipe)</label>
-      <div class="photo-upload-row">
-        <label class="btn-upload" for="f-lieu-files">IMPORTER DES PHOTOS</label>
-        <input type="file" id="f-lieu-files" accept="image/*" multiple style="display:none" onchange="handleLieuPhotos(this)">
-      </div>
-      <div class="lieu-thumbs" id="lieu-thumbs"></div>
-      <textarea id="f-photo-links" rows="2" style="margin-top:8px" placeholder="Ou colle des liens d'images (Google Drive, Imgur...), un par ligne">${esc((v.photos||[]).join('\n'))}</textarea>
-    </div>
+    <div class="field full"><label>LIENS D'IMAGES (optionnel)</label><textarea id="f-photo-links" rows="2" placeholder="Liens d'images (Google Drive, Imgur...), un par ligne">${esc((v.photos||[]).join('\n'))}</textarea></div>
     <div class="field full"><label>NOTES (accès, lumière, horaires, autorisations...)</label><textarea id="f-notes" rows="3">${esc(v.notes||'')}</textarea></div>`;
   renderLieuThumbs();
 }
 
-function renderLieuThumbs() {
-  const box = document.getElementById('lieu-thumbs');
-  if (!box) return;
+function lieuFormPhotos(kind) {
   const lieuId = formCtx && formCtx.id;
-  const existing = lieuId ? getLieuPhotos(lieuId).filter(p => !pendingLieuRemovals.includes(p.id)) : [];
-  box.innerHTML =
-    existing.map(p => `<div class="lieu-thumb"><img src="${esc(p.url)}" alt="">
-      <button type="button" title="Retirer" onclick="pendingLieuRemovals.push('${esc(p.id)}');renderLieuThumbs()">✕</button></div>`).join('') +
-    pendingLieuPhotos.map((d, i) => `<div class="lieu-thumb new"><img src="${d}" alt="">
-      <button type="button" title="Retirer" onclick="pendingLieuPhotos.splice(${i},1);renderLieuThumbs()">✕</button></div>`).join('');
+  const existing = lieuId ? getLieuPhotos(lieuId).filter(p => p.kind === kind && !pendingLieuRemovals.includes(p.id)) : [];
+  const pending = pendingLieuPhotos.map((p, i) => ({ ...p, i })).filter(p => p.kind === kind);
+  return { existing, pending };
 }
 
-async function handleLieuPhotos(input) {
+function renderLieuThumbs() {
+  LIEU_PHOTO_KINDS.forEach(([kind]) => {
+    const box = document.getElementById('lieu-thumbs-' + kind);
+    if (!box) return;
+    const { existing, pending } = lieuFormPhotos(kind);
+    box.innerHTML =
+      existing.map(p => `<div class="lieu-thumb"><img src="${esc(p.url)}" alt="">
+        <button type="button" title="Retirer" onclick="pendingLieuRemovals.push('${esc(p.id)}');renderLieuThumbs()">✕</button></div>`).join('') +
+      pending.map(p => `<div class="lieu-thumb new"><img src="${p.data}" alt="">
+        <button type="button" title="Retirer" onclick="pendingLieuPhotos.splice(${p.i},1);renderLieuThumbs()">✕</button></div>`).join('');
+  });
+}
+
+async function handleLieuPhotos(input, kind) {
   const files = [...(input.files || [])].filter(f => f.type.startsWith('image/'));
-  for (const file of files) {
-    try { pendingLieuPhotos.push(await compressImage(file, 1400)); }
+  const { existing, pending } = lieuFormPhotos(kind);
+  const room = LIEU_PHOTOS_MAX - existing.length - pending.length;
+  if (files.length > room) alert(`${LIEU_PHOTOS_MAX} photos maximum par type.` + (room > 0 ? ` Seules les ${room} premières sont ajoutées.` : ' Retire une photo avant d\'en ajouter.'));
+  for (const file of files.slice(0, Math.max(0, room))) {
+    try { pendingLieuPhotos.push({ data: await compressImage(file, 1400), kind }); }
     catch (e) { alert('Impossible de lire ' + file.name); }
   }
   input.value = '';
   renderLieuThumbs();
+}
+
+async function fillGpsFromMapsLink(quiet) {
+  const link = document.getElementById('f-maps').value.trim();
+  if (!link) return;
+  const btn = document.getElementById('f-maps-go');
+  btn.disabled = true; btn.textContent = 'LECTURE…';
+  try {
+    const r = await resolveMapsLink(link);
+    document.getElementById('f-gps').value = formatGps(r);
+    const nom = document.getElementById('f-nom');
+    if (r.nom && !nom.value.trim()) nom.value = r.nom;
+  } catch (e) {
+    if (!quiet) alert(e.message);
+  } finally {
+    btn.disabled = false; btn.textContent = 'LIRE LE LIEN';
+  }
 }
 
 function fillGpsFromDevice() {
@@ -1343,7 +1497,7 @@ async function saveLieuPhotos(lieuId, toAdd, toRemove) {
   setSyncStatus('syncing');
   try {
     if (toRemove.length) await removeLieuPhotos(lieuId, toRemove);
-    for (const dataUrl of toAdd) await addLieuPhoto(lieuId, dataUrl);
+    for (const p of toAdd) await addLieuPhoto(lieuId, p.data, p.kind);
     setSyncStatus('ok');
     render();
   } catch (e) {
@@ -1560,7 +1714,7 @@ function submitForm() {
     if (!g('f-nom')) { alert('Le nom est requis.'); return; }
     const obj = {
       nom: g('f-nom'), type: g('f-type'), adresse: g('f-adresse'),
-      pays: g('fl-pays'), ville: g('f-ville'), gps: g('f-gps'), maps: g('f-maps'),
+      pays: g('fl-pays'), ville: g('f-ville'), gps: g('f-gps'), maps: g('f-maps'), description: g('f-description'),
       cout: g('f-cout'), coutDetail: g('f-cout-detail'),
       contact: g('f-contact'), tel: g('f-tel'), mail: g('f-mail'),
       photos: g('f-photo-links').split('\n').map(s => s.trim()).filter(Boolean),
@@ -1729,7 +1883,7 @@ function openQuickResult(out) {
   } else if (out.type === 'lieu' && out.lieu) {
     const l = out.lieu;
     openForm('lieu', undefined, { prefill: { ...l, pays: keep([l.pays], COUNTRIES)[0] || '' } });
-    if (image) { pendingLieuPhotos.push(image); renderLieuThumbs(); }
+    if (image) { pendingLieuPhotos.push({ data: image, kind: 'campagne' }); renderLieuThumbs(); }
   } else {
     document.getElementById('qa-status').textContent = out.remarque || "Je n'ai pas reconnu un talent ou un lieu. Ajoute un mot d'explication.";
     const btn = document.getElementById('qa-go'); btn.disabled = false; btn.textContent = 'Analyser';
