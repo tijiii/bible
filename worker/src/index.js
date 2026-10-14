@@ -60,7 +60,7 @@ Règles :
 - Mets le nom de famille en majuscules comme dans le reste de l'annuaire.`;
 
 function corsHeaders(origin, env) {
-  const allowed = (env.ALLOWED_ORIGINS || 'https://tijiii.github.io').split(',').map(s => s.trim());
+  const allowed = (env.ALLOWED_ORIGINS || 'https://bible.widenproduction.fr,https://tijiii.github.io').split(',').map(s => s.trim());
   const ok = allowed.includes(origin) || allowed.includes('*');
   return {
     'Access-Control-Allow-Origin': ok ? origin : allowed[0],
