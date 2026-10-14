@@ -105,6 +105,7 @@ let fSport     = '';
 let fSexe      = '';
 let fPays      = '';
 let fAgence    = '';
+let fTri       = '';    // '' (ordre habituel), 'age-asc' ou 'age-desc'
 let fSubCat    = '';    // sous-catégorie dans un groupe (ex: DOP chez les techniciens)
 let detailType = null;
 let detailId   = null;
@@ -346,8 +347,27 @@ function filterTalents() {
   });
 }
 
+// Âge en nombre, ou null s'il n'est pas renseigné
+function talentAge(p) {
+  const n = parseInt(p.age, 10);
+  return Number.isFinite(n) ? n : null;
+}
+
+// Trie par âge ; les profils sans âge restent à la fin
+function sortTalents(list) {
+  if (!fTri) return list;
+  const dir = fTri === 'age-desc' ? -1 : 1;
+  return list.slice().sort((a, b) => {
+    const x = talentAge(a), y = talentAge(b);
+    if (x === null && y === null) return 0;
+    if (x === null) return 1;
+    if (y === null) return -1;
+    return (x - y) * dir;
+  });
+}
+
 function renderTalents(main) {
-  const list = filterTalents();
+  const list = sortTalents(filterTalents());
 
   // Build filter options from current scope
   const scope = curCatId ? db.talents.filter(p => {
@@ -392,6 +412,11 @@ function renderTalents(main) {
     <select class="filter-sel" onchange="fAgence=this.value;renderTalents(document.getElementById('main-content'))">
       <option value="">AGENCE</option>
       ${agences.map(a=>`<option value="${esc(a)}"${fAgence===a?' selected':''}>${esc(a)}</option>`).join('')}
+    </select>
+    <select class="filter-sel" onchange="fTri=this.value;renderTalents(document.getElementById('main-content'))">
+      <option value="">TRIER</option>
+      <option value="age-asc"${fTri==='age-asc'?' selected':''}>ÂGE ↑ (plus jeunes)</option>
+      <option value="age-desc"${fTri==='age-desc'?' selected':''}>ÂGE ↓ (plus âgés)</option>
     </select>
     <div class="spacer"></div>
     <button class="btn-add" onclick="openAddChooser()">+ AJOUTER</button>
