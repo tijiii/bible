@@ -138,7 +138,8 @@ function talentPhotoUrl(talentId, v) {
 
 function lieuPhoto(lieuId, photoId) {
   const url = `${STORE_URL}/img/l/${encodeURIComponent(lieuId)}/${encodeURIComponent(photoId)}`;
-  return { id: photoId, url, full: url };
+  // Les photos iPhone ont un identifiant qui commence par « ip » (voir worker/src/store.js)
+  return { id: photoId, url, full: url, kind: String(photoId).startsWith('ip') ? 'iphone' : 'campagne' };
 }
 
 function getSharedPhotoFor(talentId) {
@@ -232,9 +233,9 @@ async function initSharedPhotos() {
 // ── PHOTOS DES LIEUX (scouting) ─────────────────────────────────────────────
 
 // Ajoute une photo (dataURL base64 JPEG) aux photos du lieu
-async function addLieuPhoto(lieuId, dataUrl) {
+async function addLieuPhoto(lieuId, dataUrl, kind) {
   const blob = dataUrlToBlob(dataUrl);
-  const res = await storeFetch(`/photo/lieu/${encodeURIComponent(lieuId)}`, {
+  const res = await storeFetch(`/photo/lieu/${encodeURIComponent(lieuId)}${kind === 'iphone' ? '?kind=iphone' : ''}`, {
     method: 'POST', headers: { 'Content-Type': blob.type }, body: blob
   });
   lieuPhotos[lieuId] = res.photos.map(p => lieuPhoto(lieuId, p));

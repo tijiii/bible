@@ -96,6 +96,65 @@ async function instagramHints(text) {
   }
 }
 
+// ── LIENS GOOGLE MAPS ────────────────────────────────────────────────────────
+// Un lien court (maps.app.goo.gl/…) ne contient pas les coordonnées : on suit
+// ses redirections, sans télécharger les pages, jusqu'à trouver l'adresse longue.
+const MAPS_HOSTS = /^(maps\.app\.goo\.gl|goo\.gl|(www\.|maps\.)?google\.[a-z.]+|consent\.google\.[a-z.]+)$/i;
+
+export function coordsFromMapsUrl(link) {
+  let s = link;
+  try { s = decodeURIComponent(link); } catch {}
+  const num = '(-?\\d{1,3}(?:\\.\\d+)?)';
+  const tries = [
+    new RegExp(`!3d${num}!4d${num}`),                      // le point exact du lieu
+    new RegExp(`[?&](?:q|query|ll|destination|center)=${num},\\s*\\+?${num}`),
+    new RegExp(`/search/${num},\\s*\\+?${num}`),
+    new RegExp(`@${num},${num}`),                           // le centre de la vue
+  ];
+  for (const re of tries) {
+    const m = s.match(re);
+    if (m) {
+      const lat = Number(m[1]), lng = Number(m[2]);
+      if (Math.abs(lat) <= 90 && Math.abs(lng) <= 180) return { lat, lng };
+    }
+  }
+  return null;
+}
+
+function placeNameFromMapsUrl(link) {
+  const m = link.match(/\/maps\/place\/([^/@?]+)/);
+  if (!m) return '';
+  try { return decodeURIComponent(m[1].replace(/\+/g, ' ')); } catch { return ''; }
+}
+
+async function resolveMapsLink(link) {
+  let current = String(link || '').trim();
+  for (let hop = 0; hop < 6; hop++) {
+    let u;
+    try { u = new URL(current); } catch { return { error: "Ce n'est pas un lien." }; }
+    if (!MAPS_HOSTS.test(u.hostname)) return { error: "Ce n'est pas un lien Google Maps." };
+    // La page de consentement cache le vrai lien dans « continue »
+    if (/^consent\./i.test(u.hostname) && u.searchParams.get('continue')) { current = u.searchParams.get('continue'); continue; }
+    const coords = coordsFromMapsUrl(current);
+    if (coords) return { ...coords, nom: placeNameFromMapsUrl(current), url: current };
+    let res;
+    try {
+      res = await fetch(current, { redirect: 'manual', headers: { 'User-Agent': 'Mozilla/5.0' }, signal: AbortSignal.timeout(5000) });
+    } catch { return { error: 'Google Maps ne répond pas.' }; }
+    const next = res.headers.get('Location');
+    if (!next) {
+      // Page finale sans coordonnées dans l'adresse : Google les met dans l'aperçu de la page
+      if (!res.ok) break;
+      const html = (await res.text()).slice(0, 400000);
+      const m = html.match(/center=(-?\d{1,3}\.\d+)(?:%2C|,)(-?\d{1,3}\.\d+)/) || html.match(/\[null,null,(-?\d{1,3}\.\d+),(-?\d{1,3}\.\d+)\]/);
+      if (m) return { lat: Number(m[1]), lng: Number(m[2]), nom: placeNameFromMapsUrl(current), url: current };
+      break;
+    }
+    current = new URL(next, current).toString();
+  }
+  return { error: 'Pas de coordonnées dans ce lien. Ouvre le lieu dans Google Maps, puis « Partager » et copie le lien.' };
+}
+
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
@@ -103,6 +162,10 @@ export default {
     const origin = request.headers.get('Origin') || '';
     const cors = corsHeaders(origin, env);
     if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers: (({ ok, ...h }) => h)(cors) });
+    if (url.pathname === '/maps' && request.method === 'GET') {
+      if (!cors.ok) return json({ error: 'Origine non autorisée' }, 403, cors);
+      return json(await resolveMapsLink(url.searchParams.get('url') || ''), 200, cors);
+    }
     if (request.method !== 'POST') return json({ error: 'Méthode non autorisée' }, 405, cors);
     if (!cors.ok) return json({ error: 'Origine non autorisée' }, 403, cors);
     if (Number(request.headers.get('Content-Length') || 0) > MAX_BODY_BYTES) return json({ error: 'Image trop lourde' }, 413, cors);
