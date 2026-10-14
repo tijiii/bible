@@ -71,16 +71,13 @@ Chapitre **LIEUX** : nom, type, adresse, pays/ville, coordonnées GPS (bouton **
 
 Les infos des lieux sont stockées avec le reste de la base. Les photos importées sont envoyées au serveur Cloudflare, comme celles des talents.
 
-### Projets tournés sur un lieu (Dropbox)
+### Projets tournés sur un lieu
 
-Dans la fiche d'un lieu, **CHERCHER DANS DROPBOX** cherche le projet dans `DROPBOX_PROJECTS_PATH` (`/WIDEN/01_PROJETS`), puis ses dossiers `LIVRAISON` et les vidéos dedans. Les liens enregistrés sont des liens `dropbox.com/home/...` : ils s'ouvrent pour les membres de l'équipe qui ont accès au dossier, rien n'est partagé publiquement.
+Dans le formulaire d'un lieu, **+ AJOUTER UN PROJET** : nom, année et lien Dropbox de la vidéo finale (ou du dossier). La fiche n'affiche le bloc « Projets tournés ici » que s'il y a au moins un projet.
 
-Mise en place, une seule fois :
-1. Sur [dropbox.com/developers/apps](https://www.dropbox.com/developers/apps), **Create app** → *Scoped access* → *Full Dropbox*.
-2. Onglet **Permissions** : cocher `files.metadata.read`, puis **Submit**.
-3. Onglet **Settings** : ajouter la *Redirect URI* `https://bible-ajout-rapide.tom-9dd.workers.dev/dropbox/callback`.
-4. Copier l'**App key** dans `DROPBOX_APP_KEY` de `worker/wrangler.toml` (elle n'est pas secrète) et pousser sur main.
-5. Dans la bible, lancer une recherche puis cliquer **CONNECTER DROPBOX** avec un compte `@widenproduction.fr`.
+### Catégories
+
+Liste de base dans `LIEU_CATEGORIES` (`app.js`). Les catégories ajoutées depuis le formulaire (**+ AJOUTER**) sont gardées dans la base (`lieuCategories`) et visibles par toute l'équipe.
 
 ## Ajout rapide (lien, capture, texte)
 

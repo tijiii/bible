@@ -423,19 +423,6 @@ a.lieu-projet:hover .lieu-projet-go, a.lieu-projet:hover .lieu-projet-annee { co
 .lieu-projet-wrap .lieu-projet { flex:1; }
 .lieu-projet-del { background:none; border:1px solid var(--border); color:var(--muted); cursor:pointer; padding:0 10px; }
 .lieu-projet-dossier { align-self:flex-start; font-family:var(--serif); font-size:12px; color:var(--muted); margin:-2px 0 4px 2px; }
-.projet-search { display:flex; gap:6px; margin-top:4px; }
-.projet-search input { flex:1; min-width:0; border:1px solid var(--border); padding:7px 10px; font:inherit; font-size:14px; background:var(--bg, #fff); color:var(--text); }
-.projet-results:empty { display:none; }
-.projet-results { display:flex; flex-direction:column; gap:8px; }
-.projet-msg { font-size:13px; color:var(--muted); line-height:1.4; }
-.projet-result { border:1px solid var(--border); padding:8px; display:flex; flex-direction:column; gap:4px; }
-.projet-result-path { font-family:var(--serif); font-size:14px; word-break:break-word; margin-bottom:2px; }
-.projet-choice { display:flex; flex-wrap:wrap; justify-content:space-between; gap:2px 10px; text-align:left; background:none; border:1px solid var(--border); padding:7px 10px; font:inherit; font-size:13px; color:var(--text); cursor:pointer; word-break:break-word; }
-.projet-choice:hover { border-color:var(--accent); }
-.projet-choice.video { border-color:var(--accent); }
-.projet-choice-sub { color:var(--muted); font-size:12px; }
-.projet-connect, .projet-sans-lien { align-self:flex-start; text-decoration:none; margin-top:0; }
-@media (max-width:600px) { .projet-search { flex-direction:column; } }
 
 /* Galerie des lieux : photos centrées, sans case vide, agrandies sur place */
 .lieu-gallery { display:flex; flex-wrap:wrap; justify-content:center; gap:4px; background:none; padding:0 20px; max-height:none; overflow:visible; }
@@ -457,3 +444,8 @@ a.lieu-projet:hover .lieu-projet-go, a.lieu-projet:hover .lieu-projet-annee { co
   .lightbox-nav { position:absolute; bottom:14px; font-size:40px; }
   .lightbox-nav.prev { left:10px; } .lightbox-nav.next { right:10px; }
 }
+
+/* Ajout d'une catégorie de lieu depuis le formulaire */
+.new-cat { display:flex; gap:6px; margin-top:8px; max-width:420px; }
+.new-cat input { flex:1; min-width:0; }
+.new-cat .btn-ig { margin-top:0; }

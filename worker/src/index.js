@@ -8,7 +8,6 @@ import Anthropic from '@anthropic-ai/sdk';
 import { betaZodOutputFormat } from '@anthropic-ai/sdk/helpers/beta/zod';
 import * as z from 'zod/v4';
 import { handleStore } from './store.js';
-import { handleDropbox } from './dropbox.js';
 
 const MAX_BODY_BYTES = 8 * 1024 * 1024;
 const IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
@@ -163,7 +162,6 @@ export default {
     const origin = request.headers.get('Origin') || '';
     const cors = corsHeaders(origin, env);
     if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers: (({ ok, ...h }) => h)(cors) });
-    if (url.pathname.startsWith('/dropbox/') && request.method === 'GET') return handleDropbox(request, env, url, cors, json);
     if (url.pathname === '/maps' && request.method === 'GET') {
       if (!cors.ok) return json({ error: 'Origine non autorisée' }, 403, cors);
       return json(await resolveMapsLink(url.searchParams.get('url') || ''), 200, cors);
