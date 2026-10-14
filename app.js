@@ -519,7 +519,7 @@ const LIEU_PHOTO_KINDS = [['campagne', 'PHOTOS DE CAMPAGNE'], ['iphone', 'PHOTOS
 
 function lieuPhotoUrls(l) {
   // Photos importées (serveur) puis liens collés à la main
-  const imported = getLieuPhotos(l.id).map(p => ({ url: p.url, full: p.full, kind: p.kind }));
+  const imported = getLieuPhotos(l.id).map(p => ({ url: p.url, full: p.full, kind: p.kind, date: p.date }));
   const links = (l.photos || []).map(normalizePhotoUrl).filter(Boolean).map(u => ({ url: u, full: u, kind: 'campagne' }));
   return [...imported, ...links];
 }
@@ -818,8 +818,43 @@ function lieuGalleryHtml(photos, label) {
   if (!photos.length) return '';
   return `<div class="lieu-gallery-lbl">${label}</div>
     <div class="lieu-gallery">
-      ${photos.map(p => `<a href="${esc(p.full)}" target="_blank"><img src="${esc(p.url)}" alt="" onerror="this.parentElement.style.display='none'"></a>`).join('')}
+      ${photos.map(p => `<a href="${esc(p.full)}" target="_blank"><img src="${esc(p.url)}" alt="" onerror="this.parentElement.style.display='none'">${p.date ? `<span class="lieu-photo-date">${esc(formatPhotoDate(p.date))}</span>` : ''}</a>`).join('')}
     </div>`;
+}
+
+// « 2025-06-14 » → « 14 juin 2025 »
+function formatPhotoDate(d) {
+  const m = String(d || '').match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!m) return '';
+  return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3])).toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' });
+}
+
+// ── Vidéos des lieux : des liens (YouTube, Vimeo, Google Drive, Dropbox, fichier vidéo)
+function lieuVideoEmbed(link) {
+  let u; try { u = new URL(link); } catch { return null; }
+  const host = u.hostname.replace(/^www\.|^m\./, '');
+  let m;
+  if (host === 'youtu.be') return { iframe: 'https://www.youtube-nocookie.com/embed/' + u.pathname.slice(1).split('/')[0] };
+  if (host.endsWith('youtube.com')) {
+    const id = u.searchParams.get('v') || ((m = u.pathname.match(/\/(?:shorts|embed|live)\/([^/?]+)/)) && m[1]);
+    if (id) return { iframe: 'https://www.youtube-nocookie.com/embed/' + id, portrait: u.pathname.startsWith('/shorts') };
+  }
+  if (host === 'vimeo.com' && (m = u.pathname.match(/^\/(\d+)/))) return { iframe: 'https://player.vimeo.com/video/' + m[1] };
+  if (host === 'drive.google.com' && (m = u.pathname.match(/\/file\/d\/([^/]+)/))) return { iframe: 'https://drive.google.com/file/d/' + m[1] + '/preview' };
+  if (host.endsWith('dropbox.com')) { u.searchParams.delete('dl'); u.searchParams.set('raw', '1'); return { video: u.toString() }; }
+  if (/\.(mp4|mov|webm|m4v)$/i.test(u.pathname)) return { video: link };
+  return null;
+}
+
+function lieuVideosHtml(l) {
+  const links = (l.videos || []).filter(Boolean);
+  if (!links.length) return '';
+  return `<div class="lieu-gallery-lbl">VIDÉOS</div><div class="lieu-videos">` + links.map(link => {
+    const e = lieuVideoEmbed(link);
+    if (e && e.iframe) return `<div class="lieu-video${e.portrait ? ' portrait' : ''}"><iframe src="${esc(e.iframe)}" allow="autoplay; fullscreen; picture-in-picture" allowfullscreen loading="lazy"></iframe></div>`;
+    if (e && e.video) return `<div class="lieu-video"><video src="${esc(e.video)}" controls playsinline preload="metadata"></video></div>`;
+    return `<a class="btn-ig lieu-video-link" href="${esc(link)}" target="_blank">VOIR LA VIDÉO ↗</a>`;
+  }).join('') + `</div>`;
 }
 
 function lieuDetailHtml(l) {
@@ -829,6 +864,7 @@ function lieuDetailHtml(l) {
   const gps = parseGps(l.gps);
   return `<div class="lieu-detail">
     ${LIEU_PHOTO_KINDS.map(([k, label]) => lieuGalleryHtml(photos.filter(p => p.kind === k), label)).join('')}
+    ${lieuVideosHtml(l)}
     <div class="detail-info">
       <div class="detail-name">${esc(l.nom)}</div>
       <div class="detail-tags">
@@ -1542,6 +1578,11 @@ function renderLieuForm(v) {
     <div class="field full"><label>DÉTAIL DES COÛTS</label><textarea id="f-cout-detail" rows="3" placeholder="ex: Location 1000 €/jour, autorisation mairie 300 €, parking régie 200 €">${esc(v.coutDetail||'')}</textarea></div>
     <div class="field"><label>TEL</label><input id="f-tel" value="${esc(v.tel||'')}" placeholder="+33 6..."></div>
     <div class="field"><label>MAIL</label><input id="f-mail" type="email" value="${esc(v.mail||'')}"></div>
+    <div class="field full">
+      <label>VIDÉOS (liens)</label>
+      <textarea id="f-videos" rows="2" placeholder="Un lien par ligne : YouTube, Vimeo, Google Drive, Dropbox...">${esc((v.videos||[]).join('\n'))}</textarea>
+      <div class="field-hint">Mets la vidéo sur Google Drive ou YouTube (en non répertoriée), puis colle le lien de partage ici.</div>
+    </div>
     <div class="field full"><label>LIENS D'IMAGES (optionnel)</label><textarea id="f-photo-links" rows="2" placeholder="Liens d'images (Google Drive, Imgur...), un par ligne">${esc((v.photos||[]).join('\n'))}</textarea></div>
     <div class="field full"><label>NOTES (accès, lumière, horaires, autorisations...)</label><textarea id="f-notes" rows="3">${esc(v.notes||'')}</textarea></div>`;
   renderLieuThumbs();
@@ -1560,11 +1601,57 @@ function renderLieuThumbs() {
     if (!box) return;
     const { existing, pending } = lieuFormPhotos(kind);
     box.innerHTML =
-      existing.map(p => `<div class="lieu-thumb"><img src="${esc(p.url)}" alt="">
-        <button type="button" title="Retirer" onclick="pendingLieuRemovals.push('${esc(p.id)}');renderLieuThumbs()">✕</button></div>`).join('') +
-      pending.map(p => `<div class="lieu-thumb new"><img src="${p.data}" alt="">
-        <button type="button" title="Retirer" onclick="pendingLieuPhotos.splice(${p.i},1);renderLieuThumbs()">✕</button></div>`).join('');
+      existing.map(p => `<div class="lieu-thumb-wrap"><div class="lieu-thumb"><img src="${esc(p.url)}" alt="">
+        <button type="button" title="Retirer" onclick="pendingLieuRemovals.push('${esc(p.id)}');renderLieuThumbs()">✕</button></div>
+        <div class="lieu-thumb-date">${esc(formatPhotoDate(p.date) || 'date inconnue')}</div></div>`).join('') +
+      pending.map(p => `<div class="lieu-thumb-wrap"><div class="lieu-thumb new"><img src="${p.data}" alt="">
+        <button type="button" title="Retirer" onclick="pendingLieuPhotos.splice(${p.i},1);renderLieuThumbs()">✕</button></div>
+        <input type="date" class="lieu-thumb-date-in" value="${esc(p.date || '')}" title="Date de la photo" onchange="pendingLieuPhotos[${p.i}].date=this.value"></div>`).join('');
   });
+}
+
+// Date de prise de vue lue dans les infos EXIF de la photo (perdues à la compression,
+// donc lues avant). Sans EXIF, on prend la date du fichier si elle n'est pas d'aujourd'hui.
+async function photoTakenDate(file) {
+  try {
+    const v = new DataView(await file.slice(0, 256 * 1024).arrayBuffer());
+    if (v.getUint16(0) === 0xFFD8) {
+      let off = 2;
+      while (off + 4 < v.byteLength) {
+        const marker = v.getUint16(off), size = v.getUint16(off + 2);
+        if (marker === 0xFFE1 && v.getUint32(off + 4) === 0x45786966) { // « Exif »
+          const d = exifDate(v, off + 10);
+          if (d) return d;
+          break;
+        }
+        if ((marker & 0xFF00) !== 0xFF00) break;
+        off += 2 + size;
+      }
+    }
+  } catch (e) { /* pas d'EXIF lisible */ }
+  const lm = file.lastModified ? new Date(file.lastModified) : null;
+  if (lm && lm.toDateString() !== new Date().toDateString()) return lm.toISOString().slice(0, 10);
+  return '';
+}
+
+function exifDate(v, tiff) {
+  const le = v.getUint16(tiff) === 0x4949;
+  const u16 = o => v.getUint16(o, le), u32 = o => v.getUint32(o, le);
+  const readIfd = (ifd, wanted) => {
+    const n = u16(ifd);
+    for (let i = 0; i < n; i++) {
+      const e = ifd + 2 + i * 12;
+      if (u16(e) === wanted) return e;
+    }
+    return null;
+  };
+  const ascii = e => { let s = ''; const o = tiff + u32(e + 8); for (let i = 0; i < 19; i++) s += String.fromCharCode(v.getUint8(o + i)); return s; };
+  const ifd0 = tiff + u32(tiff + 4);
+  const exifPtr = readIfd(ifd0, 0x8769);
+  let e = exifPtr ? readIfd(tiff + u32(exifPtr + 8), 0x9003) : null; // DateTimeOriginal
+  if (!e) e = readIfd(ifd0, 0x0132);                                   // DateTime
+  const m = e && ascii(e).match(/^(\d{4}):(\d{2}):(\d{2})/);
+  return m && m[1] !== '0000' ? `${m[1]}-${m[2]}-${m[3]}` : '';
 }
 
 async function handleLieuPhotos(input, kind) {
@@ -1573,7 +1660,7 @@ async function handleLieuPhotos(input, kind) {
   const room = LIEU_PHOTOS_MAX - existing.length - pending.length;
   if (files.length > room) alert(`${LIEU_PHOTOS_MAX} photos maximum par type.` + (room > 0 ? ` Seules les ${room} premières sont ajoutées.` : ' Retire une photo avant d\'en ajouter.'));
   for (const file of files.slice(0, Math.max(0, room))) {
-    try { pendingLieuPhotos.push({ data: await compressImage(file, 1400), kind }); }
+    try { pendingLieuPhotos.push({ data: await compressImage(file, 1400), kind, date: await photoTakenDate(file) }); }
     catch (e) { alert('Impossible de lire ' + file.name); }
   }
   input.value = '';
@@ -1614,7 +1701,7 @@ async function saveLieuPhotos(lieuId, toAdd, toRemove) {
   setSyncStatus('syncing');
   try {
     if (toRemove.length) await removeLieuPhotos(lieuId, toRemove);
-    for (const p of toAdd) await addLieuPhoto(lieuId, p.data, p.kind);
+    for (const p of toAdd) await addLieuPhoto(lieuId, p.data, p.kind, p.date);
     setSyncStatus('ok');
     render();
   } catch (e) {
@@ -1835,6 +1922,7 @@ function submitForm() {
       cout: g('f-cout'), coutDetail: g('f-cout-detail'),
       contact: g('f-contact'), tel: g('f-tel'), mail: g('f-mail'),
       photos: g('f-photo-links').split('\n').map(s => s.trim()).filter(Boolean),
+      videos: g('f-videos').split('\n').map(s => s.trim()).filter(Boolean),
       notes: g('f-notes')
     };
     let finalId;
@@ -2000,7 +2088,7 @@ function openQuickResult(out) {
   } else if (out.type === 'lieu' && out.lieu) {
     const l = out.lieu;
     openForm('lieu', undefined, { prefill: { ...l, pays: keep([l.pays], COUNTRIES)[0] || '' } });
-    if (image) { pendingLieuPhotos.push({ data: image, kind: 'campagne' }); renderLieuThumbs(); }
+    if (image) { pendingLieuPhotos.push({ data: image, kind: 'campagne', date: '' }); renderLieuThumbs(); }
   } else {
     document.getElementById('qa-status').textContent = out.remarque || "Je n'ai pas reconnu un talent ou un lieu. Ajoute un mot d'explication.";
     const btn = document.getElementById('qa-go'); btn.disabled = false; btn.textContent = 'Analyser';

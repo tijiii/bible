@@ -129,7 +129,8 @@ async function saveDbRemote() {
 const PHOTO_REFRESH_INTERVAL = 5 * 60 * 1000;
 
 let sharedPhotos = {};   // talentId -> url de l'image
-let lieuPhotos = {};     // lieuId -> [{ id, url, full }]
+let lieuPhotos = {};     // lieuId -> [{ id, url, full, kind, date }]
+let photoDates = {};     // photoId -> date de prise de vue (AAAA-MM-JJ)
 let photosInitDone = false;
 
 function talentPhotoUrl(talentId, v) {
@@ -139,7 +140,7 @@ function talentPhotoUrl(talentId, v) {
 function lieuPhoto(lieuId, photoId) {
   const url = `${STORE_URL}/img/l/${encodeURIComponent(lieuId)}/${encodeURIComponent(photoId)}`;
   // Les photos iPhone ont un identifiant qui commence par « ip » (voir worker/src/store.js)
-  return { id: photoId, url, full: url, kind: String(photoId).startsWith('ip') ? 'iphone' : 'campagne' };
+  return { id: photoId, url, full: url, kind: String(photoId).startsWith('ip') ? 'iphone' : 'campagne', date: photoDates[photoId] || '' };
 }
 
 function getSharedPhotoFor(talentId) {
@@ -153,6 +154,7 @@ function getLieuPhotos(lieuId) {
 function applyPhotoIndex(idx) {
   const nextTalents = {};
   for (const [id, info] of Object.entries(idx.talents || {})) nextTalents[id] = talentPhotoUrl(id, info.v);
+  photoDates = idx.dates || {};
   const nextLieux = {};
   for (const [id, ids] of Object.entries(idx.lieux || {})) nextLieux[id] = ids.map(p => lieuPhoto(id, p));
   sharedPhotos = nextTalents;
@@ -160,7 +162,7 @@ function applyPhotoIndex(idx) {
 }
 
 function photosSignature() {
-  return JSON.stringify([sharedPhotos, Object.keys(lieuPhotos).sort().map(k => [k, lieuPhotos[k].map(p => p.id)])]);
+  return JSON.stringify([sharedPhotos, Object.keys(lieuPhotos).sort().map(k => [k, lieuPhotos[k].map(p => p.id + p.date)])]);
 }
 
 async function refreshPhotos() {
@@ -233,11 +235,15 @@ async function initSharedPhotos() {
 // ── PHOTOS DES LIEUX (scouting) ─────────────────────────────────────────────
 
 // Ajoute une photo (dataURL base64 JPEG) aux photos du lieu
-async function addLieuPhoto(lieuId, dataUrl, kind) {
+async function addLieuPhoto(lieuId, dataUrl, kind, date) {
   const blob = dataUrlToBlob(dataUrl);
-  const res = await storeFetch(`/photo/lieu/${encodeURIComponent(lieuId)}${kind === 'iphone' ? '?kind=iphone' : ''}`, {
+  const qs = new URLSearchParams();
+  if (kind === 'iphone') qs.set('kind', 'iphone');
+  if (date) qs.set('date', date);
+  const res = await storeFetch(`/photo/lieu/${encodeURIComponent(lieuId)}${qs.toString() ? '?' + qs : ''}`, {
     method: 'POST', headers: { 'Content-Type': blob.type }, body: blob
   });
+  if (res.dates) photoDates = res.dates;
   lieuPhotos[lieuId] = res.photos.map(p => lieuPhoto(lieuId, p));
 }
 

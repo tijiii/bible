@@ -7,7 +7,7 @@
 //   GET    /store/photos                  → index des photos
 //   PUT    /store/photo/talent/<id>       → photo du talent (corps = image)
 //   DELETE /store/photo/talent/<id>
-//   POST   /store/photo/lieu/<id>[?kind=iphone] → ajoute une photo au lieu
+//   POST   /store/photo/lieu/<id>[?kind=iphone&date=AAAA-MM-JJ] → ajoute une photo au lieu
 //   DELETE /store/photo/lieu/<id>/<photo> → retire une photo du lieu
 //   DELETE /store/photo/lieu/<id>         → retire toutes les photos du lieu
 //   GET    /store/img/t/<id>, /store/img/l/<id>/<photo> → l'image
@@ -47,7 +47,7 @@ function hasKey(request, env) {
 
 async function readIndex(env) {
   const idx = await env.BIBLE.get(INDEX_KEY, 'json');
-  return { talents: {}, lieux: {}, ...(idx || {}) };
+  return { talents: {}, lieux: {}, dates: {}, ...(idx || {}) };
 }
 
 function dbCacheKey(url) {
@@ -164,14 +164,18 @@ export async function handleStore(request, env, url) {
         const photoId = prefix + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
         await env.BIBLE.put(`img:l:${id}:${photoId}`, bytes, { metadata: { type } });
         idx.lieux[id] = [...list, photoId];
+        // Date de prise de vue (lue dans la photo par le site), facultative
+        const date = url.searchParams.get('date') || '';
+        if (/^\d{4}-\d{2}-\d{2}$/.test(date)) idx.dates = { ...(idx.dates || {}), [photoId]: date };
         await env.BIBLE.put(INDEX_KEY, JSON.stringify(idx));
-        return reply({ ok: true, photos: idx.lieux[id] }, 200, cors);
+        return reply({ ok: true, photos: idx.lieux[id], dates: idx.dates }, 200, cors);
       }
       if (request.method === 'DELETE') {
         const remove = parts[3] ? [parts[3]] : list;
         await Promise.all(remove.map(p => env.BIBLE.delete(`img:l:${id}:${p}`)));
         const rest = list.filter(p => !remove.includes(p));
         if (rest.length) idx.lieux[id] = rest; else delete idx.lieux[id];
+        remove.forEach(p => { if (idx.dates) delete idx.dates[p]; });
         await env.BIBLE.put(INDEX_KEY, JSON.stringify(idx));
         return reply({ ok: true, photos: rest }, 200, cors);
       }
