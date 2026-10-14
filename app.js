@@ -515,17 +515,54 @@ function renderClubs(main) {
 }
 
 // ── LIEUX (scouting) ──────────────────────────────────────────────────────────
-// Catégories de lieux, pour trier la carte et la liste
-const LIEU_CATEGORIES = ['Rue / Urbain', 'Nature', 'Forêt', 'Montagne', 'Mer / Plage', 'Lac / Rivière', 'Désert',
-  'Campagne', 'Neige', 'Stade / Sport', 'Intérieur', 'Rooftop', 'Industriel', 'Autre'];
+// Catégories de lieux, pour trier la carte et la liste. L'équipe peut en ajouter
+// depuis le site (gardées dans db.lieuCategories, partagées avec la base).
+const LIEU_CATEGORIES = ['Rue', 'Ville', 'Urbain', 'Nature', 'Forêt', 'Montagne', 'Mer', 'Océan', 'Lac', 'Rivière',
+  'Plage', 'Désert', 'Campagne', 'Neige', 'Stade', 'Infrastructure', 'Bâtiment', 'Maison', 'Atypique', 'Architecture', 'Industriel'];
+
+// Anciennes catégories (première version) → nouvelles
+const LIEU_CATEGORIES_RENOMMEES = {
+  'Rue / Urbain': ['Rue', 'Urbain'], 'Mer / Plage': ['Mer', 'Plage'], 'Lac / Rivière': ['Lac', 'Rivière'],
+  'Stade / Sport': ['Stade'], 'Intérieur': ['Bâtiment'], 'Autre': [],
+};
+
+const sansAccent = v => String(v || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+
+function uniqCats(list) {
+  const seen = new Set();
+  return list.map(c => String(c || '').trim()).filter(c => c && !seen.has(sansAccent(c)) && seen.add(sansAccent(c)));
+}
+
+function lieuCategoryList() {
+  const used = lieuxList().flatMap(l => Array.isArray(l.categories) ? lieuCats(l) : []);
+  return uniqCats([...LIEU_CATEGORIES, ...(db.lieuCategories || []), ...used]);
+}
 
 // Les lieux créés avant les catégories n'ont qu'un « type » libre : on le rattache à une catégorie si possible
 function lieuCats(l) {
-  if (Array.isArray(l.categories)) return l.categories;
-  const t = String(l.type || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+  if (Array.isArray(l.categories)) return uniqCats(l.categories.flatMap(c => LIEU_CATEGORIES_RENOMMEES[c] || [c]));
+  const t = sansAccent(l.type);
   if (!t) return [];
-  return LIEU_CATEGORIES.filter(c => c !== 'Autre' && c.split(' / ').some(part =>
-    t.includes(part.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, ''))));
+  return uniqCats([...LIEU_CATEGORIES, ...(db.lieuCategories || [])]).filter(c => t.includes(sansAccent(c)));
+}
+
+function lieuCatsGridHtml(checked) {
+  return lieuCategoryList().map(c => `<label class="cat-check">
+        <input type="checkbox" name="lieu-cat" value="${esc(c)}" ${checked.includes(c) ? 'checked' : ''}><span>${esc(c)}</span></label>`).join('');
+}
+
+function addLieuCategory() {
+  const input = document.getElementById('f-new-cat');
+  const nom = (input && input.value || '').trim();
+  if (!nom) { if (input) input.focus(); return; }
+  const checked = [...document.querySelectorAll('input[name="lieu-cat"]:checked')].map(el => el.value);
+  const existing = lieuCategoryList().find(c => sansAccent(c) === sansAccent(nom));
+  if (!existing) {
+    db.lieuCategories = uniqCats([...(db.lieuCategories || []), nom]);
+    saveDb();
+  }
+  document.getElementById('lieu-cats-grid').innerHTML = lieuCatsGridHtml(uniqCats([...checked, existing || nom]));
+  input.value = '';
 }
 
 const LIEU_PHOTOS_MAX = 3; // par type : 3 photos de campagne, 3 photos iPhone
@@ -692,7 +729,7 @@ function renderLieux(main) {
     <select class="filter-sel" onchange="fLieuCat=this.value;renderLieux(document.getElementById('main-content'))">
       <option value="">CATÉGORIE</option>
       <option value="${LIEU_DEJA_TOURNE}"${fLieuCat===LIEU_DEJA_TOURNE?' selected':''}>★ Déjà tourné ici (${lieuxList().filter(l=>lieuProjets(l).length).length})</option>
-      ${LIEU_CATEGORIES.map(c=>`<option value="${esc(c)}"${fLieuCat===c?' selected':''}>${esc(c)} (${lieuxList().filter(l=>lieuCats(l).includes(c)).length})</option>`).join('')}
+      ${lieuCategoryList().map(c=>`<option value="${esc(c)}"${fLieuCat===c?' selected':''}>${esc(c)} (${lieuxList().filter(l=>lieuCats(l).includes(c)).length})</option>`).join('')}
     </select>
     <select class="filter-sel" onchange="fPays=this.value;renderLieux(document.getElementById('main-content'))">
       <option value="">PAYS</option>
@@ -958,6 +995,7 @@ function lieuProjets(l) {
 
 function lieuProjetsHtml(l) {
   const projets = lieuProjets(l);
+  if (!projets.length) return '';
   return `<div class="lieu-projets"><div class="lieu-projets-lbl">PROJETS TOURNÉS ICI</div>` + projets.map((p, i) => {
     const titre = `<span class="lieu-projet-nom">${esc(p.nom || 'Projet')}</span>${p.annee ? `<span class="lieu-projet-annee">${esc(p.annee)}</span>` : ''}`;
     const dossier = p.dossier && p.dossier !== p.lien ? `<a class="lieu-projet-dossier" href="${esc(p.dossier)}" target="_blank" rel="noopener">DOSSIER DU PROJET ↗</a>` : '';
@@ -965,94 +1003,10 @@ function lieuProjetsHtml(l) {
     return p.lien
       ? `<div class="lieu-projet-wrap"><a class="lieu-projet" href="${esc(p.lien)}" target="_blank" rel="noopener">${titre}<span class="lieu-projet-go">▶ VOIR LA VIDÉO FINALE ↗</span></a>${del}</div>${dossier}`
       : `<div class="lieu-projet-wrap"><div class="lieu-projet">${titre}</div>${del}</div>`;
-  }).join('') + `
-    <div class="projet-search">
-      <input id="projet-q" placeholder="Nom du projet (ex : Salomon, Rossignol 2024…)" autocomplete="off"
-             onkeydown="if(event.key==='Enter')searchDropboxProjet(${l.id})">
-      <button type="button" class="btn-add" onclick="searchDropboxProjet(${l.id})">CHERCHER DANS DROPBOX</button>
-    </div>
-    <div id="projet-results" class="projet-results"></div>
-  </div>`;
+  }).join('') + `</div>`;
 }
-
-// Recherche du projet dans Dropbox (via le serveur) : dossier, dossier LIVRAISON et vidéos
-let dropboxResults = [];
-let dropboxQuery = '';
 
 function lieuById(id) { return lieuxList().find(l => l.id === id); }
-
-function shortDropboxPath(p) { return String(p || '').replace(/^\/WIDEN\/01_PROJETS\//i, ''); }
-
-function formatSize(b) {
-  if (!b) return '';
-  return b >= 1e9 ? (b / 1e9).toFixed(1).replace('.', ',') + ' Go' : Math.round(b / 1e6) + ' Mo';
-}
-
-async function searchDropboxProjet(lieuId) {
-  const input = document.getElementById('projet-q');
-  const box = document.getElementById('projet-results');
-  const q = (input && input.value || '').trim();
-  if (!box || !q) { if (input) input.focus(); return; }
-  dropboxQuery = q;
-  dropboxResults = [];
-  box.innerHTML = `<div class="projet-msg">Recherche de « ${esc(q)} » dans Dropbox…</div>`;
-  const sansLien = `<button type="button" class="btn-ig projet-sans-lien" onclick="addLieuProjet(${lieuId},-1)">AJOUTER « ${esc(q)} » SANS LIEN</button>`;
-  let data;
-  try {
-    const res = await fetch(SERVER_URL + '/dropbox/search?q=' + encodeURIComponent(q));
-    data = await res.json();
-  } catch {
-    box.innerHTML = `<div class="projet-msg">Impossible de joindre le serveur. Vérifie ta connexion.</div>${sansLien}`;
-    return;
-  }
-  if (dropboxQuery !== q) return;
-  if (data.error === 'not_configured') {
-    box.innerHTML = `<div class="projet-msg">La recherche Dropbox n'est pas encore branchée.</div>${sansLien}`;
-    return;
-  }
-  if (data.error === 'not_connected') {
-    box.innerHTML = `<div class="projet-msg">Dropbox n'est pas encore connecté. Connecte-le une fois avec un compte Widen, puis relance la recherche.</div>
-      <a class="btn-add projet-connect" href="${SERVER_URL}/dropbox/connect" target="_blank" rel="noopener">CONNECTER DROPBOX</a>${sansLien}`;
-    return;
-  }
-  if (data.error) { box.innerHTML = `<div class="projet-msg">${esc(data.error)}</div>${sansLien}`; return; }
-  dropboxResults = data.results || [];
-  if (!dropboxResults.length) {
-    box.innerHTML = `<div class="projet-msg">Rien trouvé dans Dropbox pour « ${esc(q)} ».</div>${sansLien}`;
-    return;
-  }
-  box.innerHTML = `<div class="projet-msg">Choisis ce que tu veux mettre sur le lieu :</div>` + dropboxResults.map((r, i) => {
-    const base = shortDropboxPath(r.path);
-    return `<div class="projet-result">
-      <div class="projet-result-path">${esc(base)}</div>
-      ${r.videos.map((v, j) => {
-        const dir = shortDropboxPath(v.path.slice(0, v.path.lastIndexOf('/'))).slice(base.length + 1);
-        return `<button type="button" class="projet-choice video" onclick="addLieuProjet(${lieuId},${i},'video',${j})">
-          <span>▶ ${esc(v.name)}</span><span class="projet-choice-sub">${esc(dir || 'dossier du projet')}${v.size ? ' · ' + formatSize(v.size) : ''}</span></button>`;
-      }).join('')}
-      ${!r.videos.length ? `<div class="projet-msg">Pas de vidéo montée trouvée dans ce dossier.</div>` : ''}
-      ${r.livraison ? `<button type="button" class="projet-choice" onclick="addLieuProjet(${lieuId},${i},'livraison')"><span>📁 Dossier LIVRAISON</span></button>` : ''}
-      <button type="button" class="projet-choice" onclick="addLieuProjet(${lieuId},${i},'dossier')"><span>📁 Dossier du projet</span></button>
-    </div>`;
-  }).join('') + sansLien;
-}
-
-function addLieuProjet(lieuId, i, kind, j) {
-  const l = lieuById(lieuId);
-  if (!l) return;
-  let projet;
-  if (i < 0) projet = { nom: dropboxQuery, annee: '', lien: '' };
-  else {
-    const r = dropboxResults[i];
-    if (!r) return;
-    const lien = kind === 'video' ? r.videos[j].url : kind === 'livraison' ? r.livraison.url : r.url;
-    projet = { nom: r.name, annee: r.annee || '', lien, dossier: r.url };
-  }
-  l.projets = [...lieuProjets(l), projet];
-  saveDb();
-  render();
-  openDetail('lieu', lieuId);
-}
 
 function removeLieuProjet(lieuId, i) {
   const l = lieuById(lieuId);
@@ -1070,7 +1024,7 @@ function projetRowHtml(p) {
   return `<div class="projet-row" data-dossier="${esc(p.dossier||'')}">
     <input class="proj-nom" value="${esc(p.nom||'')}" placeholder="Nom du projet">
     <input class="proj-annee" value="${esc(p.annee||'')}" placeholder="Année" inputmode="numeric">
-    <input class="proj-lien" value="${esc(p.lien||'')}" placeholder="Lien Dropbox de la vidéo finale">
+    <input class="proj-lien" value="${esc(p.lien||'')}" placeholder="Lien Dropbox (vidéo finale ou dossier)">
     <button type="button" class="projet-del" title="Retirer" onclick="this.parentElement.remove()">✕</button>
   </div>`;
 }
@@ -1805,8 +1759,17 @@ function renderLieuForm(v) {
     ${LIEU_PHOTO_KINDS.map(photoField).join('')}
     <div class="field full">
       <label>CATÉGORIES</label>
-      <div class="cats-grid">${LIEU_CATEGORIES.map(c => `<label class="cat-check">
-        <input type="checkbox" name="lieu-cat" value="${esc(c)}" ${lieuCats(v).includes(c) ? 'checked' : ''}><span>${esc(c)}</span></label>`).join('')}</div>
+      <div class="cats-grid" id="lieu-cats-grid">${lieuCatsGridHtml(lieuCats(v))}</div>
+      <div class="new-cat">
+        <input id="f-new-cat" placeholder="Autre catégorie (ex : Port, Falaise…)" onkeydown="if(event.key==='Enter'){event.preventDefault();addLieuCategory()}">
+        <button type="button" class="btn-ig" onclick="addLieuCategory()">+ AJOUTER</button>
+      </div>
+    </div>
+    <div class="field full">
+      <label>PROJETS DÉJÀ TOURNÉS ICI (optionnel)</label>
+      <div id="projets-rows">${lieuProjets(v).map(projetRowHtml).join('')}</div>
+      <button type="button" class="btn-ig projet-add" onclick="addProjetRow()">+ AJOUTER UN PROJET</button>
+      <div class="field-hint">Dans Dropbox, clic droit sur la vidéo finale (ou le dossier du projet), « Copier le lien », puis colle-le ici. Sans projet, rien ne s'affiche sur la fiche.</div>
     </div>
     <div class="field"><label>PRÉCISION (optionnel)</label><input id="f-type" value="${esc(v.type||'')}" placeholder="ex: crique, sentier, parking..."></div>
     <div class="field"><label>PAYS</label><select id="fl-pays">${paysl}</select></div>
@@ -1817,12 +1780,6 @@ function renderLieuForm(v) {
     <div class="field full"><label>DÉTAIL DES COÛTS</label><textarea id="f-cout-detail" rows="3" placeholder="ex: Location 1000 €/jour, autorisation mairie 300 €, parking régie 200 €">${esc(v.coutDetail||'')}</textarea></div>
     <div class="field"><label>TEL</label><input id="f-tel" value="${esc(v.tel||'')}" placeholder="+33 6..."></div>
     <div class="field"><label>MAIL</label><input id="f-mail" type="email" value="${esc(v.mail||'')}"></div>
-    <div class="field full">
-      <label>PROJETS DÉJÀ TOURNÉS ICI</label>
-      <div id="projets-rows">${lieuProjets(v).map(projetRowHtml).join('')}</div>
-      <button type="button" class="btn-ig projet-add" onclick="addProjetRow()">+ AJOUTER UN PROJET</button>
-      <div class="field-hint">Dans Dropbox, clic droit sur la vidéo finale (ou le dossier du projet), « Copier le lien », puis colle-le ici.</div>
-    </div>
     <div class="field full">
       <label>VIDÉOS (liens)</label>
       <textarea id="f-videos" rows="2" placeholder="Un lien par ligne : YouTube, Vimeo, Google Drive, Dropbox...">${esc((v.videos||[]).join('\n'))}</textarea>
