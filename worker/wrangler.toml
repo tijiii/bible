@@ -5,6 +5,11 @@ compatibility_flags = ["nodejs_compat"]
 
 [vars]
 ALLOWED_ORIGINS = "https://tijiii.github.io"
+# Recherche des projets dans Dropbox (lien vers la vidéo finale d'un lieu).
+# DROPBOX_APP_KEY : la « App key » de l'app Dropbox (pas secrète). Vide = recherche désactivée.
+DROPBOX_APP_KEY = ""
+DROPBOX_PROJECTS_PATH = "/WIDEN/01_PROJETS"
+DROPBOX_EMAIL_DOMAIN = "widenproduction.fr"
 
 # Base partagée de la bible (remplace Airtable). Créée automatiquement au
 # premier déploiement.

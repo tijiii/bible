@@ -7,7 +7,7 @@
 //   GET    /store/photos                  → index des photos
 //   PUT    /store/photo/talent/<id>       → photo du talent (corps = image)
 //   DELETE /store/photo/talent/<id>
-//   POST   /store/photo/lieu/<id>[?kind=iphone&date=AAAA-MM-JJ] → ajoute une photo au lieu
+//   POST   /store/photo/lieu/<id>[?kind=iphone&date=AAAA-MM-JJ[THH:MM]] → ajoute une photo au lieu
 //   DELETE /store/photo/lieu/<id>/<photo> → retire une photo du lieu
 //   DELETE /store/photo/lieu/<id>         → retire toutes les photos du lieu
 //   GET    /store/img/t/<id>, /store/img/l/<id>/<photo> → l'image
@@ -166,7 +166,7 @@ export async function handleStore(request, env, url) {
         idx.lieux[id] = [...list, photoId];
         // Date de prise de vue (lue dans la photo par le site), facultative
         const date = url.searchParams.get('date') || '';
-        if (/^\d{4}-\d{2}-\d{2}$/.test(date)) idx.dates = { ...(idx.dates || {}), [photoId]: date };
+        if (/^\d{4}-\d{2}-\d{2}(T\d{2}:\d{2})?$/.test(date)) idx.dates = { ...(idx.dates || {}), [photoId]: date };
         await env.BIBLE.put(INDEX_KEY, JSON.stringify(idx));
         return reply({ ok: true, photos: idx.lieux[id], dates: idx.dates }, 200, cors);
       }

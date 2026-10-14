@@ -71,6 +71,17 @@ Chapitre **LIEUX** : nom, type, adresse, pays/ville, coordonnées GPS (bouton **
 
 Les infos des lieux sont stockées avec le reste de la base. Les photos importées sont envoyées au serveur Cloudflare, comme celles des talents.
 
+### Projets tournés sur un lieu (Dropbox)
+
+Dans la fiche d'un lieu, **CHERCHER DANS DROPBOX** cherche le projet dans `DROPBOX_PROJECTS_PATH` (`/WIDEN/01_PROJETS`), puis ses dossiers `LIVRAISON` et les vidéos dedans. Les liens enregistrés sont des liens `dropbox.com/home/...` : ils s'ouvrent pour les membres de l'équipe qui ont accès au dossier, rien n'est partagé publiquement.
+
+Mise en place, une seule fois :
+1. Sur [dropbox.com/developers/apps](https://www.dropbox.com/developers/apps), **Create app** → *Scoped access* → *Full Dropbox*.
+2. Onglet **Permissions** : cocher `files.metadata.read`, puis **Submit**.
+3. Onglet **Settings** : ajouter la *Redirect URI* `https://bible-ajout-rapide.tom-9dd.workers.dev/dropbox/callback`.
+4. Copier l'**App key** dans `DROPBOX_APP_KEY` de `worker/wrangler.toml` (elle n'est pas secrète) et pousser sur main.
+5. Dans la bible, lancer une recherche puis cliquer **CONNECTER DROPBOX** avec un compte `@widenproduction.fr`.
+
 ## Ajout rapide (lien, capture, texte)
 
 Le bouton « ajout rapide » permet à toute l'équipe de coller un lien Instagram, une capture d'écran ou une description : Claude en tire une fiche talent ou lieu, et le formulaire s'ouvre pré-rempli, à vérifier avant d'enregistrer. La clé Anthropic n'est jamais dans le site : elle reste sur un petit serveur Cloudflare (dossier `worker/`).
