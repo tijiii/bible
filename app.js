@@ -624,7 +624,11 @@ function initLieuxMap(list) {
   else map.setView([30, 5], 2);
 
   // Clic sur la carte : proposer d'ajouter un lieu à cet endroit
+  // Un clic sur la carte quand le cadre est ouvert ne fait que le fermer
+  let popupWasOpen = false;
+  map.on('preclick', () => { popupWasOpen = !!map._popup && map.hasLayer(map._popup); });
   map.on('click', e => {
+    if (popupWasOpen) return;
     const c = { lat: e.latlng.lat, lng: ((e.latlng.lng + 540) % 360) - 180 };
     const box = document.createElement('div');
     box.className = 'lieu-popup';
@@ -636,6 +640,14 @@ function initLieuxMap(list) {
     L.popup({ closeButton: false }).setLatLng(e.latlng).setContent(box).openOn(map);
   });
 }
+
+// Clic en dehors de la carte ou touche Échap : on ferme le cadre « ajouter un lieu ici »
+document.addEventListener('click', e => {
+  if (lieuxMap && !e.target.closest('#lieux-map')) lieuxMap.closePopup();
+});
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape' && lieuxMap) lieuxMap.closePopup();
+});
 
 function renderLieux(main) {
   const q = searchQ.toLowerCase();
