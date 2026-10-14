@@ -882,7 +882,7 @@ function lieuGalleryHtml(photos, label, kind) {
   const items = photos.map(p => ({ src: p.full || p.url, caption: withDate ? formatPhotoDate(p.date) : '' }));
   const data = esc(JSON.stringify(items));
   return `<div class="lieu-gallery-lbl">${label}</div>
-    <div class="lieu-gallery" data-photos="${data}">
+    <div class="lieu-gallery n-${Math.min(photos.length, 4)}" data-photos="${data}">
       ${photos.map((p, i) => `<button type="button" class="lieu-gallery-item" onclick="openLightboxFrom(this.parentElement, ${i})"><img src="${esc(p.url)}" alt="" onerror="this.parentElement.style.display='none'">${items[i].caption ? `<span class="lieu-photo-date">${esc(items[i].caption)}</span>` : ''}</button>`).join('')}
     </div>`;
 }
@@ -1045,35 +1045,37 @@ function readProjetRows() {
   })).filter(p => p.nom || p.lien);
 }
 
+// Fiche d'un lieu en largeur : infos et carte à gauche, photos et vidéos à droite
 function lieuDetailHtml(l) {
   const photos = lieuPhotoUrls(l);
   const mapQ = lieuMapQuery(l);
   const mapsLink = lieuMapsLink(l);
   const gps = parseGps(l.gps);
-  return `<div class="lieu-detail">
-    ${LIEU_PHOTO_KINDS.map(([k, label]) => lieuGalleryHtml(photos.filter(p => p.kind === k), label, k)).join('')}
-    ${lieuVideosHtml(l)}
-    <div class="detail-info">
-      <div class="detail-tags">
+  const media = LIEU_PHOTO_KINDS.map(([k, label]) => lieuGalleryHtml(photos.filter(p => p.kind === k), label, k)).join('') + lieuVideosHtml(l);
+  const lieuTxt = [l.ville, l.pays && ((FLAGS[l.pays] || '') + ' ' + l.pays).trim()].filter(Boolean).join(' · ');
+  return `<div class="lieu-detail${media ? '' : ' sans-media'}">
+    <div class="lieu-col-info">
+      <div class="lieu-titre">${esc(l.nom)}</div>
+      ${lieuTxt ? `<div class="lieu-ou">${esc(lieuTxt)}</div>` : ''}
+      ${lieuCats(l).length || l.type ? `<div class="detail-tags">
         ${lieuCats(l).map(c => `<span class="tag agence">${esc(c)}</span>`).join('')}
         ${l.type ? `<span class="tag">${esc(l.type)}</span>` : ''}
-        ${l.pays ? `<span class="tag">${FLAGS[l.pays]||''} ${esc(l.pays)}</span>` : ''}
-        ${l.ville ? `<span class="tag">${esc(l.ville)}</span>` : ''}
-      </div>
+      </div>` : ''}
       ${l.description ? `<div class="lieu-description">${esc(l.description)}</div>` : ''}
       ${lieuProjetsHtml(l)}
-      <div class="detail-row"><span class="detail-lbl">GPS</span><span class="detail-val">${gps ? esc(formatGps(gps)) : esc(l.gps || '—')}</span></div>
       ${l.adresse ? `<div class="detail-row"><span class="detail-lbl">ADRESSE</span><span class="detail-val">${esc(l.adresse)}</span></div>` : ''}
+      <div class="detail-row"><span class="detail-lbl">GPS</span><span class="detail-val">${gps ? esc(formatGps(gps)) : esc(l.gps || '—')}</span></div>
       ${l.cout !== '' && l.cout !== undefined ? `<div class="detail-row"><span class="detail-lbl">COÛT ESTIMÉ</span><span class="detail-val" style="color:var(--accent2)">${esc(formatCout(l.cout))}</span></div>` : ''}
       ${l.coutDetail ? `<div class="detail-row"><span class="detail-lbl">DÉTAIL COÛTS</span><span class="detail-val pre">${esc(l.coutDetail)}</span></div>` : ''}
       ${l.contact ? `<div class="detail-row"><span class="detail-lbl">CONTACT</span><span class="detail-val">${esc(l.contact)}</span></div>` : ''}
       ${l.tel ? `<div class="detail-row"><span class="detail-lbl">TEL</span><span class="detail-val"><a href="tel:${esc(l.tel)}">${esc(l.tel)}</a></span></div>` : ''}
       ${l.mail ? `<div class="detail-row"><span class="detail-lbl">MAIL</span><span class="detail-val"><a href="mailto:${esc(l.mail)}">${esc(l.mail)}</a></span></div>` : ''}
       ${l.notes ? `<div class="detail-row"><span class="detail-lbl">NOTES</span><span class="detail-val pre">${esc(l.notes)}</span></div>` : ''}
-      ${mapsLink ? `<a class="btn-ig" style="border-color:var(--accent2);color:var(--accent2)" href="${esc(mapsLink)}" target="_blank">OUVRIR DANS GOOGLE MAPS ↗</a>` : ''}
+      ${mapQ ? `<iframe class="lieu-map" loading="lazy" referrerpolicy="no-referrer-when-downgrade"
+        src="https://www.google.com/maps?q=${encodeURIComponent(mapQ)}&output=embed"></iframe>` : ''}
+      ${mapsLink ? `<a class="btn-ig lieu-maps-btn" href="${esc(mapsLink)}" target="_blank">OUVRIR DANS GOOGLE MAPS ↗</a>` : ''}
     </div>
-    ${mapQ ? `<iframe class="lieu-map" loading="lazy" referrerpolicy="no-referrer-when-downgrade"
-      src="https://www.google.com/maps?q=${encodeURIComponent(mapQ)}&output=embed"></iframe>` : ''}
+    ${media ? `<div class="lieu-col-media">${media}</div>` : ''}
   </div>`;
 }
 
@@ -1422,6 +1424,7 @@ function openDetail(type, pid, chapId) {
   detailType = type;
   detailId   = pid;
   detailChap = chapId !== undefined ? chapId : null;
+  document.querySelector('#detail-modal .modal').classList.toggle('lieu-mode', type === 'lieu');
   const arr = type === 'talent' ? db.talents : type === 'lieu' ? lieuxList()
     : type === 'item' ? ((chapById(chapId) || {}).items || []) : db.clubs;
   const p   = arr.find(x => x.id === pid);
@@ -1436,6 +1439,7 @@ function openDetail(type, pid, chapId) {
   }
 
   if (type === 'lieu') {
+    document.getElementById('detail-title').textContent = '';
     document.getElementById('detail-body').innerHTML = lieuDetailHtml(p);
     document.getElementById('detail-modal').style.display = 'flex';
     return;
@@ -1750,10 +1754,10 @@ function renderLieuForm(v) {
     <div class="field full">
       <label>COORDONNÉES GPS</label>
       <div class="photo-upload-row">
-        <input id="f-gps" value="${esc(v.gps||'')}" placeholder="ex: 47.8389, -4.3519" style="flex:1">
+        <input id="f-gps" value="${esc(v.gps||'')}" placeholder="ex: 47.8389, -4.3519" style="flex:1" onchange="fillAddressFromGps()">
         <button type="button" class="btn-upload" onclick="fillGpsFromDevice()">MA POSITION</button>
       </div>
-      <div class="field-hint">Remplies toutes seules depuis le lien Maps. Sur place, « MA POSITION » enregistre l'endroit exact. Le lieu n'apparaît sur la carte qu'avec des coordonnées.</div>
+      <div class="field-hint">Remplies toutes seules depuis le lien Maps, avec l'adresse, la ville et le pays. Sur place, « MA POSITION » enregistre l'endroit exact. Le lieu n'apparaît sur la carte qu'avec des coordonnées.</div>
     </div>
     <div class="field full"><label>BRÈVE DESCRIPTION</label><textarea id="f-description" rows="2" placeholder="ex: Grande plage face à l'ouest, dunes, très ventée l'après-midi">${esc(v.description||'')}</textarea></div>
     ${LIEU_PHOTO_KINDS.map(photoField).join('')}
@@ -1788,6 +1792,38 @@ function renderLieuForm(v) {
     <div class="field full"><label>LIENS D'IMAGES (optionnel)</label><textarea id="f-photo-links" rows="2" placeholder="Liens d'images (Google Drive, Imgur...), un par ligne">${esc((v.photos||[]).join('\n'))}</textarea></div>
     <div class="field full"><label>NOTES (accès, lumière, horaires, autorisations...)</label><textarea id="f-notes" rows="3">${esc(v.notes||'')}</textarea></div>`;
   renderLieuThumbs();
+  if (v.gps && !(v.adresse && v.ville && v.pays)) fillAddressFromGps();
+}
+
+// ── Adresse, ville et pays déduits des coordonnées (OpenStreetMap / Nominatim, gratuit)
+// On ne remplit que les champs vides : ce que l'équipe a tapé n'est jamais écrasé.
+async function reverseGeocode(c) {
+  const url = `https://nominatim.openstreetmap.org/reverse?format=jsonv2&addressdetails=1&zoom=18&accept-language=fr&lat=${c.lat}&lon=${c.lng}`;
+  const res = await fetch(url, { headers: { 'Accept': 'application/json' } });
+  if (!res.ok) throw new Error('Adresse introuvable');
+  const r = await res.json();
+  const a = r.address || {};
+  const ville = a.city || a.town || a.village || a.municipality || a.hamlet || a.suburb || '';
+  const rue = [a.house_number, a.road || a.pedestrian || a.footway || a.path].filter(Boolean).join(' ');
+  const adresse = [rue || a.tourism || a.leisure || a.natural || '', [a.postcode, ville].filter(Boolean).join(' ')].filter(Boolean).join(', ');
+  let pays = '';
+  try { if (a.country_code) pays = new Intl.DisplayNames(['fr'], { type: 'region' }).of(a.country_code.toUpperCase()); } catch {}
+  const match = n => COUNTRIES.find(x => sansAccent(x) === sansAccent(n));
+  return { adresse, ville, pays: match(pays) || match(a.country) || '' };
+}
+
+let addressSeq = 0;
+async function fillAddressFromGps() {
+  const c = parseGps((document.getElementById('f-gps') || {}).value);
+  if (!c) return;
+  const seq = ++addressSeq;
+  let r;
+  try { r = await reverseGeocode(c); } catch { return; }
+  if (seq !== addressSeq) return;
+  const set = (id, val) => { const el = document.getElementById(id); if (el && val && !el.value.trim()) el.value = val; };
+  set('f-adresse', r.adresse);
+  set('f-ville', r.ville);
+  set('fl-pays', r.pays);
 }
 
 function lieuFormPhotos(kind) {
@@ -1882,6 +1918,7 @@ async function fillGpsFromMapsLink(quiet) {
     document.getElementById('f-gps').value = formatGps(r);
     const nom = document.getElementById('f-nom');
     if (r.nom && !nom.value.trim()) nom.value = r.nom;
+    fillAddressFromGps();
   } catch (e) {
     if (!quiet) alert(e.message);
   } finally {
@@ -1895,6 +1932,7 @@ function fillGpsFromDevice() {
     pos => {
       document.getElementById('f-gps').value =
         pos.coords.latitude.toFixed(6) + ', ' + pos.coords.longitude.toFixed(6);
+      fillAddressFromGps();
     },
     err => alert('Impossible de récupérer ta position : ' + err.message),
     { enableHighAccuracy: true, timeout: 15000 }
