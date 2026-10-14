@@ -436,3 +436,24 @@ a.lieu-projet:hover .lieu-projet-go, a.lieu-projet:hover .lieu-projet-annee { co
 .projet-choice-sub { color:var(--muted); font-size:12px; }
 .projet-connect, .projet-sans-lien { align-self:flex-start; text-decoration:none; margin-top:0; }
 @media (max-width:600px) { .projet-search { flex-direction:column; } }
+
+/* Galerie des lieux : photos centrées, sans case vide, agrandies sur place */
+.lieu-gallery { display:flex; flex-wrap:wrap; justify-content:center; gap:4px; background:none; padding:0 20px; max-height:none; overflow:visible; }
+.lieu-gallery-item { position:relative; flex:0 1 calc((100% - 8px) / 3); max-width:calc((100% - 8px) / 3); padding:0; border:none; background:var(--bg3); cursor:zoom-in; display:block; }
+.lieu-gallery-item img { width:100%; aspect-ratio:4/3; object-fit:cover; display:block; }
+.lieu-gallery-item:hover img { opacity:.9; }
+@media (max-width:600px) { .lieu-gallery { padding:0 12px; } }
+.lightbox { display:none; position:fixed; inset:0; z-index:1000; background:rgba(0,0,0,.92); align-items:center; justify-content:center; }
+.lightbox.open { display:flex; }
+.lightbox figure { margin:0; display:flex; flex-direction:column; align-items:center; gap:10px; max-width:calc(100vw - 120px); }
+.lightbox img { max-width:100%; max-height:calc(100vh - 90px); object-fit:contain; display:block; }
+.lightbox figcaption { color:#fff; font-family:var(--serif); font-size:14px; min-height:1em; }
+.lightbox-close { position:absolute; top:14px; right:16px; background:none; border:none; color:#fff; font-size:26px; cursor:pointer; }
+.lightbox-nav { background:none; border:none; color:#fff; font-size:54px; line-height:1; padding:0 18px; cursor:pointer; opacity:.8; }
+.lightbox-nav:hover { opacity:1; }
+.lightbox.single .lightbox-nav { visibility:hidden; }
+@media (max-width:600px) {
+  .lightbox figure { max-width:100vw; }
+  .lightbox-nav { position:absolute; bottom:14px; font-size:40px; }
+  .lightbox-nav.prev { left:10px; } .lightbox-nav.next { right:10px; }
+}

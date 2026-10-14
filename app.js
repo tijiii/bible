@@ -838,20 +838,88 @@ function goToWorldResult(i) {
   setTimeout(() => L.popup({ closeButton: false }).setLatLng([r.lat, r.lng]).setContent(box).openOn(lieuxMap), 0);
 }
 
-function lieuGalleryHtml(photos, label) {
+// Les dates ne s'affichent que sur les photos iPhone (les photos de campagne sont des captures)
+function lieuGalleryHtml(photos, label, kind) {
   if (!photos.length) return '';
+  const withDate = kind === 'iphone';
+  const items = photos.map(p => ({ src: p.full || p.url, caption: withDate ? formatPhotoDate(p.date) : '' }));
+  const data = esc(JSON.stringify(items));
   return `<div class="lieu-gallery-lbl">${label}</div>
-    <div class="lieu-gallery">
-      ${photos.map(p => `<a href="${esc(p.full)}" target="_blank"><img src="${esc(p.url)}" alt="" onerror="this.parentElement.style.display='none'">${p.date ? `<span class="lieu-photo-date">${esc(formatPhotoDate(p.date))}</span>` : ''}</a>`).join('')}
+    <div class="lieu-gallery" data-photos="${data}">
+      ${photos.map((p, i) => `<button type="button" class="lieu-gallery-item" onclick="openLightboxFrom(this.parentElement, ${i})"><img src="${esc(p.url)}" alt="" onerror="this.parentElement.style.display='none'">${items[i].caption ? `<span class="lieu-photo-date">${esc(items[i].caption)}</span>` : ''}</button>`).join('')}
     </div>`;
 }
 
-// « 2025-06-14 » → « 14 juin 2025 »
+// « 2025-06-14 » → « 14 juin 2025 » ; « 2025-06-14T18:42 » → « 14 juin 2025 à 18h42 »
 function formatPhotoDate(d) {
-  const m = String(d || '').match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  const m = String(d || '').match(/^(\d{4})-(\d{2})-(\d{2})(?:T(\d{2}):(\d{2}))?/);
   if (!m) return '';
-  return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3])).toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' });
+  const jour = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3])).toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' });
+  return m[4] ? `${jour} à ${m[4]}h${m[5]}` : jour;
 }
+
+// ── Agrandir une photo sans quitter le site (flèches et Échap au clavier, glisser au doigt)
+let lightbox = null;
+
+function openLightboxFrom(gallery, i) {
+  let items = [];
+  try { items = JSON.parse(gallery.dataset.photos || '[]'); } catch {}
+  if (items.length) openLightbox(items, i);
+}
+
+function openLightbox(items, i) {
+  if (!lightbox) {
+    const el = document.createElement('div');
+    el.className = 'lightbox';
+    el.innerHTML = `<button type="button" class="lightbox-close" title="Fermer">✕</button>
+      <button type="button" class="lightbox-nav prev" title="Précédente">‹</button>
+      <figure><img alt=""><figcaption></figcaption></figure>
+      <button type="button" class="lightbox-nav next" title="Suivante">›</button>`;
+    el.addEventListener('click', e => {
+      if (e.target.closest('.lightbox-nav')) { stepLightbox(e.target.closest('.next') ? 1 : -1); return; }
+      if (!e.target.closest('img')) closeLightbox();
+    });
+    let x0 = null;
+    el.addEventListener('touchstart', e => { x0 = e.touches[0].clientX; }, { passive: true });
+    el.addEventListener('touchend', e => {
+      if (x0 === null) return;
+      const dx = e.changedTouches[0].clientX - x0; x0 = null;
+      if (Math.abs(dx) > 50) stepLightbox(dx < 0 ? 1 : -1);
+    });
+    document.body.appendChild(el);
+    lightbox = { el, items: [], i: 0 };
+  }
+  lightbox.items = items;
+  lightbox.i = i;
+  lightbox.el.classList.add('open');
+  lightbox.el.classList.toggle('single', items.length < 2);
+  showLightbox();
+}
+
+function showLightbox() {
+  const { el, items, i } = lightbox;
+  el.querySelector('img').src = items[i].src;
+  el.querySelector('figcaption').textContent = items[i].caption || '';
+}
+
+function stepLightbox(d) {
+  if (!lightbox || lightbox.items.length < 2) return;
+  lightbox.i = (lightbox.i + d + lightbox.items.length) % lightbox.items.length;
+  showLightbox();
+}
+
+function closeLightbox() {
+  if (lightbox) lightbox.el.classList.remove('open');
+}
+
+function lightboxOpen() { return !!(lightbox && lightbox.el.classList.contains('open')); }
+
+document.addEventListener('keydown', e => {
+  if (!lightboxOpen()) return;
+  if (e.key === 'Escape') { closeLightbox(); e.stopImmediatePropagation(); }
+  else if (e.key === 'ArrowRight') stepLightbox(1);
+  else if (e.key === 'ArrowLeft') stepLightbox(-1);
+}, true);
 
 // ── Vidéos des lieux : des liens (YouTube, Vimeo, Google Drive, Dropbox, fichier vidéo)
 function lieuVideoEmbed(link) {
@@ -1029,10 +1097,9 @@ function lieuDetailHtml(l) {
   const mapsLink = lieuMapsLink(l);
   const gps = parseGps(l.gps);
   return `<div class="lieu-detail">
-    ${LIEU_PHOTO_KINDS.map(([k, label]) => lieuGalleryHtml(photos.filter(p => p.kind === k), label)).join('')}
+    ${LIEU_PHOTO_KINDS.map(([k, label]) => lieuGalleryHtml(photos.filter(p => p.kind === k), label, k)).join('')}
     ${lieuVideosHtml(l)}
     <div class="detail-info">
-      <div class="detail-name">${esc(l.nom)}</div>
       <div class="detail-tags">
         ${lieuCats(l).map(c => `<span class="tag agence">${esc(c)}</span>`).join('')}
         ${l.type ? `<span class="tag">${esc(l.type)}</span>` : ''}
@@ -1042,7 +1109,6 @@ function lieuDetailHtml(l) {
       ${l.description ? `<div class="lieu-description">${esc(l.description)}</div>` : ''}
       ${lieuProjetsHtml(l)}
       <div class="detail-row"><span class="detail-lbl">GPS</span><span class="detail-val">${gps ? esc(formatGps(gps)) : esc(l.gps || '—')}</span></div>
-      ${mapsLink ? `<div class="detail-row"><span class="detail-lbl">LIEN MAPS</span><span class="detail-val"><a href="${esc(mapsLink)}" target="_blank">${esc(mapsLink)}</a></span></div>` : ''}
       ${l.adresse ? `<div class="detail-row"><span class="detail-lbl">ADRESSE</span><span class="detail-val">${esc(l.adresse)}</span></div>` : ''}
       ${l.cout !== '' && l.cout !== undefined ? `<div class="detail-row"><span class="detail-lbl">COÛT ESTIMÉ</span><span class="detail-val" style="color:var(--accent2)">${esc(formatCout(l.cout))}</span></div>` : ''}
       ${l.coutDetail ? `<div class="detail-row"><span class="detail-lbl">DÉTAIL COÛTS</span><span class="detail-val pre">${esc(l.coutDetail)}</span></div>` : ''}
@@ -1782,10 +1848,10 @@ function renderLieuThumbs() {
     box.innerHTML =
       existing.map(p => `<div class="lieu-thumb-wrap"><div class="lieu-thumb"><img src="${esc(p.url)}" alt="">
         <button type="button" title="Retirer" onclick="pendingLieuRemovals.push('${esc(p.id)}');renderLieuThumbs()">✕</button></div>
-        <div class="lieu-thumb-date">${esc(formatPhotoDate(p.date) || 'date inconnue')}</div></div>`).join('') +
+        ${kind === 'iphone' ? `<div class="lieu-thumb-date">${esc(formatPhotoDate(p.date) || 'date inconnue')}</div>` : ''}</div>`).join('') +
       pending.map(p => `<div class="lieu-thumb-wrap"><div class="lieu-thumb new"><img src="${p.data}" alt="">
         <button type="button" title="Retirer" onclick="pendingLieuPhotos.splice(${p.i},1);renderLieuThumbs()">✕</button></div>
-        <input type="date" class="lieu-thumb-date-in" value="${esc(p.date || '')}" title="Date de la photo" onchange="pendingLieuPhotos[${p.i}].date=this.value"></div>`).join('');
+        ${kind === 'iphone' ? `<input type="datetime-local" class="lieu-thumb-date-in" value="${esc(p.date || '')}" title="Date et heure de la photo" onchange="pendingLieuPhotos[${p.i}].date=this.value">` : ''}</div>`).join('');
   });
 }
 
@@ -1809,7 +1875,10 @@ async function photoTakenDate(file) {
     }
   } catch (e) { /* pas d'EXIF lisible */ }
   const lm = file.lastModified ? new Date(file.lastModified) : null;
-  if (lm && lm.toDateString() !== new Date().toDateString()) return lm.toISOString().slice(0, 10);
+  if (lm && lm.toDateString() !== new Date().toDateString()) {
+    const z = n => String(n).padStart(2, '0');
+    return `${lm.getFullYear()}-${z(lm.getMonth() + 1)}-${z(lm.getDate())}T${z(lm.getHours())}:${z(lm.getMinutes())}`;
+  }
   return '';
 }
 
@@ -1829,8 +1898,8 @@ function exifDate(v, tiff) {
   const exifPtr = readIfd(ifd0, 0x8769);
   let e = exifPtr ? readIfd(tiff + u32(exifPtr + 8), 0x9003) : null; // DateTimeOriginal
   if (!e) e = readIfd(ifd0, 0x0132);                                   // DateTime
-  const m = e && ascii(e).match(/^(\d{4}):(\d{2}):(\d{2})/);
-  return m && m[1] !== '0000' ? `${m[1]}-${m[2]}-${m[3]}` : '';
+  const m = e && ascii(e).match(/^(\d{4}):(\d{2}):(\d{2})(?: (\d{2}):(\d{2}))?/);
+  return m && m[1] !== '0000' ? `${m[1]}-${m[2]}-${m[3]}` + (m[4] ? `T${m[4]}:${m[5]}` : '') : '';
 }
 
 async function handleLieuPhotos(input, kind) {
@@ -1839,7 +1908,7 @@ async function handleLieuPhotos(input, kind) {
   const room = LIEU_PHOTOS_MAX - existing.length - pending.length;
   if (files.length > room) alert(`${LIEU_PHOTOS_MAX} photos maximum par type.` + (room > 0 ? ` Seules les ${room} premières sont ajoutées.` : ' Retire une photo avant d\'en ajouter.'));
   for (const file of files.slice(0, Math.max(0, room))) {
-    try { pendingLieuPhotos.push({ data: await compressImage(file, 1400), kind, date: await photoTakenDate(file) }); }
+    try { pendingLieuPhotos.push({ data: await compressImage(file, 1400), kind, date: kind === 'iphone' ? await photoTakenDate(file) : '' }); }
     catch (e) { alert('Impossible de lire ' + file.name); }
   }
   input.value = '';
