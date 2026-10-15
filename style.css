@@ -485,3 +485,12 @@ a.lieu-projet:hover .lieu-projet-go, a.lieu-projet:hover .lieu-projet-annee { co
   .lieu-col-media { order:-1; margin-bottom:16px; }
   .lieu-titre { font-size:26px; }
 }
+
+/* Photo de couverture d'un lieu */
+.lieu-cover-btn { position:absolute; top:6px; right:6px; background:rgba(0,0,0,.6); color:#fff; border:none; font:inherit; font-size:11px; letter-spacing:.05em; padding:4px 7px; cursor:pointer; opacity:0; transition:opacity .15s; }
+.lieu-gallery-item:hover .lieu-cover-btn, .lieu-cover-btn.on { opacity:1; }
+.lieu-cover-btn.on { background:#fff; color:#111; cursor:default; }
+@media (hover:none) { .lieu-cover-btn { opacity:1; } }
+.lieu-thumb .thumb-cover { top:auto; right:auto; bottom:2px; left:2px; }
+.lieu-thumb.cover { border:2px solid var(--accent); }
+.lieu-thumb.cover .thumb-cover { background:#fff; color:#111; }

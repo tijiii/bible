@@ -71,6 +71,14 @@ Chapitre **LIEUX** : nom, type, adresse, pays/ville, coordonnées GPS (bouton **
 
 Les infos des lieux sont stockées avec le reste de la base. Les photos importées sont envoyées au serveur Cloudflare, comme celles des talents.
 
+### Photo de couverture
+
+Dans la fiche d'un lieu, survoler une photo puis **☆** pour en faire la couverture (celle affichée dans la liste). Aussi possible dans le formulaire avec l'étoile sur chaque photo. Sans choix, c'est la première photo.
+
+### Pays
+
+Les listes de pays des lieux contiennent tous les pays du monde, générés par le navigateur (`ALL_COUNTRIES` dans `geo.js`).
+
 ### Projets tournés sur un lieu
 
 Dans le formulaire d'un lieu, **+ AJOUTER UN PROJET** : nom, année et lien Dropbox de la vidéo finale (ou du dossier). La fiche n'affiche le bloc « Projets tournés ici » que s'il y a au moins un projet.

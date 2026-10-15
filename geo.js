@@ -46,3 +46,25 @@ const FLAGS = {
 };
 
 const COUNTRIES = Object.keys(GEO);
+
+// Tous les pays du monde (noms en français générés par le navigateur), pour les lieux.
+// Les noms déjà utilisés dans GEO sont gardés tels quels pour que les fiches existantes correspondent.
+const ALL_COUNTRIES = (() => {
+  const alias = { AE: 'Émirats Arabes', CI: "Côte d'Ivoire" };
+  // codes qui ne sont pas des pays, ou anciens codes en double
+  const skip = new Set('AC AN CP DG EA EU EZ IC QO TA UN XA XB ZZ HV DY BU ZR CS YU DD FX UK NH RH SU TP VD YD'.split(' '));
+  const noms = new Set(COUNTRIES);
+  try {
+    const dn = new Intl.DisplayNames(['fr'], { type: 'region', fallback: 'none' });
+    for (let a = 65; a < 91; a++) for (let b = 65; b < 91; b++) {
+      const code = String.fromCharCode(a, b);
+      if (skip.has(code)) continue;
+      const nom = alias[code] || dn.of(code);
+      if (!nom || nom === code) continue;
+      noms.add(nom);
+      if (!FLAGS[nom]) FLAGS[nom] = String.fromCodePoint(0x1F1E6 + a - 65, 0x1F1E6 + b - 65);
+    }
+  } catch { return COUNTRIES; }
+  noms.delete('Autre');
+  return [...noms].sort((x, y) => x.localeCompare(y, 'fr')).concat('Autre');
+})();

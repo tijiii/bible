@@ -245,6 +245,7 @@ async function addLieuPhoto(lieuId, dataUrl, kind, date) {
   });
   if (res.dates) photoDates = res.dates;
   lieuPhotos[lieuId] = res.photos.map(p => lieuPhoto(lieuId, p));
+  return res.photos[res.photos.length - 1]; // id de la photo ajoutée (le serveur l'ajoute à la fin)
 }
 
 // Retire certaines photos du lieu
