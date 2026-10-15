@@ -570,9 +570,24 @@ const LIEU_PHOTO_KINDS = [['campagne', 'PHOTOS DE CAMPAGNE'], ['iphone', 'PHOTOS
 
 function lieuPhotoUrls(l) {
   // Photos importées (serveur) puis liens collés à la main
-  const imported = getLieuPhotos(l.id).map(p => ({ url: p.url, full: p.full, kind: p.kind, date: p.date }));
-  const links = (l.photos || []).map(normalizePhotoUrl).filter(Boolean).map(u => ({ url: u, full: u, kind: 'campagne' }));
+  const imported = getLieuPhotos(l.id).map(p => ({ id: p.id, url: p.url, full: p.full, kind: p.kind, date: p.date }));
+  const links = (l.photos || []).map(normalizePhotoUrl).filter(Boolean).map(u => ({ id: u, url: u, full: u, kind: 'campagne' }));
   return [...imported, ...links];
+}
+
+// Photo de couverture choisie par l'équipe (l.cover = id de la photo), sinon la première
+function lieuCoverPhoto(l, photos) {
+  photos = photos || lieuPhotoUrls(l);
+  return photos.find(p => l.cover && p.id === l.cover) || photos[0] || null;
+}
+
+function setLieuCover(lieuId, photoId) {
+  const l = lieuxList().find(x => x.id === lieuId);
+  if (!l) return;
+  l.cover = photoId;
+  saveDb();
+  render();
+  openDetail('lieu', lieuId);
 }
 // « 47.8389, -4.3519 » → { lat, lng }
 function parseGps(v) {
@@ -716,7 +731,11 @@ function lieuxFiltered(withSearch) {
 }
 
 function renderLieux(main) {
-  const pays = [...new Set(lieuxList().map(l => l.pays).filter(Boolean))].sort();
+  // pays déjà utilisés d'abord (avec leur nombre de lieux), puis tous les autres
+  const paysCount = {};
+  lieuxList().forEach(l => { if (l.pays) paysCount[l.pays] = (paysCount[l.pays] || 0) + 1; });
+  const paysUtil = Object.keys(paysCount).sort((a, b) => a.localeCompare(b, 'fr'));
+  const paysAutres = ALL_COUNTRIES.filter(p => !paysCount[p]);
   const onMap = lieuxFiltered(false); // la carte montre tous les lieux, la recherche ne trie que la liste
   const sansGps = onMap.filter(l => !parseGps(l.gps));
 
@@ -733,7 +752,8 @@ function renderLieux(main) {
     </select>
     <select class="filter-sel" onchange="fPays=this.value;renderLieux(document.getElementById('main-content'))">
       <option value="">PAYS</option>
-      ${pays.map(p=>`<option value="${esc(p)}"${fPays===p?' selected':''}>${FLAGS[p]||''} ${esc(p)}</option>`).join('')}
+      ${paysUtil.length ? `<optgroup label="Avec des lieux">${paysUtil.map(p=>`<option value="${esc(p)}"${fPays===p?' selected':''}>${FLAGS[p]||''} ${esc(p)} (${paysCount[p]})</option>`).join('')}</optgroup>` : ''}
+      <optgroup label="Tous les pays">${paysAutres.map(p=>`<option value="${esc(p)}"${fPays===p?' selected':''}>${FLAGS[p]||''} ${esc(p)}</option>`).join('')}</optgroup>
     </select>
     <div class="spacer"></div>
     <div class="lieu-maps-add">
@@ -761,7 +781,7 @@ function renderLieuxList() {
     html += `<div class="grid lieux-grid">`;
     list.forEach(l => {
       const photos = lieuPhotoUrls(l);
-      const cover = photos[0]?.url;
+      const cover = lieuCoverPhoto(l, photos)?.url;
       html += `<div class="card" onclick="openDetail('lieu',${l.id})">`;
       if (cover) {
         html += `<img class="card-img lieu" src="${esc(cover)}" alt="${esc(l.nom)}"
@@ -876,14 +896,19 @@ function goToWorldResult(i) {
 }
 
 // Les dates ne s'affichent que sur les photos iPhone (les photos de campagne sont des captures)
-function lieuGalleryHtml(photos, label, kind) {
+function lieuGalleryHtml(photos, label, kind, l) {
   if (!photos.length) return '';
   const withDate = kind === 'iphone';
   const items = photos.map(p => ({ src: p.full || p.url, caption: withDate ? formatPhotoDate(p.date) : '' }));
   const data = esc(JSON.stringify(items));
   return `<div class="lieu-gallery-lbl">${label}</div>
     <div class="lieu-gallery n-${Math.min(photos.length, 4)}" data-photos="${data}">
-      ${photos.map((p, i) => `<button type="button" class="lieu-gallery-item" onclick="openLightboxFrom(this.parentElement, ${i})"><img src="${esc(p.url)}" alt="" onerror="this.parentElement.style.display='none'">${items[i].caption ? `<span class="lieu-photo-date">${esc(items[i].caption)}</span>` : ''}</button>`).join('')}
+      ${photos.map((p, i) => {
+        const isCover = l && p.id && lieuCoverPhoto(l)?.id === p.id;
+        const star = l && p.id ? `<button type="button" class="lieu-cover-btn${isCover ? ' on' : ''}" title="${isCover ? 'Photo de couverture' : 'Choisir comme photo de couverture'}"
+          onclick="event.stopPropagation();setLieuCover(${l.id}, ${esc(JSON.stringify(p.id))})">${isCover ? '★ COUVERTURE' : '☆'}</button>` : '';
+        return `<div class="lieu-gallery-item" role="button" tabindex="0" onclick="openLightboxFrom(this.parentElement, ${i})"><img src="${esc(p.url)}" alt="" onerror="this.parentElement.style.display='none'">${items[i].caption ? `<span class="lieu-photo-date">${esc(items[i].caption)}</span>` : ''}${star}</div>`;
+      }).join('')}
     </div>`;
 }
 
@@ -1051,7 +1076,7 @@ function lieuDetailHtml(l) {
   const mapQ = lieuMapQuery(l);
   const mapsLink = lieuMapsLink(l);
   const gps = parseGps(l.gps);
-  const media = LIEU_PHOTO_KINDS.map(([k, label]) => lieuGalleryHtml(photos.filter(p => p.kind === k), label, k)).join('') + lieuVideosHtml(l);
+  const media = LIEU_PHOTO_KINDS.map(([k, label]) => lieuGalleryHtml(photos.filter(p => p.kind === k), label, k, l)).join('') + lieuVideosHtml(l);
   const lieuTxt = [l.ville, l.pays && ((FLAGS[l.pays] || '') + ' ' + l.pays).trim()].filter(Boolean).join(' · ');
   return `<div class="lieu-detail${media ? '' : ' sans-media'}">
     <div class="lieu-col-info">
@@ -1148,7 +1173,7 @@ function itemDetailHtml(it) {
 }
 
 function renderItemForm(v) {
-  const paysl = `<option value="">—</option>` + COUNTRIES.map(p => `<option value="${esc(p)}"${(v.pays||'')===p?' selected':''}>${FLAGS[p]||''} ${esc(p)}</option>`).join('');
+  const paysl = `<option value="">—</option>` + ALL_COUNTRIES.map(p => `<option value="${esc(p)}"${(v.pays||'')===p?' selected':''}>${FLAGS[p]||''} ${esc(p)}</option>`).join('');
   document.getElementById('form-body').innerHTML = `
     <div class="field"><label>NOM *</label><input id="f-nom" value="${esc(v.nom||'')}"></div>
     <div class="field"><label>TYPE / DESCRIPTION</label><input id="f-type" value="${esc(v.type||'')}"></div>
@@ -1548,6 +1573,7 @@ function openForm(type, pid, opts) {
     const l = isEdit ? lieuxList().find(x => x.id === pid) : { ...(opts.prefill || {}) };
     pendingLieuPhotos = [];
     pendingLieuRemovals = [];
+    pendingLieuCover = (l && l.cover) || '';
     document.getElementById('form-title').textContent = isEdit ? 'ÉDITER LIEU' : '+ NOUVEAU LIEU';
     document.getElementById('btn-save').style.background = 'var(--accent2)';
     renderLieuForm(l || {});
@@ -1729,12 +1755,13 @@ function renderClubForm(v) {
 // ── FORMULAIRE LIEU ──────────────────────────────────────────────────────────
 let pendingLieuPhotos   = []; // { data, kind } importées, envoyées au SAUVEGARDER
 let pendingLieuRemovals = []; // ids des photos du serveur à retirer au SAUVEGARDER
+let pendingLieuCover    = ''; // id de la photo de couverture choisie dans le formulaire
 
 function renderLieuForm(v) {
-  const paysl = `<option value="">—</option>` + COUNTRIES.map(p => `<option value="${esc(p)}"${(v.pays||'')===p?' selected':''}>${FLAGS[p]||''} ${esc(p)}</option>`).join('');
+  const paysl = `<option value="">—</option>` + ALL_COUNTRIES.map(p => `<option value="${esc(p)}"${(v.pays||'')===p?' selected':''}>${FLAGS[p]||''} ${esc(p)}</option>`).join('');
   const photoField = ([kind, label]) => `
     <div class="field full">
-      <label>${label} (${LIEU_PHOTOS_MAX} max)</label>
+      <label>${label} (${LIEU_PHOTOS_MAX} max) · ★ = photo de couverture</label>
       <div class="photo-upload-row">
         <label class="btn-upload" for="f-lieu-files-${kind}">IMPORTER</label>
         <input type="file" id="f-lieu-files-${kind}" accept="image/*" multiple style="display:none" onchange="handleLieuPhotos(this,'${kind}')">
@@ -1808,7 +1835,7 @@ async function reverseGeocode(c) {
   const adresse = [rue || a.tourism || a.leisure || a.natural || '', [a.postcode, ville].filter(Boolean).join(' ')].filter(Boolean).join(', ');
   let pays = '';
   try { if (a.country_code) pays = new Intl.DisplayNames(['fr'], { type: 'region' }).of(a.country_code.toUpperCase()); } catch {}
-  const match = n => COUNTRIES.find(x => sansAccent(x) === sansAccent(n));
+  const match = n => ALL_COUNTRIES.find(x => sansAccent(x) === sansAccent(n));
   return { adresse, ville, pays: match(pays) || match(a.country) || '' };
 }
 
@@ -1833,17 +1860,28 @@ function lieuFormPhotos(kind) {
   return { existing, pending };
 }
 
+// La couverture est la photo choisie, sinon la première photo encore présente
+function formCoverIs(id) {
+  const lieuId = formCtx && formCtx.id;
+  const ids = [...(lieuId ? getLieuPhotos(lieuId).map(p => p.id).filter(x => !pendingLieuRemovals.includes(x)) : []),
+               ...pendingLieuPhotos.map(p => 'new:' + p.uid)];
+  const cur = ids.includes(pendingLieuCover) ? pendingLieuCover : ids[0];
+  return cur === id;
+}
+
 function renderLieuThumbs() {
   LIEU_PHOTO_KINDS.forEach(([kind]) => {
     const box = document.getElementById('lieu-thumbs-' + kind);
     if (!box) return;
     const { existing, pending } = lieuFormPhotos(kind);
     box.innerHTML =
-      existing.map(p => `<div class="lieu-thumb-wrap"><div class="lieu-thumb"><img src="${esc(p.url)}" alt="">
-        <button type="button" title="Retirer" onclick="pendingLieuRemovals.push('${esc(p.id)}');renderLieuThumbs()">✕</button></div>
+      existing.map(p => `<div class="lieu-thumb-wrap"><div class="lieu-thumb${formCoverIs(p.id) ? ' cover' : ''}"><img src="${esc(p.url)}" alt="">
+        <button type="button" title="Retirer" onclick="pendingLieuRemovals.push('${esc(p.id)}');renderLieuThumbs()">✕</button>
+        <button type="button" class="thumb-cover" title="Photo de couverture" onclick="pendingLieuCover='${esc(p.id)}';renderLieuThumbs()">${formCoverIs(p.id) ? '★' : '☆'}</button></div>
         ${kind === 'iphone' ? `<div class="lieu-thumb-date">${esc(formatPhotoDate(p.date) || 'date inconnue')}</div>` : ''}</div>`).join('') +
-      pending.map(p => `<div class="lieu-thumb-wrap"><div class="lieu-thumb new"><img src="${p.data}" alt="">
-        <button type="button" title="Retirer" onclick="pendingLieuPhotos.splice(${p.i},1);renderLieuThumbs()">✕</button></div>
+      pending.map(p => `<div class="lieu-thumb-wrap"><div class="lieu-thumb new${formCoverIs('new:' + p.uid) ? ' cover' : ''}"><img src="${p.data}" alt="">
+        <button type="button" title="Retirer" onclick="pendingLieuPhotos.splice(${p.i},1);renderLieuThumbs()">✕</button>
+        <button type="button" class="thumb-cover" title="Photo de couverture" onclick="pendingLieuCover='new:${p.uid}';renderLieuThumbs()">${formCoverIs('new:' + p.uid) ? '★' : '☆'}</button></div>
         ${kind === 'iphone' ? `<input type="datetime-local" class="lieu-thumb-date-in" value="${esc(p.date || '')}" title="Date et heure de la photo" onchange="pendingLieuPhotos[${p.i}].date=this.value">` : ''}</div>`).join('');
   });
 }
@@ -1901,7 +1939,7 @@ async function handleLieuPhotos(input, kind) {
   const room = LIEU_PHOTOS_MAX - existing.length - pending.length;
   if (files.length > room) alert(`${LIEU_PHOTOS_MAX} photos maximum par type.` + (room > 0 ? ` Seules les ${room} premières sont ajoutées.` : ' Retire une photo avant d\'en ajouter.'));
   for (const file of files.slice(0, Math.max(0, room))) {
-    try { pendingLieuPhotos.push({ data: await compressImage(file, 1400), kind, date: kind === 'iphone' ? await photoTakenDate(file) : '' }); }
+    try { pendingLieuPhotos.push({ uid: uid(), data: await compressImage(file, 1400), kind, date: kind === 'iphone' ? await photoTakenDate(file) : '' }); }
     catch (e) { alert('Impossible de lire ' + file.name); }
   }
   input.value = '';
@@ -1939,12 +1977,19 @@ function fillGpsFromDevice() {
   );
 }
 
-async function saveLieuPhotos(lieuId, toAdd, toRemove) {
+async function saveLieuPhotos(lieuId, toAdd, toRemove, cover) {
   if (!toAdd.length && !toRemove.length) return;
   setSyncStatus('syncing');
   try {
     if (toRemove.length) await removeLieuPhotos(lieuId, toRemove);
-    for (const p of toAdd) await addLieuPhoto(lieuId, p.data, p.kind, p.date);
+    for (const p of toAdd) {
+      const newId = await addLieuPhoto(lieuId, p.data, p.kind, p.date);
+      // Couverture choisie parmi les nouvelles photos : on retient son id une fois envoyée
+      if (cover === 'new:' + p.uid && newId) {
+        const l = lieuxList().find(x => x.id === lieuId);
+        if (l) { l.cover = newId; saveDb(); }
+      }
+    }
     setSyncStatus('ok');
     render();
   } catch (e) {
@@ -2168,12 +2213,13 @@ function submitForm() {
       photos: g('f-photo-links').split('\n').map(s => s.trim()).filter(Boolean),
       videos: g('f-videos').split('\n').map(s => s.trim()).filter(Boolean),
       projets: readProjetRows(),
+      cover: String(pendingLieuCover).startsWith('new:') ? '' : pendingLieuCover,
       notes: g('f-notes')
     };
     let finalId;
     if (isEdit) { db.lieux = lieuxList().map(l => l.id === pid ? { ...obj, id: l.id } : l); finalId = pid; }
     else        { finalId = uid(); lieuxList().push({ ...obj, id: finalId }); }
-    saveLieuPhotos(finalId, pendingLieuPhotos.slice(), pendingLieuRemovals.slice());
+    saveLieuPhotos(finalId, pendingLieuPhotos.slice(), pendingLieuRemovals.slice(), pendingLieuCover);
 
   } else if (type === 'agence') {
     if (!g('f-nom')) { alert('Le nom est requis.'); return; }
@@ -2300,7 +2346,7 @@ async function runQuickAdd() {
     vocab: {
       categories: db.categories.map(c => ({ id: c.id, label: c.label })),
       sports: db.sports,
-      pays: COUNTRIES,
+      pays: ALL_COUNTRIES,
       agences: agenceNames(),
     },
   };
@@ -2332,8 +2378,8 @@ function openQuickResult(out) {
     openForm('talent', undefined, { cats: keep(t.cats, db.categories.map(c => c.id)), prefill });
   } else if (out.type === 'lieu' && out.lieu) {
     const l = out.lieu;
-    openForm('lieu', undefined, { prefill: { ...l, pays: keep([l.pays], COUNTRIES)[0] || '' } });
-    if (image) { pendingLieuPhotos.push({ data: image, kind: 'campagne', date: '' }); renderLieuThumbs(); }
+    openForm('lieu', undefined, { prefill: { ...l, pays: keep([l.pays], ALL_COUNTRIES)[0] || '' } });
+    if (image) { pendingLieuPhotos.push({ uid: uid(), data: image, kind: 'campagne', date: '' }); renderLieuThumbs(); }
   } else {
     document.getElementById('qa-status').textContent = out.remarque || "Je n'ai pas reconnu un talent ou un lieu. Ajoute un mot d'explication.";
     const btn = document.getElementById('qa-go'); btn.disabled = false; btn.textContent = 'Analyser';
