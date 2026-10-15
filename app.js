@@ -105,6 +105,7 @@ let fSport     = '';
 let fSexe      = '';
 let fPays      = '';
 let fLieuCat   = '';
+let fLieuSport = '';
 let fAgence    = '';
 let fTri       = '';    // '' (ordre habituel), 'age-asc' ou 'age-desc'
 let fSubCat    = '';    // sous-catégorie dans un groupe (ex: DOP chez les techniciens)
@@ -177,7 +178,7 @@ function buildTabs() {
 
 function switchCat(catId) {
   curCatId = catId;
-  searchQ = ''; fSport = ''; fSexe = ''; fPays = ''; fAgence = ''; fSubCat = ''; fLieuCat = '';
+  searchQ = ''; fSport = ''; fSexe = ''; fPays = ''; fAgence = ''; fSubCat = ''; fLieuCat = ''; fLieuSport = '';
   buildTabs();
   render();
   window.scrollTo(0, 0);
@@ -565,6 +566,29 @@ function addLieuCategory() {
   input.value = '';
 }
 
+// Sports / disciplines shootés sur un lieu (même liste que les talents, plus ceux ajoutés ici)
+function lieuSports(l) { return uniqCats(Array.isArray(l.sports) ? l.sports : []); }
+
+function lieuSportList() {
+  return uniqCats([...db.sports, ...lieuxList().flatMap(lieuSports)]);
+}
+
+function lieuSportsGridHtml(checked) {
+  return lieuSportList().map(s => `<label class="cat-check">
+        <input type="checkbox" name="lieu-sport" value="${esc(s)}" ${checked.includes(s) ? 'checked' : ''}><span>${esc(s)}</span></label>`).join('');
+}
+
+function addLieuSport() {
+  const input = document.getElementById('f-new-sport');
+  const nom = (input && input.value || '').trim();
+  if (!nom) { if (input) input.focus(); return; }
+  const checked = [...document.querySelectorAll('input[name="lieu-sport"]:checked')].map(el => el.value);
+  const existing = lieuSportList().find(x => sansAccent(x) === sansAccent(nom));
+  if (!existing) { db.sports.push(nom); saveDb(); }
+  document.getElementById('lieu-sports-grid').innerHTML = lieuSportsGridHtml(uniqCats([...checked, existing || nom]));
+  input.value = '';
+}
+
 const LIEU_PHOTOS_MAX = 3; // par type : 3 photos de campagne, 3 photos iPhone
 const LIEU_PHOTO_KINDS = [['campagne', 'PHOTOS DE CAMPAGNE'], ['iphone', 'PHOTOS IPHONE']];
 
@@ -721,9 +745,10 @@ function lieuxFiltered(withSearch) {
   const q = searchQ.toLowerCase();
   return lieuxList().filter(l => {
     if (withSearch && q && ![l.nom,l.type,lieuCats(l).join(' '),l.adresse,l.ville,l.pays,l.contact,l.description,l.notes,l.coutDetail,
-        lieuProjets(l).map(p => p.nom + ' ' + p.annee).join(' ')]
+        lieuProjets(l).map(p => p.nom + ' ' + p.annee).join(' '), lieuSports(l).join(' ')]
       .some(v => String(v||'').toLowerCase().includes(q))) return false;
     if (fPays && l.pays !== fPays) return false;
+    if (fLieuSport && !lieuSports(l).includes(fLieuSport)) return false;
     if (fLieuCat === LIEU_DEJA_TOURNE) { if (!lieuProjets(l).length) return false; }
     else if (fLieuCat && !lieuCats(l).includes(fLieuCat)) return false;
     return true;
@@ -736,6 +761,7 @@ function renderLieux(main) {
   lieuxList().forEach(l => { if (l.pays) paysCount[l.pays] = (paysCount[l.pays] || 0) + 1; });
   const paysUtil = Object.keys(paysCount).sort((a, b) => a.localeCompare(b, 'fr'));
   const paysAutres = ALL_COUNTRIES.filter(p => !paysCount[p]);
+  const sportsUtil = uniqCats(lieuxList().flatMap(lieuSports)).sort((a, b) => a.localeCompare(b, 'fr'));
   const onMap = lieuxFiltered(false); // la carte montre tous les lieux, la recherche ne trie que la liste
   const sansGps = onMap.filter(l => !parseGps(l.gps));
 
@@ -750,6 +776,10 @@ function renderLieux(main) {
       <option value="${LIEU_DEJA_TOURNE}"${fLieuCat===LIEU_DEJA_TOURNE?' selected':''}>★ Déjà tourné ici (${lieuxList().filter(l=>lieuProjets(l).length).length})</option>
       ${lieuCategoryList().map(c=>`<option value="${esc(c)}"${fLieuCat===c?' selected':''}>${esc(c)} (${lieuxList().filter(l=>lieuCats(l).includes(c)).length})</option>`).join('')}
     </select>
+    ${sportsUtil.length || fLieuSport ? `<select class="filter-sel" onchange="fLieuSport=this.value;renderLieux(document.getElementById('main-content'))">
+      <option value="">SPORT</option>
+      ${sportsUtil.map(x=>`<option value="${esc(x)}"${fLieuSport===x?' selected':''}>${esc(x)} (${lieuxList().filter(l=>lieuSports(l).includes(x)).length})</option>`).join('')}
+    </select>` : ''}
     <select class="filter-sel" onchange="fPays=this.value;renderLieux(document.getElementById('main-content'))">
       <option value="">PAYS</option>
       ${paysUtil.length ? `<optgroup label="Avec des lieux">${paysUtil.map(p=>`<option value="${esc(p)}"${fPays===p?' selected':''}>${FLAGS[p]||''} ${esc(p)} (${paysCount[p]})</option>`).join('')}</optgroup>` : ''}
@@ -796,6 +826,7 @@ function renderLieuxList() {
       html += `<div class="card-body">
         <div class="card-name">${esc(l.nom)}</div>
         <div class="card-meta">
+          ${lieuSports(l).map(x => `<span class="tag sport">${esc(x)}</span>`).join('')}
           ${lieuCats(l).map(c => `<span class="tag agence">${esc(c)}</span>`).join('')}
           ${!lieuCats(l).length && l.type ? `<span class="tag agence">${esc(l.type)}</span>` : ''}
           ${l.ville ? `<span class="tag">${esc(l.ville)}</span>` : ''}
@@ -1086,6 +1117,8 @@ function lieuDetailHtml(l) {
         ${lieuCats(l).map(c => `<span class="tag agence">${esc(c)}</span>`).join('')}
         ${l.type ? `<span class="tag">${esc(l.type)}</span>` : ''}
       </div>` : ''}
+      ${lieuSports(l).length ? `<div class="lieu-sports"><span class="lieu-sports-lbl">SPORTS SHOOTÉS ICI</span>
+        ${lieuSports(l).map(x => `<span class="tag sport">${esc(x)}</span>`).join('')}</div>` : ''}
       ${l.description ? `<div class="lieu-description">${esc(l.description)}</div>` : ''}
       ${lieuProjetsHtml(l)}
       ${l.adresse ? `<div class="detail-row"><span class="detail-lbl">ADRESSE</span><span class="detail-val">${esc(l.adresse)}</span></div>` : ''}
@@ -1797,6 +1830,14 @@ function renderLieuForm(v) {
       </div>
     </div>
     <div class="field full">
+      <label>SPORTS / DISCIPLINES SHOOTÉS ICI (optionnel)</label>
+      <div class="cats-grid" id="lieu-sports-grid">${lieuSportsGridHtml(lieuSports(v))}</div>
+      <div class="new-cat">
+        <input id="f-new-sport" placeholder="Autre sport (ex : Trail, Kitesurf…)" onkeydown="if(event.key==='Enter'){event.preventDefault();addLieuSport()}">
+        <button type="button" class="btn-ig" onclick="addLieuSport()">+ AJOUTER</button>
+      </div>
+    </div>
+    <div class="field full">
       <label>PROJETS DÉJÀ TOURNÉS ICI (optionnel)</label>
       <div id="projets-rows">${lieuProjets(v).map(projetRowHtml).join('')}</div>
       <button type="button" class="btn-ig projet-add" onclick="addProjetRow()">+ AJOUTER UN PROJET</button>
@@ -2207,6 +2248,7 @@ function submitForm() {
     const obj = {
       nom: g('f-nom'), type: g('f-type'), adresse: g('f-adresse'),
       categories: [...document.querySelectorAll('input[name="lieu-cat"]:checked')].map(el => el.value),
+      sports: [...document.querySelectorAll('input[name="lieu-sport"]:checked')].map(el => el.value),
       pays: g('fl-pays'), ville: g('f-ville'), gps: g('f-gps'), maps: g('f-maps'), description: g('f-description'),
       cout: g('f-cout'), coutDetail: g('f-cout-detail'),
       contact: g('f-contact'), tel: g('f-tel'), mail: g('f-mail'),

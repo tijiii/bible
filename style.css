@@ -494,3 +494,7 @@ a.lieu-projet:hover .lieu-projet-go, a.lieu-projet:hover .lieu-projet-annee { co
 .lieu-thumb .thumb-cover { top:auto; right:auto; bottom:2px; left:2px; }
 .lieu-thumb.cover { border:2px solid var(--accent); }
 .lieu-thumb.cover .thumb-cover { background:#fff; color:#111; }
+
+/* Sports shootés sur un lieu */
+.lieu-sports { display:flex; flex-wrap:wrap; align-items:center; gap:5px; margin:2px 0 12px; }
+.lieu-sports-lbl { font-size:11px; letter-spacing:.06em; color:var(--muted); margin-right:4px; }

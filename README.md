@@ -79,6 +79,10 @@ Dans la fiche d'un lieu, survoler une photo puis **☆** pour en faire la couver
 
 Les listes de pays des lieux contiennent tous les pays du monde, générés par le navigateur (`ALL_COUNTRIES` dans `geo.js`).
 
+### Sports shootés sur un lieu
+
+Dans le formulaire d'un lieu, cocher les sports ou disciplines déjà shootés là (même liste que les talents, **+ AJOUTER** pour en créer un). Ils s'affichent sur la fiche et le filtre **SPORT** de la liste des lieux permet de trier.
+
 ### Projets tournés sur un lieu
 
 Dans le formulaire d'un lieu, **+ AJOUTER UN PROJET** : nom, année et lien Dropbox de la vidéo finale (ou du dossier). La fiche n'affiche le bloc « Projets tournés ici » que s'il y a au moins un projet.
