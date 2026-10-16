@@ -714,6 +714,7 @@ function setLieuxFond(fond) {
   try { localStorage.setItem('lieuxFond', fond); } catch {}
   document.querySelectorAll('.globe-fonds button').forEach(b => b.classList.toggle('on', b.dataset.fond === fond));
   if (lieuxMap) lieuxMap.setStyle(LIEUX_FONDS[fond]);
+  if (lieuFicheMap) lieuFicheMap.setStyle(LIEUX_FONDS[fond]);
 }
 
 // Pins regroupés : les lieux trop proches pour être distingués à ce zoom forment un seul pin
@@ -1266,12 +1267,75 @@ function lieuDetailHtml(l) {
       ${l.tel ? `<div class="detail-row"><span class="detail-lbl">TEL</span><span class="detail-val"><a href="tel:${esc(l.tel)}">${esc(l.tel)}</a></span></div>` : ''}
       ${l.mail ? `<div class="detail-row"><span class="detail-lbl">MAIL</span><span class="detail-val"><a href="mailto:${esc(l.mail)}">${esc(l.mail)}</a></span></div>` : ''}
       ${l.notes ? `<div class="detail-row"><span class="detail-lbl">NOTES</span><span class="detail-val pre">${esc(l.notes)}</span></div>` : ''}
-      ${mapQ ? `<iframe class="lieu-map" loading="lazy" referrerpolicy="no-referrer-when-downgrade"
-        src="https://www.google.com/maps?q=${encodeURIComponent(mapQ)}&output=embed"></iframe>` : ''}
+      ${gps ? '<div class="lieu-map lieu-fiche-map" id="lieu-fiche-map"></div>'
+        : mapQ ? lieuGoogleMapHtml(mapQ) : ''}
       ${mapsLink ? `<a class="btn-ig lieu-maps-btn" href="${esc(mapsLink)}" target="_blank">OUVRIR DANS GOOGLE MAPS ↗</a>` : ''}
     </div>
     ${media ? `<div class="lieu-col-media">${media}</div>` : ''}
   </div>`;
+}
+
+function lieuGoogleMapHtml(q) {
+  return `<iframe class="lieu-map" loading="lazy" referrerpolicy="no-referrer-when-downgrade"
+    src="https://www.google.com/maps?q=${encodeURIComponent(q)}&output=embed"></iframe>`;
+}
+
+// Carte de la fiche d'un lieu : on zoome, dézoome (jusqu'au globe) et se déplace
+// directement sur le site, à la souris comme au doigt. Les autres lieux y sont
+// aussi : un clic dessus ouvre leur fiche.
+let lieuFicheMap = null;
+
+function closeLieuFicheMap() {
+  if (lieuFicheMap) { lieuFicheMap.remove(); lieuFicheMap = null; }
+}
+
+function initLieuFicheMap(l) {
+  closeLieuFicheMap();
+  const el = document.getElementById('lieu-fiche-map');
+  const c = parseGps(l.gps);
+  if (!el || !c) return;
+  if (typeof maplibregl === 'undefined') { el.outerHTML = lieuGoogleMapHtml(`${c.lat},${c.lng}`); return; }
+  let map;
+  try {
+    map = new maplibregl.Map({
+      container: el, style: LIEUX_FONDS[lieuxFond], center: [c.lng, c.lat], zoom: 13,
+      attributionControl: { compact: true }, maxPitch: 75,
+    });
+  } catch (e) { console.error(e); el.outerHTML = lieuGoogleMapHtml(`${c.lat},${c.lng}`); return; }
+  lieuFicheMap = map;
+  map.addControl(new maplibregl.NavigationControl({ visualizePitch: true }), 'top-right');
+  map.addControl(new maplibregl.FullscreenControl(), 'top-right');
+  map.on('style.load', () => {
+    map.setProjection({ type: 'globe' });
+    try { map.setSky({ 'atmosphere-blend': ['interpolate', ['linear'], ['zoom'], 0, 1, 5, 1, 7, 0] }); } catch {}
+  });
+
+  const barre = document.createElement('div');
+  barre.className = 'globe-fonds';
+  barre.innerHTML = `<button type="button" data-fond="plan">PLAN</button><button type="button" data-fond="satellite">SATELLITE</button><button type="button" class="recentrer" title="Revenir sur le lieu">RECENTRER</button>`;
+  barre.querySelectorAll('[data-fond]').forEach(b => {
+    b.classList.toggle('on', b.dataset.fond === lieuxFond);
+    b.onclick = e => { e.stopPropagation(); setLieuxFond(b.dataset.fond); };
+  });
+  barre.querySelector('.recentrer').onclick = e => { e.stopPropagation(); map.flyTo({ center: [c.lng, c.lat], zoom: 13, bearing: 0, pitch: 0, duration: 1200 }); };
+  el.appendChild(barre);
+
+  // Les autres lieux, en plus petit
+  lieuxList().forEach(o => {
+    const oc = o.id !== l.id && parseGps(o.gps);
+    if (!oc) return;
+    const pin = document.createElement('div');
+    pin.className = 'lieu-pin autre';
+    pin.title = o.nom;
+    pin.innerHTML = '<span></span>';
+    pin.onclick = e => { e.stopPropagation(); openDetail('lieu', o.id); };
+    new maplibregl.Marker({ element: pin }).setLngLat([oc.lng, oc.lat]).addTo(map);
+  });
+  const ici = document.createElement('div');
+  ici.className = 'lieu-pin ici';
+  ici.title = l.nom;
+  ici.innerHTML = '<span></span>';
+  new maplibregl.Marker({ element: ici }).setLngLat([c.lng, c.lat]).addTo(map);
 }
 
 // ── CHAPITRES LIBRES (créés depuis l'app) ─────────────────────────────────────
@@ -1637,6 +1701,7 @@ function openDetail(type, pid, chapId) {
     document.getElementById('detail-title').textContent = '';
     document.getElementById('detail-body').innerHTML = lieuDetailHtml(p);
     document.getElementById('detail-modal').style.display = 'flex';
+    initLieuFicheMap(p);
     return;
   }
 
@@ -1698,7 +1763,7 @@ function openDetail(type, pid, chapId) {
   document.getElementById('detail-modal').style.display = 'flex';
 }
 
-function closeDetail() { document.getElementById('detail-modal').style.display = 'none'; }
+function closeDetail() { document.getElementById('detail-modal').style.display = 'none'; closeLieuFicheMap(); }
 
 function delFromDetail() {
   if (!confirm(detailType === 'lieu' ? 'Supprimer ce lieu ?' : detailType === 'item' ? 'Supprimer cette fiche ?' : 'Supprimer ce profil ?')) return;
