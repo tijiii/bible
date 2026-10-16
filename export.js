@@ -5,6 +5,44 @@
 // 15 prochains jours, sinon moyenne des 5 dernières années à la même période.
 
 let exportSel = new Set();
+let exportForm = null;
+const exportPhotos = {};      // id du lieu → ids des photos choisies pour le PDF
+const exportOuverts = new Set(); // lieux dont le réglage (photos, description) est déplié
+const EXPORT_MAX_PHOTOS = 7;
+
+// Ce qu'on peut mettre ou non dans le PDF ; le choix est gardé sur cet appareil
+const EXPORT_OPTIONS = [
+  ['descClient', 'Description client', true],
+  ['tags', 'Catégories et sports', true],
+  ['photos', 'Photos', true],
+  ['gps', 'Point GPS', true],
+  ['maps', 'Lien Google Maps', true],
+  ['carte', 'Carte', true],
+  ['meteo', 'Météo de la période', true],
+  ['ville', 'Ville et pays', false],
+  ['adresse', 'Adresse', false],
+  ['cout', 'Coûts estimés (interne)', false],
+  ['contact', 'Contacts sur place (interne)', false],
+];
+
+function exportOptionsSauvees() {
+  let o = {};
+  try { o = JSON.parse(localStorage.getItem('exportOptions') || '{}') || {}; } catch {}
+  return Object.fromEntries(EXPORT_OPTIONS.map(([k, , def]) => [k, typeof o[k] === 'boolean' ? o[k] : def]));
+}
+
+// Photos du lieu, la couverture en premier
+function exportPhotosDuLieu(l) {
+  const photos = lieuPhotoUrls(l);
+  const cover = lieuCoverPhoto(l, photos);
+  return cover ? [cover, ...photos.filter(p => p !== cover)] : photos;
+}
+
+function exportPhotosChoisies(l) {
+  const photos = exportPhotosDuLieu(l);
+  if (!exportPhotos[l.id]) exportPhotos[l.id] = photos.slice(0, 4).map(p => String(p.id));
+  return photos.filter(p => exportPhotos[l.id].includes(String(p.id)));
+}
 
 function openLieuxExport() {
   const list = lieuxFiltered(true);
@@ -17,6 +55,7 @@ function openLieuxExport() {
     document.getElementById('app').appendChild(bg);
   }
   const prev = exportForm || {};
+  const opts = exportOptionsSauvees();
   bg.innerHTML = `<div class="modal export-modal">
     <div class="modal-hdr">
       <span class="modal-title">EXPORTER LES LIEUX EN PDF</span>
@@ -28,24 +67,16 @@ function openLieuxExport() {
       <div class="field"><label>DU</label><input type="date" id="ex-du" value="${esc(prev.du || '')}"></div>
       <div class="field"><label>AU</label><input type="date" id="ex-au" value="${esc(prev.au || '')}"></div>
       <div class="field full">
+        <label>À METTRE DANS LE PDF</label>
+        <div class="export-options">${EXPORT_OPTIONS.map(([k, label]) =>
+          `<label class="cat-check"><input type="checkbox" id="ex-${k}" ${opts[k] ? 'checked' : ''} onchange="exportOptionChange()"><span>${esc(label)}</span></label>`).join('')}</div>
+      </div>
+      <div class="field full">
         <div class="export-sel-hdr">
           <label>LIEUX À MONTRER (<span id="ex-count"></span>)</label>
           <span><button type="button" class="export-lien" onclick="exportToutCocher(true)">tout</button> · <button type="button" class="export-lien" onclick="exportToutCocher(false)">aucun</button></span>
         </div>
-        <div class="export-liste">${lieuxList().map(l => {
-          const cover = lieuCoverPhoto(l)?.url;
-          const ou = [l.ville, l.pays].filter(Boolean).join(', ');
-          return `<label class="export-item">
-            <input type="checkbox" value="${l.id}" ${exportSel.has(l.id) ? 'checked' : ''} onchange="exportCocher(${l.id}, this.checked)">
-            ${cover ? `<img src="${esc(cover)}" alt="">` : '<span class="export-item-ph"></span>'}
-            <span class="export-item-txt"><b>${esc(l.nom)}</b>${ou ? `<small>${esc(ou)}</small>` : ''}</span>
-          </label>`;
-        }).join('') || '<div class="empty">AUCUN LIEU</div>'}</div>
-      </div>
-      <div class="field full export-options">
-        <label class="cat-check"><input type="checkbox" id="ex-meteo" ${prev.meteo === false ? '' : 'checked'}><span>Météo de la période (et lever / coucher du soleil)</span></label>
-        <label class="cat-check"><input type="checkbox" id="ex-cout" ${prev.cout ? 'checked' : ''}><span>Coûts estimés (interne)</span></label>
-        <label class="cat-check"><input type="checkbox" id="ex-contact" ${prev.contact ? 'checked' : ''}><span>Contacts sur place (interne)</span></label>
+        <div class="export-liste">${lieuxList().map(exportItemHtml).join('') || '<div class="empty">AUCUN LIEU</div>'}</div>
       </div>
       <div class="field-hint field full">Une page s'ouvre avec le document : choisis « Enregistrer en PDF » dans la fenêtre d'impression.</div>
     </div>
@@ -59,17 +90,100 @@ function openLieuxExport() {
   exportMajCompte();
 }
 
-let exportForm = null;
+function exportItemHtml(l) {
+  const cover = lieuCoverPhoto(l)?.url;
+  const ou = [l.ville, l.pays].filter(Boolean).join(', ');
+  const on = exportSel.has(l.id);
+  return `<div class="export-item-wrap" data-id="${l.id}">
+    <div class="export-item">
+      <label class="export-item-main">
+        <input type="checkbox" value="${l.id}" ${on ? 'checked' : ''} onchange="exportCocher(${l.id}, this.checked)">
+        ${cover ? `<img src="${esc(cover)}" alt="">` : '<span class="export-item-ph"></span>'}
+        <span class="export-item-txt"><b>${esc(l.nom)}</b>${ou ? `<small>${esc(ou)}</small>` : ''}</span>
+      </label>
+      <button type="button" class="export-regler" ${on ? '' : 'hidden'} onclick="exportOuvrir(${l.id})">${exportOuverts.has(l.id) ? 'FERMER' : 'PHOTOS ET TEXTE'}</button>
+    </div>
+    ${on && exportOuverts.has(l.id) ? exportReglageHtml(l) : ''}
+  </div>`;
+}
+
+function exportReglageHtml(l) {
+  const photos = exportPhotosDuLieu(l);
+  exportPhotosChoisies(l);
+  const choix = exportPhotos[l.id];
+  const rang = photos.filter(p => choix.includes(String(p.id)));
+  return `<div class="export-reglage">
+    <div class="export-reglage-lbl">PHOTOS DU PDF <small>${choix.length ? `${rang.length} choisie${rang.length > 1 ? 's' : ''}, la première en grand` : 'aucune'} · ${EXPORT_MAX_PHOTOS} au plus</small></div>
+    ${photos.length ? `<div class="export-photos">${photos.map(p => {
+      const n = rang.indexOf(p);
+      return `<button type="button" class="export-photo${n >= 0 ? ' on' : ''}" data-pid="${esc(String(p.id))}" onclick="exportPhoto(${l.id}, this.dataset.pid)">
+        <img src="${esc(p.url)}" alt="" loading="lazy">${n >= 0 ? `<span>${n + 1}</span>` : ''}</button>`;
+    }).join('')}</div>` : '<div class="field-hint">Ce lieu n\'a pas encore de photo.</div>'}
+    <div class="export-reglage-lbl">DESCRIPTION POUR LE CLIENT
+      ${l.description ? `<button type="button" class="export-lien" onclick="exportReprendreDesc(${l.id})">reprendre la description interne</button>` : ''}</div>
+    <textarea rows="3" id="ex-desc-${l.id}" placeholder="${esc(l.description || 'Le texte que verra le client. Vide = pas de description.')}"
+      onchange="exportDescClient(${l.id}, this.value)">${esc(l.descClient || '')}</textarea>
+  </div>`;
+}
+
+function exportRedessinerLieu(id) {
+  const wrap = document.querySelector(`.export-item-wrap[data-id="${id}"]`);
+  const l = lieuxList().find(x => x.id === id);
+  if (wrap && l) wrap.outerHTML = exportItemHtml(l);
+}
+
+function exportOuvrir(id) {
+  if (exportOuverts.has(id)) exportOuverts.delete(id); else exportOuverts.add(id);
+  exportRedessinerLieu(id);
+}
+
+function exportPhoto(id, photoId) {
+  const l = lieuxList().find(x => x.id === id);
+  if (!l) return;
+  exportPhotosChoisies(l);
+  const choix = exportPhotos[id];
+  const i = choix.indexOf(photoId);
+  if (i >= 0) choix.splice(i, 1);
+  else if (choix.length >= EXPORT_MAX_PHOTOS) { alert(`${EXPORT_MAX_PHOTOS} photos au plus par lieu.`); return; }
+  else choix.push(photoId);
+  exportRedessinerLieu(id);
+}
+
+// La description client est gardée sur le lieu (elle resservira au prochain export)
+function exportDescClient(id, texte) {
+  const l = lieuxList().find(x => x.id === id);
+  if (!l || (l.descClient || '') === texte.trim()) return;
+  l.descClient = texte.trim();
+  saveDb();
+}
+
+function exportReprendreDesc(id) {
+  const l = lieuxList().find(x => x.id === id);
+  const ta = document.getElementById('ex-desc-' + id);
+  if (!l || !ta) return;
+  ta.value = l.description || '';
+  exportDescClient(id, ta.value);
+}
+
+function exportOptionChange() {
+  const o = Object.fromEntries(EXPORT_OPTIONS.map(([k]) => [k, !!document.getElementById('ex-' + k)?.checked]));
+  try { localStorage.setItem('exportOptions', JSON.stringify(o)); } catch {}
+}
 
 function closeLieuxExport() {
   const bg = document.getElementById('export-modal');
   if (bg) bg.style.display = 'none';
 }
 
-function exportCocher(id, on) { if (on) exportSel.add(id); else exportSel.delete(id); exportMajCompte(); }
+function exportCocher(id, on) {
+  if (on) exportSel.add(id); else exportSel.delete(id);
+  exportRedessinerLieu(id);
+  exportMajCompte();
+}
 
 function exportToutCocher(on) {
-  document.querySelectorAll('.export-liste input').forEach(i => { i.checked = on; exportCocher(Number(i.value), on); });
+  lieuxList().forEach(l => { if (on) exportSel.add(l.id); else exportSel.delete(l.id); exportRedessinerLieu(l.id); });
+  exportMajCompte();
 }
 
 function exportMajCompte() {
@@ -158,8 +272,8 @@ function meteoHtml(m, du, au) {
 // ── Petite carte : tuiles OpenStreetMap assemblées autour du point.
 // Le cadre de tuiles est plus grand que la place disponible et centré sur le point :
 // la carte remplit le bas de la colonne, quelle que soit la hauteur restante.
-function miniCarteHtml(c) {
-  const z = 14, W = 480, H = 620, n = Math.pow(2, z);
+function miniCarteHtml(c, large) {
+  const z = 14, W = large ? 1100 : 480, H = 620, n = Math.pow(2, z);
   const x = (c.lng + 180) / 360 * n;
   const rad = c.lat * Math.PI / 180;
   const y = (1 - Math.log(Math.tan(rad) + 1 / Math.cos(rad)) / Math.PI) / 2 * n;
@@ -178,32 +292,33 @@ function exportDocHtml(opts, lieux, meteos) {
   const titre = opts.projet || 'Repérages';
   const pages = lieux.map((l, i) => {
     const c = parseGps(l.gps);
-    const photos = lieuPhotoUrls(l);
-    const cover = lieuCoverPhoto(l, photos);
-    const autres = photos.filter(p => p !== cover).slice(0, 3);
-    const ou = [l.ville, l.pays].filter(Boolean).join(', ');
-    const tags = [...lieuCats(l), ...lieuSports(l)];
-    return `<section class="ex-page ex-lieu">
+    const photos = opts.photos ? exportPhotosChoisies(l) : [];
+    const [grande, ...autres] = photos;
+    const ou = opts.ville ? [l.ville, l.pays].filter(Boolean).join(', ') : '';
+    const tags = opts.tags ? [...lieuCats(l), ...lieuSports(l)] : [];
+    const maps = opts.maps ? lieuMapsLink(l) : '';
+    const rows = [
+      opts.adresse && l.adresse ? `<div><span>ADRESSE</span>${esc(l.adresse)}</div>` : '',
+      opts.gps && c ? `<div><span>GPS</span>${esc(formatGps(c))}</div>` : '',
+      maps ? `<div><span>GOOGLE MAPS</span><a href="${esc(maps)}">Ouvrir le lieu dans Google Maps</a></div>` : '',
+      opts.cout && l.cout !== '' && l.cout !== undefined ? `<div><span>COÛT ESTIMÉ</span>${esc(formatCout(l.cout))}${l.coutDetail ? ` · ${esc(l.coutDetail)}` : ''}</div>` : '',
+      opts.contact && (l.contact || l.tel || l.mail) ? `<div><span>CONTACT</span>${esc([l.contact, l.tel, l.mail].filter(Boolean).join(' · '))}</div>` : '',
+    ].join('');
+    return `<section class="ex-page ex-lieu${grande ? '' : ' sans-photo'}">
       <div class="ex-col-info">
         <div class="ex-numero">${String(i + 1).padStart(2, '0')}</div>
         <h2>${esc(l.nom)}</h2>
         ${ou ? `<div class="ex-ou">${esc(ou)}</div>` : ''}
         ${tags.length ? `<div class="ex-tags">${tags.map(t => `<span>${esc(t)}</span>`).join('')}</div>` : ''}
-        ${l.description ? `<p class="ex-desc">${esc(l.description)}</p>` : ''}
-        <div class="ex-rows">
-          ${l.adresse ? `<div><span>ADRESSE</span>${esc(l.adresse)}</div>` : ''}
-          ${c ? `<div><span>GPS</span>${esc(formatGps(c))}</div>` : ''}
-          ${lieuMapsLink(l) ? `<div><span>CARTE</span><a href="${esc(lieuMapsLink(l))}">Ouvrir dans Google Maps</a></div>` : ''}
-          ${opts.cout && l.cout !== '' && l.cout !== undefined ? `<div><span>COÛT ESTIMÉ</span>${esc(formatCout(l.cout))}${l.coutDetail ? ` · ${esc(l.coutDetail)}` : ''}</div>` : ''}
-          ${opts.contact && (l.contact || l.tel || l.mail) ? `<div><span>CONTACT</span>${esc([l.contact, l.tel, l.mail].filter(Boolean).join(' · '))}</div>` : ''}
-        </div>
+        ${opts.descClient && l.descClient ? `<p class="ex-desc">${esc(l.descClient)}</p>` : ''}
+        ${rows ? `<div class="ex-rows">${rows}</div>` : ''}
         ${opts.meteo && opts.du ? meteoHtml(meteos[l.id], opts.du, opts.au || opts.du) : ''}
-        ${c ? miniCarteHtml(c) : ''}
+        ${opts.carte && c ? miniCarteHtml(c, !grande) : ''}
       </div>
-      <div class="ex-col-photos n-${Math.min(autres.length, 3)}">
-        ${cover ? `<img class="ex-cover" src="${esc(cover.full || cover.url)}" alt="">` : '<div class="ex-sans-photo">Pas encore de photo</div>'}
-        ${autres.length ? `<div class="ex-autres">${autres.map(p => `<img src="${esc(p.full || p.url)}" alt="">`).join('')}</div>` : ''}
-      </div>
+      ${grande ? `<div class="ex-col-photos ${autres.length > 3 ? 'deux-rangs' : autres.length ? 'un-rang' : ''}">
+        <img class="ex-cover" src="${esc(grande.full || grande.url)}" alt="">
+        ${autres.length ? `<div class="ex-autres" style="grid-template-columns:repeat(${Math.min(autres.length, 3)}, 1fr)">${autres.map(p => `<img src="${esc(p.full || p.url)}" alt="">`).join('')}</div>` : ''}
+      </div>` : ''}
     </section>`;
   }).join('');
 
@@ -253,11 +368,14 @@ function exportDocHtml(opts, lieux, meteos) {
   .ex-carte img { position: absolute; width: 256px; height: 256px; }
   .ex-pin { position: absolute; left: 50%; top: 50%; width: 16px; height: 16px; margin: -8px 0 0 -8px; border-radius: 50%; background: #111; border: 3px solid #fff; box-shadow: 0 1px 4px rgba(0,0,0,.5); }
   .ex-osm { position: absolute; right: 0; bottom: 0; font-size: 9px; background: rgba(255,255,255,.8); padding: 1px 4px; }
+  .ex-lieu.sans-photo { grid-template-columns: 1fr; }
+  .ex-lieu.sans-photo .ex-desc { max-width: 190mm; }
   .ex-col-photos { display: grid; gap: 3mm; min-height: 0; grid-template-rows: 1fr; }
-  .ex-col-photos:not(.n-0) { grid-template-rows: 2fr 1fr; }
+  .ex-col-photos.un-rang { grid-template-rows: 2fr 1fr; }
+  .ex-col-photos.deux-rangs { grid-template-rows: 3fr 2fr; }
   .ex-col-photos img { width: 100%; height: 100%; object-fit: cover; display: block; min-height: 0; }
   .ex-cover { min-height: 0; }
-  .ex-autres { display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; gap: 3mm; min-height: 0; }
+  .ex-autres { display: grid; grid-auto-rows: 1fr; gap: 3mm; min-height: 0; }
   .ex-sans-photo { display: flex; align-items: center; justify-content: center; background: #f4f4f3; color: #8a8a87; font-size: 15px; }
   @media print { body { background: #fff; } .ex-barre { display: none; } .ex-page { margin: 0; } }
   @media screen and (max-width: 1150px) { .ex-page { zoom: .5; } }
@@ -269,7 +387,7 @@ function exportDocHtml(opts, lieux, meteos) {
     <h1>${esc(titre)}</h1>
     <div class="ex-sous">${[opts.client, periode, `${lieux.length} lieu${lieux.length > 1 ? 'x' : ''}`].filter(Boolean).map(esc).join(' · ')}</div>
   </div>
-  <div class="ex-sommaire">${lieux.map((l, i) => `<div><b>${String(i + 1).padStart(2, '0')}</b>${esc(l.nom)}<small>${esc([l.ville, l.pays].filter(Boolean).join(', '))}</small></div>`).join('')}</div>
+  <div class="ex-sommaire">${lieux.map((l, i) => `<div><b>${String(i + 1).padStart(2, '0')}</b>${esc(l.nom)}${opts.ville ? `<small>${esc([l.ville, l.pays].filter(Boolean).join(', '))}</small>` : ''}</div>`).join('')}</div>
   <div class="ex-pied"><span>WIDEN PRODUCTION</span><span>widenproduction.fr</span></div>
 </section>
 ${pages}
@@ -280,9 +398,11 @@ async function runLieuxExport() {
   const g = id => (document.getElementById(id) || {}).value?.trim() || '';
   const opts = {
     projet: g('ex-projet'), client: g('ex-client'), du: g('ex-du'), au: g('ex-au') || g('ex-du'),
-    meteo: document.getElementById('ex-meteo').checked,
-    cout: document.getElementById('ex-cout').checked, contact: document.getElementById('ex-contact').checked,
+    ...Object.fromEntries(EXPORT_OPTIONS.map(([k]) => [k, !!document.getElementById('ex-' + k)?.checked])),
   };
+  // Une description en cours de frappe est enregistrée avant de créer le PDF
+  document.querySelectorAll('.export-reglage textarea').forEach(ta => exportDescClient(Number(ta.id.replace('ex-desc-', '')), ta.value));
+  if (opts.meteo && !opts.du) { alert('Choisis les dates pour avoir la météo, ou décoche « Météo de la période ».'); return; }
   if (opts.du && opts.au < opts.du) { alert('La date de fin est avant la date de début.'); return; }
   if (opts.du && ajoutJours(opts.du, 31) < opts.au) { alert('Choisis une période d\'un mois au plus.'); return; }
   const lieux = lieuxList().filter(l => exportSel.has(l.id));

@@ -1256,6 +1256,7 @@ function lieuDetailHtml(l) {
       ${lieuSports(l).length ? `<div class="lieu-sports"><span class="lieu-sports-lbl">SPORTS SHOOTÉS ICI</span>
         ${lieuSports(l).map(x => `<span class="tag sport">${esc(x)}</span>`).join('')}</div>` : ''}
       ${l.description ? `<div class="lieu-description">${esc(l.description)}</div>` : ''}
+      ${l.descClient ? `<div class="detail-row"><span class="detail-lbl">POUR LE CLIENT</span><span class="detail-val pre">${esc(l.descClient)}</span></div>` : ''}
       ${lieuProjetsHtml(l)}
       ${l.adresse ? `<div class="detail-row"><span class="detail-lbl">ADRESSE</span><span class="detail-val">${esc(l.adresse)}</span></div>` : ''}
       <div class="detail-row"><span class="detail-lbl">GPS</span><span class="detail-val">${gps ? esc(formatGps(gps)) : esc(l.gps || '—')}</span></div>
@@ -1956,6 +1957,7 @@ function renderLieuForm(v) {
       <div class="field-hint">Remplies toutes seules depuis le lien Maps, avec l'adresse, la ville et le pays. Sur place, « MA POSITION » enregistre l'endroit exact. Le lieu n'apparaît sur la carte qu'avec des coordonnées.</div>
     </div>
     <div class="field full"><label>BRÈVE DESCRIPTION</label><textarea id="f-description" rows="2" placeholder="ex: Grande plage face à l'ouest, dunes, très ventée l'après-midi">${esc(v.description||'')}</textarea></div>
+    <div class="field full"><label>DESCRIPTION POUR LE CLIENT</label><textarea id="f-desc-client" rows="3" placeholder="Le texte qui part dans le PDF client. Vide = pas de description dans le PDF.">${esc(v.descClient||'')}</textarea></div>
     ${LIEU_PHOTO_KINDS.map(photoField).join('')}
     <div class="field full">
       <label>CATÉGORIES</label>
@@ -2400,7 +2402,7 @@ function submitForm() {
       nom: g('f-nom'), type: g('f-type'), adresse: g('f-adresse'),
       categories: [...document.querySelectorAll('input[name="lieu-cat"]:checked')].map(el => el.value),
       sports: [...document.querySelectorAll('input[name="lieu-sport"]:checked')].map(el => el.value),
-      pays: g('fl-pays'), ville: g('f-ville'), gps: g('f-gps'), maps: g('f-maps'), description: g('f-description'),
+      pays: g('fl-pays'), ville: g('f-ville'), gps: g('f-gps'), maps: g('f-maps'), description: g('f-description'), descClient: g('f-desc-client'),
       cout: g('f-cout'), coutDetail: g('f-cout-detail'),
       contact: g('f-contact'), tel: g('f-tel'), mail: g('f-mail'),
       photos: g('f-photo-links').split('\n').map(s => s.trim()).filter(Boolean),
