@@ -918,6 +918,7 @@ function renderLieux(main) {
       ${paysUtil.length ? `<optgroup label="Avec des lieux">${paysUtil.map(p=>`<option value="${esc(p)}"${fPays===p?' selected':''}>${FLAGS[p]||''} ${esc(p)} (${paysCount[p]})</option>`).join('')}</optgroup>` : ''}
       <optgroup label="Tous les pays">${paysAutres.map(p=>`<option value="${esc(p)}"${fPays===p?' selected':''}>${FLAGS[p]||''} ${esc(p)}</option>`).join('')}</optgroup>
     </select>
+    <button class="btn-ig lieux-export-btn" onclick="openLieuxExport()">EXPORTER EN PDF</button>
     <div class="spacer"></div>
     <div class="lieu-maps-add">
       <input id="lieu-maps-link" placeholder="Colle un lien Google Maps" onkeydown="if(event.key==='Enter')addLieuFromMapsLink()">

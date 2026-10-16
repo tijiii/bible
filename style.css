@@ -515,3 +515,21 @@ a.lieu-projet:hover .lieu-projet-go, a.lieu-projet:hover .lieu-projet-annee { co
 .lieu-groupe-actions { display:flex; gap:6px; }
 .lieu-groupe-actions .btn-add { flex:1; }
 .lieu-groupe-actions .btn-ig { margin-top:0; }
+
+/* Export PDF des lieux */
+.lieux-export-btn { margin-top:0; padding:7px 12px; }
+.export-modal { max-width:720px; }
+.export-sel-hdr { display:flex; justify-content:space-between; align-items:baseline; gap:10px; }
+.export-lien { background:none; border:none; padding:0; font-family:var(--serif); font-size:13px; color:var(--muted); text-decoration:underline; cursor:pointer; }
+.export-lien:hover { color:var(--text); }
+.export-liste { max-height:300px; overflow-y:auto; border:1px solid var(--border); background:#fff; }
+.field .export-item { text-transform:none; color:var(--text); font-size:14.5px; letter-spacing:0; }
+.export-item { display:flex; align-items:center; gap:10px; padding:6px 10px; border-bottom:1px solid var(--border); cursor:pointer; }
+.export-item:last-child { border-bottom:none; }
+.export-item:hover { background:var(--bg3); }
+.export-item input { width:15px; height:15px; flex:none; accent-color:#111; }
+.export-item img, .export-item-ph { width:48px; height:36px; object-fit:cover; flex:none; background:var(--bg3); }
+.export-item-txt { display:flex; flex-direction:column; min-width:0; font-size:14.5px; }
+.export-item-txt b { font-weight:500; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.export-item-txt small { color:var(--muted); font-size:12.5px; }
+.export-options { gap:6px; }

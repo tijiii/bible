@@ -93,6 +93,11 @@ Dans le formulaire d'un lieu, **+ AJOUTER UN PROJET** : nom, année et lien Drop
 
 Liste de base dans `LIEU_CATEGORIES` (`app.js`). Les catégories ajoutées depuis le formulaire (**+ AJOUTER**) sont gardées dans la base (`lieuCategories`) et visibles par toute l'équipe.
 
+### Exporter des lieux en PDF pour un client
+Le bouton **EXPORTER EN PDF** (barre des Lieux) ouvre une fenêtre : nom du projet, client, période (du / au), les lieux à montrer (cochés d'avance : ceux de la liste filtrée), et les options. Le document s'ouvre dans un nouvel onglet, puis la fenêtre d'impression : choisir **Enregistrer en PDF**.
+Le PDF (A4 paysage) contient une couverture avec le sommaire, puis une page par lieu : nom, ville et pays, catégories et sports, description, adresse, point GPS, lien Google Maps, une petite carte, la photo de couverture et 3 autres photos.
+La météo vient d'Open-Meteo (gratuit, sans clé) : prévisions jour par jour si la période est dans les 15 prochains jours, sinon la moyenne des 5 dernières années à la même période (températures, jours de pluie, lever et coucher du soleil). Les coûts et les contacts sont décochés par défaut, car ils sont internes.
+
 ## Ajout rapide (lien, capture, texte)
 
 Le bouton « ajout rapide » permet à toute l'équipe de coller un lien Instagram, une capture d'écran ou une description : Claude en tire une fiche talent ou lieu, et le formulaire s'ouvre pré-rempli, à vérifier avant d'enregistrer. La clé Anthropic n'est jamais dans le site : elle reste sur un petit serveur Cloudflare (dossier `worker/`).
