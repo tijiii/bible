@@ -711,6 +711,90 @@ function setLieuxFond(fond) {
   if (lieuxMap) lieuxMap.setStyle(LIEUX_FONDS[fond]);
 }
 
+// Pins regroupés : les lieux trop proches pour être distingués à ce zoom forment un seul pin
+// avec leur nombre ; un clic ouvre un cadre qu'on fait défiler avec des flèches.
+let lieuxMarkers = [];
+const LIEUX_GROUPE_PX = 26; // écart minimal (en pixels) entre deux pins
+
+function distKm(a, b) {
+  const R = 6371, rad = Math.PI / 180;
+  const dLat = (b.lat - a.lat) * rad, dLng = (b.lng - a.lng) * rad;
+  const h = Math.sin(dLat / 2) ** 2 + Math.cos(a.lat * rad) * Math.cos(b.lat * rad) * Math.sin(dLng / 2) ** 2;
+  return 2 * R * Math.asin(Math.min(1, Math.sqrt(h)));
+}
+
+function groupLieux(list, zoom) {
+  const seuil = LIEUX_GROUPE_PX * 40075 / (512 * Math.pow(2, zoom)); // km couverts par ces pixels
+  const groupes = [];
+  list.forEach(l => {
+    const c = parseGps(l.gps);
+    if (!c) return;
+    const g = groupes.find(g => distKm(g.c, c) < seuil);
+    if (g) { g.lieux.push(l); g.pts.push(c); g.c = { lat: g.pts.reduce((s, p) => s + p.lat, 0) / g.pts.length, lng: g.pts.reduce((s, p) => s + p.lng, 0) / g.pts.length }; }
+    else groupes.push({ c, lieux: [l], pts: [c] });
+  });
+  return groupes;
+}
+
+function hideLieuxHover() { if (lieuxHoverPopup) { lieuxHoverPopup.remove(); lieuxHoverPopup = null; } }
+
+function renderLieuxPins(map, list) {
+  lieuxMarkers.forEach(m => m.remove());
+  lieuxMarkers = [];
+  hideLieuxHover();
+  groupLieux(list, map.getZoom()).forEach(g => {
+    const n = g.lieux.length;
+    const pin = document.createElement('div');
+    pin.className = 'lieu-pin' + (g.lieux.some(l => lieuProjets(l).length) ? ' tourne' : '') + (n > 1 ? ' groupe' : '');
+    pin.innerHTML = n > 1 ? `<span>${n}</span>` : '<span></span>';
+    pin.setAttribute('aria-label', n > 1 ? `${n} lieux` : g.lieux[0].nom);
+    pin.addEventListener('click', e => {
+      e.stopPropagation(); hideLieuxHover();
+      if (n === 1) { closeLieuxPopup(); openDetail('lieu', g.lieux[0].id); }
+      else openLieuxGroupe(g, 0);
+    });
+    pin.addEventListener('mouseenter', () => {
+      hideLieuxHover();
+      lieuxHoverPopup = new maplibregl.Popup({ closeButton: false, closeOnClick: false, offset: 14, className: 'lieu-hover' })
+        .setLngLat([g.c.lng, g.c.lat]).setText(n > 1 ? `${n} lieux : ${g.lieux.map(l => l.nom).join(', ')}` : g.lieux[0].nom).addTo(map);
+    });
+    pin.addEventListener('mouseleave', hideLieuxHover);
+    lieuxMarkers.push(new maplibregl.Marker({ element: pin }).setLngLat([g.c.lng, g.c.lat]).addTo(map));
+  });
+}
+
+function openLieuxGroupe(g, i) {
+  const n = g.lieux.length;
+  i = (i + n) % n;
+  const l = g.lieux[i];
+  const cover = lieuCoverPhoto(l);
+  const ou = [l.ville, l.pays && ((FLAGS[l.pays] || '') + ' ' + l.pays).trim()].filter(Boolean).join(' · ');
+  const box = document.createElement('div');
+  box.className = 'lieu-popup lieu-groupe';
+  box.innerHTML = `
+    <div class="lieu-groupe-nav">
+      <button type="button" class="lieu-groupe-fleche" data-pas="-1" aria-label="Lieu précédent">‹</button>
+      <span class="lieu-groupe-compte">${i + 1} / ${n}</span>
+      <button type="button" class="lieu-groupe-fleche" data-pas="1" aria-label="Lieu suivant">›</button>
+    </div>
+    ${cover ? `<img class="lieu-groupe-img" src="${esc(cover.url)}" alt="">` : ''}
+    <div class="lieu-popup-nom">${esc(l.nom)}</div>
+    ${ou ? `<div class="lieu-popup-gps">${esc(ou)}</div>` : ''}
+    <div class="lieu-groupe-actions">
+      <button type="button" class="btn-add" data-action="ouvrir">OUVRIR LA FICHE</button>
+      <button type="button" class="btn-ig" data-action="zoomer">ZOOMER</button>
+    </div>`;
+  box.addEventListener('click', e => e.stopPropagation());
+  box.querySelectorAll('.lieu-groupe-fleche').forEach(b => b.onclick = () => openLieuxGroupe(g, i + Number(b.dataset.pas)));
+  box.querySelector('[data-action="ouvrir"]').onclick = () => { closeLieuxPopup(); openDetail('lieu', l.id); };
+  box.querySelector('[data-action="zoomer"]').onclick = () => {
+    closeLieuxPopup();
+    const lngs = g.pts.map(p => p.lng), lats = g.pts.map(p => p.lat);
+    lieuxMap.fitBounds([[Math.min(...lngs), Math.min(...lats)], [Math.max(...lngs), Math.max(...lats)]], { padding: 80, maxZoom: 17, duration: 2000 });
+  };
+  openLieuxPopup([g.c.lng, g.c.lat], box);
+}
+
 function initLieuxMap(list) {
   const el = document.getElementById('lieux-map');
   closeLieuxPopup();
@@ -754,26 +838,14 @@ function initLieuxMap(list) {
   });
   el.appendChild(fonds);
 
-  list.forEach(l => {
-    const c = parseGps(l.gps);
-    if (!c) return;
-    const pin = document.createElement('div');
-    pin.className = 'lieu-pin' + (lieuProjets(l).length ? ' tourne' : '');
-    pin.innerHTML = '<span></span>';
-    pin.setAttribute('aria-label', l.nom);
-    pin.addEventListener('click', e => { e.stopPropagation(); closeLieuxPopup(); openDetail('lieu', l.id); });
-    pin.addEventListener('mouseenter', () => {
-      lieuxHoverPopup = new maplibregl.Popup({ closeButton: false, closeOnClick: false, offset: 14, className: 'lieu-hover' })
-        .setLngLat([c.lng, c.lat]).setText(l.nom).addTo(map);
-    });
-    pin.addEventListener('mouseleave', () => { if (lieuxHoverPopup) { lieuxHoverPopup.remove(); lieuxHoverPopup = null; } });
-    new maplibregl.Marker({ element: pin }).setLngLat([c.lng, c.lat]).addTo(map);
-  });
+  // Les pins se regroupent selon le zoom
+  renderLieuxPins(map, list);
+  map.on('zoomend', () => renderLieuxPins(map, list));
 
   // Clic sur la carte : proposer d'ajouter un lieu à cet endroit
   // (un clic quand le cadre est ouvert ne fait que le fermer)
   map.on('click', e => {
-    if (e.originalEvent && e.originalEvent.target.closest('.lieu-pin, .globe-fonds')) return;
+    if (e.originalEvent && e.originalEvent.target.closest('.lieu-pin, .globe-fonds, .maplibregl-popup')) return;
     if (lieuxPopup) { closeLieuxPopup(); return; }
     const c = { lat: e.lngLat.lat, lng: ((e.lngLat.lng + 540) % 360) - 180 };
     const box = document.createElement('div');
