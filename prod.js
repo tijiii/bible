@@ -208,13 +208,7 @@ function renderTsEditor(main) {
           ${tsField('PROJET', 'projet', s.projet, { ph: 'ex : FW26' })}
           ${tsField('RÉFÉRENCES DE RÉSERVATION', 'references', s.references, { ph: 'ex : JS2Q5 & YNTVGD' })}
           ${tsField('LANGUE DU DOCUMENT', 'langue', s.langue || 'en', { select: [['en', 'Anglais'], ['fr', 'Français']] })}
-          <div class="field"><label>LOGO DU CLIENT</label>
-            <div class="ts-logo-row">
-              ${s.logo ? `<img src="${esc(s.logo)}" alt="">` : '<span class="field-hint">Sans logo, le nom du client est écrit à la place.</span>'}
-              <label class="btn-upload">${s.logo ? 'CHANGER' : 'AJOUTER'}<input type="file" accept="image/*" hidden onchange="tsLogo(this)"></label>
-              ${s.logo ? '<button type="button" class="btn-upload" onclick="tsLogoRetirer()">RETIRER</button>' : ''}
-            </div>
-          </div>
+          <div class="field full ts-logo" id="ts-logo-zone" ondragover="event.preventDefault()" ondrop="tsLogoDepose(event)">${tsLogoZoneHtml(s)}</div>
         </div>
       </section>
 
@@ -258,6 +252,8 @@ function renderTsEditor(main) {
     </div>
   </div>`;
   window.scrollTo(0, scroll);
+  const champClient = main.querySelector('[data-k="client"]');
+  if (champClient) champClient.addEventListener('change', tsLogoAuto);
   tsMajApercu();
 }
 
@@ -381,29 +377,164 @@ function tsSupprimer() {
   prodGo('travel');
 }
 
-// Logo du client : réduit (400 px au plus) et gardé pour les prochaines feuilles de ce client
-function tsLogo(input) {
-  const f = input.files && input.files[0];
-  if (!f) return;
-  const img = new Image();
-  img.onload = () => {
-    const k = Math.min(1, 400 / Math.max(img.width, img.height));
-    const c = document.createElement('canvas');
-    c.width = Math.round(img.width * k); c.height = Math.round(img.height * k);
-    c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
-    const s = tsCur();
-    s.logo = c.toDataURL('image/png');
-    if (s.client) prodData().logos[s.client.trim().toUpperCase()] = s.logo;
-    URL.revokeObjectURL(img.src);
-    tsChange();
-    renderTsEditor(document.getElementById('main-content'));
-  };
-  img.src = URL.createObjectURL(f);
+// ── Logo du client ───────────────────────────────────────────────────────────
+// Trouvé tout seul (serveur : Claude + Wikipédia), ajouté depuis un fichier, glissé,
+// ou collé (image ou lien). Gardé pour les prochaines feuilles du même client.
+let tsLogosTrouves = [];      // propositions de la dernière recherche { src, png }
+let tsLogoClient = '';        // client de ces propositions
+let tsLogoEnCours = false;
+const tsLogoDejaCherche = new Set();
+const tsCleClient = c => String(c || '').trim().toUpperCase();
+
+function tsLogoZoneHtml(s) {
+  const choix = tsLogoClient === tsCleClient(s.client) ? tsLogosTrouves : [];
+  return `<label>LOGO DU CLIENT</label>
+    <div class="ts-logo-row">
+      ${s.logo ? `<img class="ts-logo-actuel" src="${esc(s.logo)}" alt="">` : '<span class="field-hint">Sans logo, le nom du client est écrit à la place.</span>'}
+      <button type="button" class="btn-upload" onclick="tsLogoChercher()" ${tsLogoEnCours ? 'disabled' : ''}>${tsLogoEnCours ? 'RECHERCHE…' : 'TROUVER LE LOGO'}</button>
+      <label class="btn-upload">FICHIER<input type="file" accept="image/*,.svg" hidden onchange="tsLogoFichier(this.files[0])"></label>
+      ${s.logo ? '<button type="button" class="btn-upload" onclick="tsLogoRetirer()">RETIRER</button>' : ''}
+    </div>
+    <input class="ts-logo-colle" placeholder="ou colle ici l'image du logo, ou le lien de l'image" onpaste="tsLogoColle(event)" onkeydown="if(event.key==='Enter'){event.preventDefault();tsLogoLien(this.value)}">
+    ${choix.length ? `<div class="ts-logo-choix">${choix.map((l, i) => `<button type="button" class="${s.logo === l.png ? 'on' : ''}" onclick="tsLogoChoisir(${i})" title="Prendre ce logo"><img src="${esc(l.png)}" alt=""></button>`).join('')}</div>` : ''}
+    <div class="field-hint" id="ts-logo-msg"></div>`;
 }
-function tsLogoRetirer() { const s = tsCur(); s.logo = ''; tsChange(); renderTsEditor(document.getElementById('main-content')); }
+
+function tsLogoMajZone(msg) {
+  const z = document.getElementById('ts-logo-zone'), s = tsCur();
+  if (z && s) z.innerHTML = tsLogoZoneHtml(s);
+  const m = document.getElementById('ts-logo-msg');
+  if (m && msg) m.textContent = msg;
+}
+
+// Image (fichier, collée ou trouvée) → PNG d'au plus 800 px, marges vides coupées
+function tsLogoPng(src) {
+  return new Promise((ok, ko) => {
+    const img = new Image();
+    img.onload = () => {
+      const svg = /^data:image\/svg/.test(src);
+      let w = img.naturalWidth || 600, h = img.naturalHeight || 200;
+      const k = svg ? 800 / Math.max(w, h) : Math.min(1, 800 / Math.max(w, h));
+      w = Math.max(1, Math.round(w * k)); h = Math.max(1, Math.round(h * k));
+      const c = document.createElement('canvas');
+      c.width = w; c.height = h;
+      const ctx = c.getContext('2d');
+      ctx.drawImage(img, 0, 0, w, h);
+      try {
+        const d = ctx.getImageData(0, 0, w, h).data;
+        let x0 = w, y0 = h, x1 = -1, y1 = -1;
+        for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+          const i = (y * w + x) * 4;
+          const vide = d[i + 3] < 16 || (d[i] > 245 && d[i + 1] > 245 && d[i + 2] > 245);
+          if (!vide) { if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y; }
+        }
+        if (x1 >= x0 && y1 >= y0 && (x1 - x0 + 1 < w || y1 - y0 + 1 < h)) {
+          const t = document.createElement('canvas');
+          t.width = x1 - x0 + 1; t.height = y1 - y0 + 1;
+          t.getContext('2d').drawImage(c, x0, y0, t.width, t.height, 0, 0, t.width, t.height);
+          ok(t.toDataURL('image/png'));
+        } else ok(c.toDataURL('image/png'));
+      } catch { ok(src); } // navigateur qui refuse de lire un SVG dessiné : on garde l'image telle quelle
+    };
+    img.onerror = () => ko(new Error('image illisible'));
+    img.src = src;
+  });
+}
+
+function tsLogoMettre(png) {
+  const s = tsCur();
+  if (!s) return;
+  s.logo = png;
+  if (s.client) prodData().logos[tsCleClient(s.client)] = png;
+  tsChange();
+  tsLogoMajZone();
+}
+
+function tsLogoDataUrl(f) {
+  return new Promise((ok, ko) => { const r = new FileReader(); r.onload = () => ok(String(r.result)); r.onerror = ko; r.readAsDataURL(f); });
+}
+
+async function tsLogoFichier(f) {
+  if (!f) return;
+  try { tsLogoMettre(await tsLogoPng(await tsLogoDataUrl(f))); }
+  catch (e) { tsLogoMajZone('Logo : ' + e.message); }
+}
+
+function tsLogoDepose(e) {
+  e.preventDefault();
+  const f = [...(e.dataTransfer.files || [])].find(x => /^image\//.test(x.type));
+  if (f) return tsLogoFichier(f);
+  const t = e.dataTransfer.getData('text/uri-list') || e.dataTransfer.getData('text/plain');
+  if (t) tsLogoLien(t);
+}
+
+function tsLogoColle(e) {
+  const f = [...(e.clipboardData.files || [])].find(x => /^image\//.test(x.type));
+  if (f) { e.preventDefault(); tsLogoFichier(f); return; }
+  const t = e.clipboardData.getData('text').trim();
+  if (/^https?:\/\//i.test(t)) { e.preventDefault(); tsLogoLien(t); }
+}
+
+async function tsLogoServeur(corps) {
+  const res = await fetch(SERVER_URL + '/logo', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(corps) });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || 'Le serveur ne répond pas.');
+  return (data.logos || []).map(l => `data:${l.media_type};base64,${l.data}`);
+}
+
+async function tsLogoLien(url) {
+  url = String(url || '').trim();
+  if (!/^https?:\/\//i.test(url)) { tsLogoMajZone('Colle un lien qui commence par https://'); return; }
+  tsLogoMajZone('Récupération de l\'image…');
+  try { tsLogoMettre(await tsLogoPng((await tsLogoServeur({ url }))[0])); }
+  catch (e) { tsLogoMajZone('Logo : ' + e.message); }
+}
+
+async function tsLogoChercher(auto) {
+  const s = tsCur();
+  if (!s) return;
+  const cle = tsCleClient(s.client);
+  if (!cle) { tsLogoMajZone('Écris d\'abord le nom du client.'); return; }
+  tsLogoDejaCherche.add(cle);
+  tsLogoEnCours = true;
+  tsLogoMajZone(`Recherche du logo ${s.client}…`);
+  try {
+    const srcs = await tsLogoServeur({ client: s.client.trim() });
+    const trouves = [];
+    for (const src of srcs) { try { const png = await tsLogoPng(src); if (!trouves.some(t => t.png === png)) trouves.push({ src, png }); } catch {} }
+    if (!trouves.length) throw new Error('aucune image lisible.');
+    tsLogosTrouves = trouves; tsLogoClient = cle;
+    tsLogoEnCours = false;
+    // Recherche lancée toute seule : on prend la première proposition, les autres restent à côté
+    if (tsCur() === s && tsCleClient(s.client) === cle && (!auto || !s.logo)) {
+      if (auto) tsLogoMettre(trouves[0].png);
+      tsLogoMajZone(auto ? 'Logo trouvé. Si ce n\'est pas le bon, clique sur une autre proposition.' : 'Clique sur le bon logo.');
+    } else tsLogoMajZone();
+  } catch (e) {
+    tsLogoEnCours = false;
+    tsLogoMajZone('Logo : ' + e.message);
+  }
+}
+
+// Nom du client rempli : logo déjà connu, sinon on le cherche tout seul
+function tsLogoAuto() {
+  const s = tsCur();
+  if (!s || s.logo || !tsCleClient(s.client)) return;
+  tsLogoDuClient(s);
+  if (!s.logo && !tsLogoDejaCherche.has(tsCleClient(s.client))) tsLogoChercher(true);
+}
+
+function tsLogoChoisir(i) { const l = tsLogosTrouves[i]; if (l) tsLogoMettre(l.png); }
+function tsLogoRetirer() {
+  const s = tsCur(), logos = prodData().logos, cle = tsCleClient(s.client);
+  if (logos[cle] === s.logo) delete logos[cle]; // mauvais logo : on ne le reprend plus pour ce client
+  s.logo = '';
+  tsChange();
+  tsLogoMajZone();
+}
 function tsLogoDuClient(s) {
-  const l = prodData().logos[String(s.client || '').trim().toUpperCase()];
-  if (l && !s.logo) { s.logo = l; setTimeout(() => renderTsEditor(document.getElementById('main-content')), 0); }
+  const l = prodData().logos[tsCleClient(s.client)];
+  if (l && !s.logo) { s.logo = l; tsLogoMajZone(); }
 }
 
 // ── Remplissage automatique (serveur : Claude + recherche web) ────────────────

@@ -156,6 +156,119 @@ async function handleTravel(request, env, cors) {
   }
 }
 
+// ── LOGO DU CLIENT ───────────────────────────────────────────────────────────
+// Pour l'en-tête des travel sheets : on cherche le logo officiel d'une marque
+// (Claude + recherche web, et l'image de sa page Wikipédia), ou on récupère une
+// image dont on a collé le lien. Le site reçoit les images elles-mêmes (base64),
+// car il ne peut pas les télécharger directement chez les autres sites.
+
+const LOGO_TYPES = [...IMAGE_TYPES, 'image/svg+xml'];
+const LOGO_MAX_BYTES = 3 * 1024 * 1024;
+
+const Logos = z.object({
+  logos: z.array(z.object({
+    url: z.string().describe('Adresse directe du fichier image (se termine en général par .svg, .png, .jpg ou .webp), pas une page web.'),
+    description: z.string().describe('Quelques mots : « logo noir sur fond transparent », « version blanche »…'),
+  })).describe('De 1 à 4 fichiers du logo officiel, le meilleur d\'abord.'),
+});
+
+const LOGO_SYSTEM = `Tu trouves le logo officiel d'une marque ou d'une entreprise, pour l'en-tête d'un document imprimé sur fond blanc.
+- Cherche sur le web, puis ouvre les pages pour lire l'adresse exacte du fichier image : Wikimedia Commons (upload.wikimedia.org), Wikipédia, le site officiel de la marque, son kit presse.
+- Donne uniquement des adresses de fichiers image que tu as vues dans une page ou un résultat (jamais une adresse devinée).
+- Préfère le logo actuel, en version sombre ou en couleur sur fond transparent ou blanc, en SVG ou en PNG assez grand. Pas de photo de boutique, pas d'icône d'application, pas de favicon minuscule.
+- Si la marque est ambiguë, prends la marque de mode, sport ou lifestyle la plus connue de ce nom, celle avec qui une société de production photo/vidéo travaillerait.`;
+
+async function fetchImage(u) {
+  let url;
+  try { url = new URL(u); } catch { return null; }
+  if (!['https:', 'http:'].includes(url.protocol)) return null;
+  try {
+    const res = await fetch(url.toString(), {
+      headers: { 'User-Agent': 'WidenBible/1.0 (https://tijiii.github.io/bible)', 'Accept': 'image/*' },
+      redirect: 'follow', signal: AbortSignal.timeout(8000),
+    });
+    if (!res.ok) return null;
+    let type = (res.headers.get('Content-Type') || '').split(';')[0].trim().toLowerCase();
+    if (type === 'image/jpg') type = 'image/jpeg';
+    if (!LOGO_TYPES.includes(type) && /\.svg(\?|$)/i.test(url.pathname)) type = 'image/svg+xml';
+    if (!LOGO_TYPES.includes(type)) return null;
+    const buf = await res.arrayBuffer();
+    if (!buf.byteLength || buf.byteLength > LOGO_MAX_BYTES) return null;
+    let bin = '';
+    const bytes = new Uint8Array(buf);
+    for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+    return { media_type: type, data: btoa(bin), source: url.toString() };
+  } catch { return null; }
+}
+
+// Image principale de la page Wikipédia de la marque (souvent son logo)
+async function wikipediaLogoUrls(client) {
+  const urls = [];
+  for (const lang of ['fr', 'en']) {
+    try {
+      const api = `https://${lang}.wikipedia.org/w/api.php?action=query&format=json&redirects=1&prop=pageimages&piprop=original&titles=${encodeURIComponent(client)}`;
+      const r = await fetch(api, { headers: { 'User-Agent': 'WidenBible/1.0 (https://tijiii.github.io/bible)' }, signal: AbortSignal.timeout(6000) });
+      const d = await r.json();
+      for (const p of Object.values(d?.query?.pages || {})) if (p?.original?.source) urls.push(p.original.source);
+    } catch {}
+  }
+  return urls;
+}
+
+async function claudeLogoUrls(client, env) {
+  const anthropic = new Anthropic({ apiKey: env.ANTHROPIC_API_KEY });
+  const messages = [{ role: 'user', content: `Marque : ${client}` }];
+  let response;
+  for (let tour = 0; tour < 4; tour++) {
+    response = await anthropic.beta.messages.parse({
+      model: 'claude-opus-5-5',
+      max_tokens: 8000,
+      betas: ['server-side-fallback-2026-07-01'],
+      fallbacks: 'default',
+      output_config: { effort: 'low', format: betaZodOutputFormat(Logos) },
+      tools: [
+        { type: 'web_search_20260209', name: 'web_search', max_uses: 4 },
+        { type: 'web_fetch_20260209', name: 'web_fetch', max_uses: 4 },
+      ],
+      system: LOGO_SYSTEM,
+      messages,
+    });
+    if (response.stop_reason !== 'pause_turn') break;
+    messages.push({ role: 'assistant', content: response.content });
+  }
+  return (response.parsed_output?.logos || []).map(l => l.url);
+}
+
+async function handleLogo(request, env, cors) {
+  if (request.method !== 'POST') return json({ error: 'Méthode non autorisée' }, 405, cors);
+  if (!cors.ok) return json({ error: 'Origine non autorisée' }, 403, cors);
+  let body;
+  try { body = await request.json(); } catch { return json({ error: 'Requête illisible' }, 400, cors); }
+  const client = String(body.client || '').trim().slice(0, 100);
+  const lien = String(body.url || '').trim().slice(0, 2000);
+
+  if (lien) {
+    const img = await fetchImage(lien);
+    if (!img) return json({ error: 'Ce lien ne donne pas une image (colle le lien de l\'image elle-même).' }, 422, cors);
+    return json({ logos: [img] }, 200, cors);
+  }
+  if (!client) return json({ error: 'Écris d\'abord le nom du client.' }, 400, cors);
+
+  try {
+    const [deClaude, deWiki] = await Promise.all([
+      claudeLogoUrls(client, env).catch(err => { if (err instanceof Anthropic.APIError) return []; throw err; }),
+      wikipediaLogoUrls(client),
+    ]);
+    const urls = [...new Set([...deClaude, ...deWiki])].slice(0, 6);
+    const logos = (await Promise.all(urls.map(fetchImage))).filter(Boolean).slice(0, 4);
+    if (!logos.length) return json({ error: `Pas de logo trouvé pour « ${client} ». Ajoute-le à la main ou colle son lien.` }, 404, cors);
+    return json({ logos }, 200, cors);
+  } catch (err) {
+    console.error(err);
+    return json({ error: 'La recherche du logo a échoué.' }, 502, cors);
+  }
+}
+
 function corsHeaders(origin, env) {
   const allowed = (env.ALLOWED_ORIGINS || 'https://tijiii.github.io').split(',').map(s => s.trim());
   const ok = allowed.includes(origin) || allowed.includes('*');
@@ -264,6 +377,7 @@ export default {
       return json(await resolveMapsLink(url.searchParams.get('url') || ''), 200, cors);
     }
     if (url.pathname === '/travel') return handleTravel(request, env, cors);
+    if (url.pathname === '/logo') return handleLogo(request, env, cors);
     if (request.method !== 'POST') return json({ error: 'Méthode non autorisée' }, 405, cors);
     if (!cors.ok) return json({ error: 'Origine non autorisée' }, 403, cors);
     if (Number(request.headers.get('Content-Length') || 0) > MAX_BODY_BYTES) return json({ error: 'Image trop lourde' }, 413, cors);
