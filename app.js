@@ -165,6 +165,7 @@ function chapterAdd(key) { const c = chapterByKey(key); if (c && c.add) c.add();
 // Sur l'accueil : rien. Dans un chapitre : un fil d'Ariane pour revenir.
 function buildTabs() {
   const nav = document.getElementById('tabs-nav');
+  if (enProd()) { buildProdTabs(nav); return; }
   if (curCatId === 'home') { nav.innerHTML = ''; nav.style.display = 'none'; return; }
   const ch = chapterByKey(curCatId);
   if (!ch) { curCatId = 'home'; buildTabs(); return; }
@@ -183,7 +184,9 @@ function switchCat(catId) {
   render();
   window.scrollTo(0, 0);
 }
-function goHome() { homeQ = ''; switchCat('home'); }
+function goHome() { if (enProd()) { prodGo('home'); return; } homeQ = ''; switchCat('home'); }
+// Onglet « Production interne » (prod.js, chargé après ce fichier)
+function enProd() { return typeof espace !== 'undefined' && espace === 'prod'; }
 
 // ── RENDER ────────────────────────────────────────────────────────────────────
 // Les ids de talents sont des nombres (ils sont écrits tels quels dans les
@@ -199,6 +202,7 @@ function render() {
   fixTalentIds();
   updateCounts();
   const main = document.getElementById('main-content');
+  if (enProd()) { renderProd(main); return; }
 
   if (curCatId === 'home')     { renderHome(main); return; }
   if (curCatId === 'clubs')    { renderClubs(main); return; }

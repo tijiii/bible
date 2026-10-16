@@ -10,7 +10,8 @@ casting-bible/
 ├── style.css    ← design
 ├── geo.js       ← pays et villes (~33 pays, ~400 villes)
 ├── data.js      ← données initiales
-└── app.js       ← logique de l'app
+├── app.js       ← logique de l'app
+└── prod.js      ← onglet Production interne (travel sheets)
 ```
 
 ## Déployer sur GitHub Pages
@@ -101,6 +102,13 @@ Le bouton **EXPORTER EN PDF** (barre des Lieux) ouvre une fenêtre : nom du proj
 **À mettre dans le PDF** : description client, catégories et sports, photos, point GPS, lien Google Maps, carte, météo, ville et pays, adresse, coûts et contacts (ces deux-là sont internes). Chaque case est gardée sur l'appareil pour le prochain export. Par défaut, ville, pays, adresse, coûts et contacts ne sont pas mis.
 **PHOTOS ET TEXTE** (à côté d'un lieu coché) : on choisit les photos du PDF (7 au plus, la première en grand, la couverture est en tête) et on écrit la **description pour le client**. Elle est enregistrée sur le lieu (aussi modifiable dans la fiche) et sert aux exports suivants ; la description interne ne part jamais dans le PDF.
 La météo vient d'Open-Meteo (gratuit, sans clé) : prévisions jour par jour si la période est dans les 15 prochains jours, sinon la moyenne des 5 dernières années à la même période (températures, jours de pluie, lever et coucher du soleil).
+
+## Production interne : travel sheets
+En haut du site, deux onglets : **BIBLE** (tout ce qui précède, inchangé) et **PRODUCTION INTERNE** (fichier `prod.js`, données dans la base partagée sous `prod`). Le premier outil est **Travel sheets** : une feuille de voyage par personne, au format de la travel sheet IKKS, à enregistrer en PDF.
+**Remplissage automatique** : coller la confirmation de réservation (ou ajouter le PDF / des captures, 5 au plus), ou écrire simplement « vol IB1566 le 28/09, hôtel Novotel Annecy du 28/09 au 02/10 », puis **REMPLIR**. Le serveur (route `/travel` du worker, avec Claude et la recherche web) lit la réservation et cherche les aéroports, terminaux et horaires qui manquent. Ce qui vient d'une recherche et pas du document est marqué « trouvé sur internet, à vérifier ». Rien de ce qui est déjà rempli n'est écrasé.
+**compléter avec le numéro** (sur un vol ou un train) : cherche ce trajet seul à partir de son numéro et de sa date. **trouver l'adresse et la carte** (sur un hébergement) : adresse et point GPS via OpenStreetMap, et la petite carte du PDF.
+**Contacts** : les contacts habituels (Widen) sont cochés d'avance ; on ajoute les autres (chauffeur, hôtel, client) et **garder dans les contacts habituels** les propose pour les feuilles suivantes. **Logo du client** : dès qu'on écrit le nom du client, le site cherche son logo officiel (route `/logo` du worker : Claude avec la recherche web, et l'image de sa page Wikipédia) et met le premier trouvé ; les autres propositions s'affichent pour choisir le bon. On peut aussi ajouter un fichier, le glisser, ou coller l'image ou son lien. Les marges vides sont coupées, et le logo choisi est repris pour les prochaines feuilles de ce client (RETIRER l'oublie). **DUPLIQUER POUR UN AUTRE VOYAGEUR** recopie la feuille (mêmes vols, hôtel et contacts) avec un nom vide.
+L'aperçu à droite montre le document ; **CRÉER LE PDF** l'ouvre dans un nouvel onglet avec la fenêtre d'impression (choisir **Enregistrer en PDF**). Langue du document : anglais ou français.
 
 ## Ajout rapide (lien, capture, texte)
 

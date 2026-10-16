@@ -87,11 +87,14 @@ async function pullRemoteDb() {
     if (!remoteReady) { remoteReady = true; initSharedPhotos(); }
     const remoteJson = JSON.stringify(remote);
     if (remoteJson !== lastRemoteJson) {
+      // Travel sheet ouverte : on prend les changements des autres sans toucher
+      // à la feuille en cours ni redessiner l'écran
+      const tsOuverte = document.querySelector('.ts-editor') ? tsCur() : null;
       db = remote;
       lastRemoteJson = remoteJson;
       try { localStorage.setItem(STORAGE_KEY, remoteJson); } catch (e) {}
-      buildTabs();
-      render();
+      if (tsOuverte) tsReprendre(tsOuverte);
+      else { buildTabs(); render(); }
     }
     setSyncStatus('ok');
   } catch (e) {
