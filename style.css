@@ -502,3 +502,16 @@ a.lieu-projet:hover .lieu-projet-go, a.lieu-projet:hover .lieu-projet-annee { co
 /* Sports shootés sur un lieu */
 .lieu-sports { display:flex; flex-wrap:wrap; align-items:center; gap:5px; margin:2px 0 12px; }
 .lieu-sports-lbl { font-size:11px; letter-spacing:.06em; color:var(--muted); margin-right:4px; }
+
+/* Lieux regroupés sur le globe */
+.lieu-pin.groupe span { width:auto; min-width:28px; height:28px; padding:0 6px; display:flex; align-items:center; justify-content:center; color:#fff; font-family:var(--serif); font-size:14px; line-height:1; }
+.lieu-groupe { width:220px; align-items:stretch; }
+.lieu-groupe-nav { display:flex; align-items:center; justify-content:space-between; }
+.lieu-groupe-fleche { border:1px solid var(--border); background:#fff; width:30px; height:30px; font-size:20px; line-height:1; cursor:pointer; color:var(--text); }
+.lieu-groupe-fleche:hover { border-color:var(--text); }
+.lieu-groupe-compte { font-size:13px; color:var(--muted); }
+.lieu-groupe-img { width:100%; aspect-ratio:16/9; object-fit:cover; display:block; }
+.lieu-groupe .lieu-popup-nom { font-size:16px; }
+.lieu-groupe-actions { display:flex; gap:6px; }
+.lieu-groupe-actions .btn-add { flex:1; }
+.lieu-groupe-actions .btn-ig { margin-top:0; }
