@@ -105,6 +105,7 @@ let fSport     = '';
 let fSexe      = '';
 let fPays      = '';
 let fLieuCat   = '';
+let fLieuSport = '';
 let fAgence    = '';
 let fTri       = '';    // '' (ordre habituel), 'age-asc' ou 'age-desc'
 let fSubCat    = '';    // sous-catégorie dans un groupe (ex: DOP chez les techniciens)
@@ -177,7 +178,7 @@ function buildTabs() {
 
 function switchCat(catId) {
   curCatId = catId;
-  searchQ = ''; fSport = ''; fSexe = ''; fPays = ''; fAgence = ''; fSubCat = ''; fLieuCat = '';
+  searchQ = ''; fSport = ''; fSexe = ''; fPays = ''; fAgence = ''; fSubCat = ''; fLieuCat = ''; fLieuSport = '';
   buildTabs();
   render();
   window.scrollTo(0, 0);
@@ -565,6 +566,29 @@ function addLieuCategory() {
   input.value = '';
 }
 
+// Sports / disciplines shootés sur un lieu (même liste que les talents, plus ceux ajoutés ici)
+function lieuSports(l) { return uniqCats(Array.isArray(l.sports) ? l.sports : []); }
+
+function lieuSportList() {
+  return uniqCats([...db.sports, ...lieuxList().flatMap(lieuSports)]);
+}
+
+function lieuSportsGridHtml(checked) {
+  return lieuSportList().map(s => `<label class="cat-check">
+        <input type="checkbox" name="lieu-sport" value="${esc(s)}" ${checked.includes(s) ? 'checked' : ''}><span>${esc(s)}</span></label>`).join('');
+}
+
+function addLieuSport() {
+  const input = document.getElementById('f-new-sport');
+  const nom = (input && input.value || '').trim();
+  if (!nom) { if (input) input.focus(); return; }
+  const checked = [...document.querySelectorAll('input[name="lieu-sport"]:checked')].map(el => el.value);
+  const existing = lieuSportList().find(x => sansAccent(x) === sansAccent(nom));
+  if (!existing) { db.sports.push(nom); saveDb(); }
+  document.getElementById('lieu-sports-grid').innerHTML = lieuSportsGridHtml(uniqCats([...checked, existing || nom]));
+  input.value = '';
+}
+
 const LIEU_PHOTOS_MAX = 3; // par type : 3 photos de campagne, 3 photos iPhone
 const LIEU_PHOTO_KINDS = [['campagne', 'PHOTOS DE CAMPAGNE'], ['iphone', 'PHOTOS IPHONE']];
 
@@ -651,79 +675,136 @@ async function addLieuFromMapsLink() {
   }
 }
 
-// ── Grande carte des lieux (Leaflet)
+// ── Grande carte des lieux : globe 3D (MapLibre), comme dans Plans d'Apple
 let lieuxMap = null;
-let lieuxMapView = null; // { center, zoom } gardé entre deux affichages
+let lieuxMapView = null;  // { center, zoom, bearing, pitch } gardé entre deux affichages
+let lieuxPopup = null;    // cadre « ajouter un lieu ici » ouvert sur la carte
+let lieuxHoverPopup = null;
 
-function lieuxMapPinIcon(tourne) {
-  return L.divIcon({ className: 'lieu-pin' + (tourne ? ' tourne' : ''), html: '<span></span>', iconSize: [18, 18], iconAnchor: [9, 9], popupAnchor: [0, -10] });
+// Fonds gratuits et sans clé : plan OpenFreeMap (données OpenStreetMap) et satellite Esri
+const LIEUX_FONDS = {
+  plan: 'https://tiles.openfreemap.org/styles/liberty',
+  satellite: {
+    version: 8,
+    sources: { sat: { type: 'raster', tileSize: 256, maxzoom: 19,
+      tiles: ['https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'],
+      attribution: 'Imagerie © Esri, Maxar, Earthstar Geographics' } },
+    layers: [{ id: 'sat', type: 'raster', source: 'sat' }],
+  },
+};
+let lieuxFond = (() => { try { return localStorage.getItem('lieuxFond') === 'satellite' ? 'satellite' : 'plan'; } catch { return 'plan'; } })();
+
+function closeLieuxPopup() {
+  if (lieuxPopup) { lieuxPopup.remove(); lieuxPopup = null; }
+}
+
+function openLieuxPopup(lngLat, box) {
+  closeLieuxPopup();
+  lieuxPopup = new maplibregl.Popup({ closeButton: false, closeOnClick: false, offset: 12, maxWidth: '260px' })
+    .setLngLat(lngLat).setDOMContent(box).addTo(lieuxMap);
+}
+
+function setLieuxFond(fond) {
+  lieuxFond = fond;
+  try { localStorage.setItem('lieuxFond', fond); } catch {}
+  document.querySelectorAll('.globe-fonds button').forEach(b => b.classList.toggle('on', b.dataset.fond === fond));
+  if (lieuxMap) lieuxMap.setStyle(LIEUX_FONDS[fond]);
 }
 
 function initLieuxMap(list) {
   const el = document.getElementById('lieux-map');
-  if (lieuxMap) { lieuxMapView = { center: lieuxMap.getCenter(), zoom: lieuxMap.getZoom() }; lieuxMap.remove(); lieuxMap = null; }
-  if (!el || typeof L === 'undefined') { if (el) el.innerHTML = '<div class="empty">CARTE INDISPONIBLE</div>'; return; }
+  closeLieuxPopup();
+  if (lieuxMap) {
+    lieuxMapView = { center: lieuxMap.getCenter(), zoom: lieuxMap.getZoom(), bearing: lieuxMap.getBearing(), pitch: lieuxMap.getPitch() };
+    lieuxMap.remove(); lieuxMap = null;
+  }
+  if (!el) return;
+  const indispo = () => { el.innerHTML = '<div class="empty">CARTE INDISPONIBLE</div>'; };
+  if (typeof maplibregl === 'undefined') return indispo();
 
-  const map = L.map(el, { worldCopyJump: true, zoomControl: true, minZoom: 2 });
-  map.attributionControl.setPrefix(false);
+  const pts = list.map(l => parseGps(l.gps)).filter(Boolean);
+  // Au départ on voit le globe entier (à la taille de l'écran), tourné vers les lieux
+  const zoomGlobe = 1.6 + Math.log2(Math.max(200, 0.85 * Math.min(el.clientWidth, el.clientHeight)) / 510);
+  const depart = pts.length
+    ? { center: [pts.reduce((s, c) => s + c.lng, 0) / pts.length, pts.reduce((s, c) => s + c.lat, 0) / pts.length], zoom: zoomGlobe }
+    : { center: [5, 30], zoom: zoomGlobe };
+
+  let map;
+  try {
+    map = new maplibregl.Map({
+      container: el, style: LIEUX_FONDS[lieuxFond], ...(lieuxMapView || depart),
+      attributionControl: { compact: true }, maxPitch: 75,
+    });
+  } catch (e) { console.error(e); return indispo(); }
   lieuxMap = map;
-  // Fond OpenStreetMap : gratuit et sans clé (Google Maps en demande une, avec carte bancaire)
-  L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
-    maxZoom: 19,
-    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank">OpenStreetMap</a>'
-  }).addTo(map);
+  map.addControl(new maplibregl.NavigationControl({ visualizePitch: true }), 'top-right');
 
-  const pts = [];
+  // Globe et halo d'atmosphère (à remettre à chaque changement de fond)
+  map.on('style.load', () => {
+    map.setProjection({ type: 'globe' });
+    try { map.setSky({ 'atmosphere-blend': ['interpolate', ['linear'], ['zoom'], 0, 1, 5, 1, 7, 0] }); } catch {}
+  });
+
+  const fonds = document.createElement('div');
+  fonds.className = 'globe-fonds';
+  fonds.innerHTML = `<button type="button" data-fond="plan">PLAN</button><button type="button" data-fond="satellite">SATELLITE</button>`;
+  fonds.querySelectorAll('button').forEach(b => {
+    b.classList.toggle('on', b.dataset.fond === lieuxFond);
+    b.onclick = e => { e.stopPropagation(); setLieuxFond(b.dataset.fond); };
+  });
+  el.appendChild(fonds);
+
   list.forEach(l => {
     const c = parseGps(l.gps);
     if (!c) return;
-    pts.push([c.lat, c.lng]);
-    L.marker([c.lat, c.lng], { icon: lieuxMapPinIcon(lieuProjets(l).length > 0), title: l.nom })
-      .bindTooltip(esc(l.nom), { direction: 'top', offset: [0, -8] })
-      .on('click', () => openDetail('lieu', l.id))
-      .addTo(map);
+    const pin = document.createElement('div');
+    pin.className = 'lieu-pin' + (lieuProjets(l).length ? ' tourne' : '');
+    pin.innerHTML = '<span></span>';
+    pin.setAttribute('aria-label', l.nom);
+    pin.addEventListener('click', e => { e.stopPropagation(); closeLieuxPopup(); openDetail('lieu', l.id); });
+    pin.addEventListener('mouseenter', () => {
+      lieuxHoverPopup = new maplibregl.Popup({ closeButton: false, closeOnClick: false, offset: 14, className: 'lieu-hover' })
+        .setLngLat([c.lng, c.lat]).setText(l.nom).addTo(map);
+    });
+    pin.addEventListener('mouseleave', () => { if (lieuxHoverPopup) { lieuxHoverPopup.remove(); lieuxHoverPopup = null; } });
+    new maplibregl.Marker({ element: pin }).setLngLat([c.lng, c.lat]).addTo(map);
   });
 
-  if (lieuxMapView) map.setView(lieuxMapView.center, lieuxMapView.zoom);
-  else if (pts.length === 1) map.setView(pts[0], 9);
-  else if (pts.length) map.fitBounds(pts, { padding: [40, 40], maxZoom: 9 });
-  else map.setView([30, 5], 2);
-
   // Clic sur la carte : proposer d'ajouter un lieu à cet endroit
-  // Un clic sur la carte quand le cadre est ouvert ne fait que le fermer
-  let popupWasOpen = false;
-  map.on('preclick', () => { popupWasOpen = !!map._popup && map.hasLayer(map._popup); });
+  // (un clic quand le cadre est ouvert ne fait que le fermer)
   map.on('click', e => {
-    if (popupWasOpen) return;
-    const c = { lat: e.latlng.lat, lng: ((e.latlng.lng + 540) % 360) - 180 };
+    if (e.originalEvent && e.originalEvent.target.closest('.lieu-pin, .globe-fonds')) return;
+    if (lieuxPopup) { closeLieuxPopup(); return; }
+    const c = { lat: e.lngLat.lat, lng: ((e.lngLat.lng + 540) % 360) - 180 };
     const box = document.createElement('div');
     box.className = 'lieu-popup';
     box.innerHTML = `<div class="lieu-popup-gps">${formatGps(c)}</div><button type="button" class="btn-add">+ AJOUTER UN LIEU ICI</button>`;
     box.querySelector('button').onclick = () => {
-      map.closePopup();
+      closeLieuxPopup();
       openForm('lieu', undefined, { prefill: { gps: formatGps(c), maps: 'https://www.google.com/maps/search/?api=1&query=' + c.lat.toFixed(6) + ',' + c.lng.toFixed(6) } });
     };
-    L.popup({ closeButton: false }).setLatLng(e.latlng).setContent(box).openOn(map);
+    openLieuxPopup(e.lngLat, box);
   });
 }
 
 // Clic en dehors de la carte ou touche Échap : on ferme le cadre « ajouter un lieu ici »
 document.addEventListener('click', e => {
-  if (lieuxMap && !e.target.closest('#lieux-map')) lieuxMap.closePopup();
+  if (lieuxPopup && !e.target.closest('#lieux-map')) closeLieuxPopup();
   const wr = document.getElementById('world-results');
   if (wr && !e.target.closest('.lieux-search')) wr.style.display = 'none';
 });
 document.addEventListener('keydown', e => {
-  if (e.key === 'Escape' && lieuxMap) lieuxMap.closePopup();
+  if (e.key === 'Escape') closeLieuxPopup();
 });
 
 function lieuxFiltered(withSearch) {
   const q = searchQ.toLowerCase();
   return lieuxList().filter(l => {
     if (withSearch && q && ![l.nom,l.type,lieuCats(l).join(' '),l.adresse,l.ville,l.pays,l.contact,l.description,l.notes,l.coutDetail,
-        lieuProjets(l).map(p => p.nom + ' ' + p.annee).join(' ')]
+        lieuProjets(l).map(p => p.nom + ' ' + p.annee).join(' '), lieuSports(l).join(' ')]
       .some(v => String(v||'').toLowerCase().includes(q))) return false;
     if (fPays && l.pays !== fPays) return false;
+    if (fLieuSport && !lieuSports(l).includes(fLieuSport)) return false;
     if (fLieuCat === LIEU_DEJA_TOURNE) { if (!lieuProjets(l).length) return false; }
     else if (fLieuCat && !lieuCats(l).includes(fLieuCat)) return false;
     return true;
@@ -736,6 +817,7 @@ function renderLieux(main) {
   lieuxList().forEach(l => { if (l.pays) paysCount[l.pays] = (paysCount[l.pays] || 0) + 1; });
   const paysUtil = Object.keys(paysCount).sort((a, b) => a.localeCompare(b, 'fr'));
   const paysAutres = ALL_COUNTRIES.filter(p => !paysCount[p]);
+  const sportsUtil = uniqCats(lieuxList().flatMap(lieuSports)).sort((a, b) => a.localeCompare(b, 'fr'));
   const onMap = lieuxFiltered(false); // la carte montre tous les lieux, la recherche ne trie que la liste
   const sansGps = onMap.filter(l => !parseGps(l.gps));
 
@@ -750,6 +832,10 @@ function renderLieux(main) {
       <option value="${LIEU_DEJA_TOURNE}"${fLieuCat===LIEU_DEJA_TOURNE?' selected':''}>★ Déjà tourné ici (${lieuxList().filter(l=>lieuProjets(l).length).length})</option>
       ${lieuCategoryList().map(c=>`<option value="${esc(c)}"${fLieuCat===c?' selected':''}>${esc(c)} (${lieuxList().filter(l=>lieuCats(l).includes(c)).length})</option>`).join('')}
     </select>
+    ${sportsUtil.length || fLieuSport ? `<select class="filter-sel" onchange="fLieuSport=this.value;renderLieux(document.getElementById('main-content'))">
+      <option value="">SPORT</option>
+      ${sportsUtil.map(x=>`<option value="${esc(x)}"${fLieuSport===x?' selected':''}>${esc(x)} (${lieuxList().filter(l=>lieuSports(l).includes(x)).length})</option>`).join('')}
+    </select>` : ''}
     <select class="filter-sel" onchange="fPays=this.value;renderLieux(document.getElementById('main-content'))">
       <option value="">PAYS</option>
       ${paysUtil.length ? `<optgroup label="Avec des lieux">${paysUtil.map(p=>`<option value="${esc(p)}"${fPays===p?' selected':''}>${FLAGS[p]||''} ${esc(p)} (${paysCount[p]})</option>`).join('')}</optgroup>` : ''}
@@ -762,7 +848,7 @@ function renderLieux(main) {
     </div>
   </div>
   <div id="lieux-map" class="lieux-map"></div>
-  <div class="lieux-map-hint">Clique sur un pin pour ouvrir le lieu, ou n'importe où sur la carte pour en ajouter un. La recherche trouve tes lieux et n'importe quel endroit du monde.${sansGps.length ? ` ${sansGps.length} lieu${sansGps.length > 1 ? 'x' : ''} sans coordonnées GPS ne ${sansGps.length > 1 ? 'sont' : 'est'} pas sur la carte.` : ''}</div>
+  <div class="lieux-map-hint">Fais tourner le globe et zoome pour t'approcher. Clique sur un pin pour ouvrir le lieu, ou n'importe où sur la carte pour en ajouter un. La recherche trouve tes lieux et n'importe quel endroit du monde.${sansGps.length ? ` ${sansGps.length} lieu${sansGps.length > 1 ? 'x' : ''} sans coordonnées GPS ne ${sansGps.length > 1 ? 'sont' : 'est'} pas sur la carte.` : ''}</div>
   <div id="lieux-list"></div>`;
   renderLieuxList();
   initLieuxMap(onMap);
@@ -796,6 +882,7 @@ function renderLieuxList() {
       html += `<div class="card-body">
         <div class="card-name">${esc(l.nom)}</div>
         <div class="card-meta">
+          ${lieuSports(l).map(x => `<span class="tag sport">${esc(x)}</span>`).join('')}
           ${lieuCats(l).map(c => `<span class="tag agence">${esc(c)}</span>`).join('')}
           ${!lieuCats(l).length && l.type ? `<span class="tag agence">${esc(l.type)}</span>` : ''}
           ${l.ville ? `<span class="tag">${esc(l.ville)}</span>` : ''}
@@ -875,24 +962,26 @@ function goToWorldResult(i) {
   if (!r || !lieuxMap) return;
   showWorldResults([], '');
   document.getElementById('lieux-q')?.blur();
+  closeLieuxPopup();
+  // On vole jusqu'à l'endroit, comme dans Plans
   const [s, n, w, e] = r.bbox;
-  if (r.bbox.length === 4 && !r.bbox.some(isNaN) && (n - s > 0.002 || e - w > 0.002)) lieuxMap.fitBounds([[s, w], [n, e]], { maxZoom: 15 });
-  else lieuxMap.setView([r.lat, r.lng], 15);
+  if (r.bbox.length === 4 && !r.bbox.some(isNaN) && (n - s > 0.002 || e - w > 0.002)) lieuxMap.fitBounds([[w, s], [e, n]], { maxZoom: 15, padding: 40, duration: 2500 });
+  else lieuxMap.flyTo({ center: [r.lng, r.lat], zoom: 15, duration: 2500 });
   document.getElementById('lieux-map').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
   const c = { lat: r.lat, lng: r.lng };
   const box = document.createElement('div');
   box.className = 'lieu-popup';
   box.innerHTML = `<div class="lieu-popup-nom">${esc(r.nom)}</div><div class="lieu-popup-gps">${formatGps(c)}</div><button type="button" class="btn-add">+ AJOUTER CE LIEU</button>`;
   box.querySelector('button').onclick = () => {
-    lieuxMap.closePopup();
+    closeLieuxPopup();
     openForm('lieu', undefined, { prefill: {
       nom: r.nom, gps: formatGps(c), ville: r.ville,
-      pays: COUNTRIES.includes(r.pays) ? r.pays : '',
+      pays: ALL_COUNTRIES.includes(r.pays) ? r.pays : '',
       maps: 'https://www.google.com/maps/search/?api=1&query=' + c.lat.toFixed(6) + ',' + c.lng.toFixed(6),
     } });
   };
-  // Ouvert juste après le déplacement de la carte, pour que le clic qui l'a demandé ne le referme pas
-  setTimeout(() => L.popup({ closeButton: false }).setLatLng([r.lat, r.lng]).setContent(box).openOn(lieuxMap), 0);
+  // Ouvert juste après, pour que le clic qui l'a demandé ne le referme pas
+  setTimeout(() => openLieuxPopup([r.lng, r.lat], box), 0);
 }
 
 // Les dates ne s'affichent que sur les photos iPhone (les photos de campagne sont des captures)
@@ -1086,6 +1175,8 @@ function lieuDetailHtml(l) {
         ${lieuCats(l).map(c => `<span class="tag agence">${esc(c)}</span>`).join('')}
         ${l.type ? `<span class="tag">${esc(l.type)}</span>` : ''}
       </div>` : ''}
+      ${lieuSports(l).length ? `<div class="lieu-sports"><span class="lieu-sports-lbl">SPORTS SHOOTÉS ICI</span>
+        ${lieuSports(l).map(x => `<span class="tag sport">${esc(x)}</span>`).join('')}</div>` : ''}
       ${l.description ? `<div class="lieu-description">${esc(l.description)}</div>` : ''}
       ${lieuProjetsHtml(l)}
       ${l.adresse ? `<div class="detail-row"><span class="detail-lbl">ADRESSE</span><span class="detail-val">${esc(l.adresse)}</span></div>` : ''}
@@ -1797,6 +1888,14 @@ function renderLieuForm(v) {
       </div>
     </div>
     <div class="field full">
+      <label>SPORTS / DISCIPLINES SHOOTÉS ICI (optionnel)</label>
+      <div class="cats-grid" id="lieu-sports-grid">${lieuSportsGridHtml(lieuSports(v))}</div>
+      <div class="new-cat">
+        <input id="f-new-sport" placeholder="Autre sport (ex : Trail, Kitesurf…)" onkeydown="if(event.key==='Enter'){event.preventDefault();addLieuSport()}">
+        <button type="button" class="btn-ig" onclick="addLieuSport()">+ AJOUTER</button>
+      </div>
+    </div>
+    <div class="field full">
       <label>PROJETS DÉJÀ TOURNÉS ICI (optionnel)</label>
       <div id="projets-rows">${lieuProjets(v).map(projetRowHtml).join('')}</div>
       <button type="button" class="btn-ig projet-add" onclick="addProjetRow()">+ AJOUTER UN PROJET</button>
@@ -2207,6 +2306,7 @@ function submitForm() {
     const obj = {
       nom: g('f-nom'), type: g('f-type'), adresse: g('f-adresse'),
       categories: [...document.querySelectorAll('input[name="lieu-cat"]:checked')].map(el => el.value),
+      sports: [...document.querySelectorAll('input[name="lieu-sport"]:checked')].map(el => el.value),
       pays: g('fl-pays'), ville: g('f-ville'), gps: g('f-gps'), maps: g('f-maps'), description: g('f-description'),
       cout: g('f-cout'), coutDetail: g('f-cout-detail'),
       contact: g('f-contact'), tel: g('f-tel'), mail: g('f-mail'),
