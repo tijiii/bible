@@ -601,7 +601,12 @@ body.espace-prod #total-count, body.espace-prod #btn-quick, body.espace-prod .hd
 .ts-logo-row .field-hint { margin:0; }
 .ts-sejour-corps { display:flex; gap:14px; align-items:flex-start; }
 .ts-sejour-corps .ts-grid { flex:1; min-width:0; }
-.ts-mini-carte { flex:none; border:1px solid var(--border); margin-top:20px; }
+.ts-carte-bloc { flex:none; width:218px; margin-top:20px; }
+.ts-mini-carte { border:1px solid var(--border); touch-action:none; cursor:grab; user-select:none; -webkit-user-select:none; }
+.ts-mini-carte:active { cursor:grabbing; }
+.ts-carte-ctrl { display:flex; align-items:center; gap:6px; margin-top:6px; }
+.ts-carte-ctrl .ts-x { width:30px; height:28px; font-size:16px; color:var(--text); }
+.ts-carte-bloc .field-hint { margin-top:4px; }
 .ts-habituels { display:flex; flex-direction:column; gap:7px; margin-bottom:6px; }
 .ts-habituels small { color:var(--muted); font-size:12.5px; margin-left:4px; }
 .ts-contact { display:flex; gap:10px; align-items:flex-end; flex-wrap:wrap; }
@@ -620,6 +625,15 @@ body.espace-prod #total-count, body.espace-prod #btn-quick, body.espace-prod .hd
   .ts-editor { padding:14px 12px 40px; }
   .ts-grid, .ts-grid-trajet, .ts-grid-contact { grid-template-columns:1fr 1fr; }
   .ts-sejour-corps { flex-direction:column; }
-  .ts-mini-carte { margin-top:0; }
+  .ts-carte-bloc { margin-top:0; }
   .espaces { padding:0 16px; gap:18px; }
 }
+
+/* ── DOCUMENT À IMPRIMER (affiché à la place du site) ── */
+body.doc-vue-ouvert > *:not(#doc-vue) { display:none !important; }
+.doc-vue-barre { position:sticky; top:0; z-index:20; display:flex; gap:12px; align-items:center; justify-content:center; flex-wrap:wrap; padding:10px 12px; padding-top:max(10px, env(safe-area-inset-top)); background:#111; color:#fff; font-size:14px; }
+.doc-vue-barre button { font:inherit; padding:7px 14px; border:1px solid #fff; background:#fff; color:#111; cursor:pointer; }
+.doc-vue-barre .doc-vue-retour { background:none; color:#fff; margin-right:auto; }
+.doc-vue-barre .doc-vue-txt { margin-left:auto; }
+@media (max-width:640px) { .doc-vue-barre { flex-wrap:nowrap; font-size:13px; } .doc-vue-barre .doc-vue-txt, .doc-vue-barre .doc-vue-long { display:none; } .doc-vue-barre button { padding:7px 10px; } }
+@media print { .doc-vue-barre { display:none !important; } }

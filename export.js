@@ -409,10 +409,6 @@ async function runLieuxExport() {
   if (!lieux.length) { alert('Coche au moins un lieu.'); return; }
   exportForm = opts;
 
-  // La fenêtre s'ouvre tout de suite (sinon le navigateur la bloque), puis se remplit
-  const w = window.open('', '_blank');
-  if (!w) { alert('Autorise les fenêtres pop-up pour ce site, puis recommence.'); return; }
-  w.document.write('<p style="font-family:Garamond,serif;font-size:18px;padding:40px">Préparation du document…</p>');
   const btn = document.getElementById('ex-go');
   btn.disabled = true; btn.textContent = 'PRÉPARATION…';
 
@@ -428,16 +424,7 @@ async function runLieuxExport() {
   btn.disabled = false; btn.textContent = 'CRÉER LE PDF';
   closeLieuxExport();
 
-  w.document.open();
-  w.document.write(exportDocHtml(opts, lieux, meteos));
-  w.document.close();
-  // On attend les photos et la carte avant d'ouvrir la fenêtre d'impression
-  const imgs = [...w.document.images].filter(i => !i.complete);
-  await Promise.race([
-    Promise.all(imgs.map(i => new Promise(r => { i.onload = i.onerror = r; }))),
-    new Promise(r => setTimeout(r, 10000)),
-  ]);
-  try { await w.document.fonts.ready; } catch {}
-  w.focus();
-  w.print();
+  // Le document s'affiche à la place du site (bouton RETOUR), puis l'impression
+  ouvrirDocument(exportDocHtml(opts, lieux, meteos));
+  await imprimerDocument();
 }

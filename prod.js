@@ -302,7 +302,15 @@ function tsSejourHtml(x, i) {
         ${tsField('TÉLÉPHONE', 'tel', x.tel, { ...o })}
         ${tsField('POINT GPS (pour la carte)', 'gps', x.gps, { ...o, ph: '45.9010, 6.1227' })}
       </div>
-      ${c ? `<div class="ts-mini-carte">${tsCarteHtml(c, 220, 170)}</div>` : ''}
+      ${c ? `<div class="ts-carte-bloc">
+        <div class="ts-mini-carte" data-i="${i}" onpointerdown="tsCarteGlisse(event, ${i})" title="Glisse pour déplacer le cadre">${tsCarteSejour(x, c)}</div>
+        <div class="ts-carte-ctrl">
+          <button type="button" class="ts-x" onclick="tsCarteZoom(${i}, -1)" title="Dézoomer">−</button>
+          <button type="button" class="ts-x" onclick="tsCarteZoom(${i}, 1)" title="Zoomer">+</button>
+          <button type="button" class="export-lien" onclick="tsCarteRecentrer(${i})">recentrer</button>
+        </div>
+        <div class="field-hint">Glisse la carte et zoome pour choisir le cadre du PDF.</div>
+      </div>` : ''}
     </div>
   </div>`;
 }
@@ -675,6 +683,7 @@ async function tsTrouverHotel(i) {
     if (!x.adresse) x.adresse = g.adresse;
     if (!x.ville) x.ville = g.ville;
     x.gps = `${g.lat.toFixed(6)}, ${g.lng.toFixed(6)}`;
+    x.centre = '';
     tsMsgTexte = 'Adresse et carte ajoutées.';
     tsChange();
     renderTsEditor(document.getElementById('main-content'));
@@ -701,6 +710,7 @@ const TS_TXT = {
     depart: 'Departure :', transit: 'Transit :', arrivee: 'Arrival :', de: (a, b) => `From ${a} to ${b}`,
     jour: d => { const x = tsD(d); const n = x.getUTCDate(); return `${x.toLocaleDateString('en-GB', { weekday: 'long', timeZone: 'UTC' }).toUpperCase()} ${n}${tsOrdinal(n)} of ${x.toLocaleDateString('en-GB', { month: 'long', timeZone: 'UTC' }).toUpperCase()}`; },
     periode: (a, b) => `From ${tsJourMoisEn(a)}${b ? ` to ${tsJourMoisEn(b)}` : ''}`,
+    voirCarte: 'Open in Google Maps',
   },
   fr: {
     titre: 'TRAVEL SHEET', ref: 'Référence de réservation', vols: 'VOLS', trains: 'TRAINS', trajets: 'TRAJETS',
@@ -708,6 +718,7 @@ const TS_TXT = {
     depart: 'Départ :', transit: 'Correspondance :', arrivee: 'Arrivée :', de: (a, b) => `De ${a} à ${b}`,
     jour: d => tsD(d).toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long', timeZone: 'UTC' }).toUpperCase(),
     periode: (a, b) => `Du ${tsJourMoisFr(a)}${b ? ` au ${tsJourMoisFr(b)}` : ''}`,
+    voirCarte: 'Ouvrir dans Google Maps',
   },
 };
 const tsD = iso => new Date(iso + 'T12:00:00Z');
@@ -731,20 +742,87 @@ function tsJournees(trajets) {
   return jours;
 }
 
-// Petite carte : tuiles OpenStreetMap assemblées autour du point, avec un repère
-function tsCarteHtml(c, W, H) {
-  const z = 15, n = Math.pow(2, z);
-  const x = (c.lng + 180) / 360 * n;
+// Petite carte : tuiles OpenStreetMap assemblées autour du cadre choisi, avec un
+// repère sur le lieu. Le cadre (zoom et centre) se règle dans l'éditeur.
+const TS_CARTE_W = 216, TS_CARTE_H = 180, TS_ZOOM_DEFAUT = 15;
+const tsMonde = z => 256 * Math.pow(2, z);
+function tsVersPixels(c, z) {
   const rad = c.lat * Math.PI / 180;
-  const y = (1 - Math.log(Math.tan(rad) + 1 / Math.cos(rad)) / Math.PI) / 2 * n;
-  const px = x * 256 - W / 2, py = y * 256 - H / 2;
+  return { x: (c.lng + 180) / 360 * tsMonde(z), y: (1 - Math.log(Math.tan(rad) + 1 / Math.cos(rad)) / Math.PI) / 2 * tsMonde(z) };
+}
+function tsDepuisPixels(p, z) {
+  const n = Math.PI * (1 - 2 * p.y / tsMonde(z));
+  return { lat: Math.atan(Math.sinh(n)) * 180 / Math.PI, lng: p.x / tsMonde(z) * 360 - 180 };
+}
+const tsZoom = x => Math.min(18, Math.max(3, Number(x.zoom) || TS_ZOOM_DEFAUT));
+
+function tsCarteHtml(c, W, H, z = TS_ZOOM_DEFAUT, centre = c) {
+  const n = Math.pow(2, z);
+  const m = tsVersPixels(centre, z), pin = tsVersPixels(c, z);
+  const px = m.x - W / 2, py = m.y - H / 2;
   const tiles = [];
   for (let tx = Math.floor(px / 256); tx <= Math.floor((px + W) / 256); tx++)
-    for (let ty = Math.floor(py / 256); ty <= Math.floor((py + H) / 256); ty++)
-      tiles.push(`<img src="https://tile.openstreetmap.org/${z}/${((tx % n) + n) % n}/${ty}.png" style="position:absolute;width:256px;height:256px;left:${Math.round(tx * 256 - px)}px;top:${Math.round(ty * 256 - py)}px" alt="">`);
+    for (let ty = Math.max(0, Math.floor(py / 256)); ty <= Math.min(n - 1, Math.floor((py + H) / 256)); ty++)
+      tiles.push(`<img src="https://tile.openstreetmap.org/${z}/${((tx % n) + n) % n}/${ty}.png" style="position:absolute;width:256px;height:256px;left:${Math.round(tx * 256 - px)}px;top:${Math.round(ty * 256 - py)}px" alt="" draggable="false">`);
   return `<div class="ts-carte" style="position:relative;overflow:hidden;width:${W}px;height:${H}px;background:#eee">${tiles.join('')}
-    <span style="position:absolute;left:50%;top:50%;width:14px;height:14px;margin:-7px 0 0 -7px;border-radius:50%;background:#c5221f;border:3px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.5)"></span>
+    <span class="ts-pin" style="position:absolute;left:${Math.round(pin.x - px)}px;top:${Math.round(pin.y - py)}px;width:14px;height:14px;margin:-7px 0 0 -7px;border-radius:50%;background:#c5221f;border:3px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.5)"></span>
     <span style="position:absolute;right:0;bottom:0;font:9px sans-serif;background:rgba(255,255,255,.8);padding:1px 3px">© OpenStreetMap</span></div>`;
+}
+
+const tsCarteSejour = (x, c) => tsCarteHtml(c, TS_CARTE_W, TS_CARTE_H, tsZoom(x), parseGps(x.centre) || c);
+
+function tsCarteMaj(i) {
+  const s = tsCur(), x = s && s.sejours[i], c = x && parseGps(x.gps);
+  const el = document.querySelector(`.ts-mini-carte[data-i="${i}"]`);
+  if (!c || !el) return;
+  el.innerHTML = tsCarteSejour(x, c);
+  tsChange();
+}
+
+function tsCarteZoom(i, d) {
+  const x = tsCur().sejours[i];
+  x.zoom = Math.min(18, Math.max(3, tsZoom(x) + d));
+  tsCarteMaj(i);
+}
+
+function tsCarteRecentrer(i) {
+  const x = tsCur().sejours[i];
+  x.centre = ''; x.zoom = TS_ZOOM_DEFAUT;
+  tsCarteMaj(i);
+}
+
+// Glisser la carte (souris ou doigt) déplace le cadre ; le repère reste sur le lieu
+function tsCarteGlisse(e, i) {
+  const x = tsCur().sejours[i], c = parseGps(x.gps);
+  const el = e.currentTarget;
+  if (!c || e.button > 0) return;
+  e.preventDefault();
+  el.setPointerCapture(e.pointerId);
+  const z = tsZoom(x), depart = tsVersPixels(parseGps(x.centre) || c, z);
+  const x0 = e.clientX, y0 = e.clientY;
+  let dx = 0, dy = 0;
+  const bouge = ev => {
+    dx = ev.clientX - x0; dy = ev.clientY - y0;
+    el.querySelectorAll('img, .ts-pin').forEach(n => { n.style.transform = `translate(${dx}px, ${dy}px)`; });
+  };
+  const fin = () => {
+    el.removeEventListener('pointermove', bouge);
+    el.removeEventListener('pointerup', fin);
+    el.removeEventListener('pointercancel', fin);
+    if (!dx && !dy) return;
+    const m = tsDepuisPixels({ x: depart.x - dx, y: depart.y - dy }, z);
+    x.centre = `${m.lat.toFixed(6)}, ${m.lng.toFixed(6)}`;
+    tsCarteMaj(i);
+  };
+  el.addEventListener('pointermove', bouge);
+  el.addEventListener('pointerup', fin);
+  el.addEventListener('pointercancel', fin);
+}
+
+// Lien Google Maps de l'hébergement (nom + adresse, sinon le point GPS)
+function tsLienMaps(x) {
+  const q = x.adresse ? [x.nom, x.adresse].filter(Boolean).join(', ') : (x.gps || x.nom);
+  return q ? 'https://www.google.com/maps/search/?api=1&query=' + encodeURIComponent(q) : '';
 }
 
 function tsDocHtml(s, ecran) {
@@ -820,7 +898,9 @@ function tsDocHtml(s, ecran) {
   .sejour + .sejour { border-top: 1px solid #111; }
   .sejour .txt { font-size: 14.5px; line-height: 1.35; }
   .sejour .txt b { display: block; font-weight: 700; }
-  .sejour .ts-carte { flex: none; margin-right: 26px; }
+  .sejour .carte-lien, .sejour > .ts-carte { flex: none; margin-right: 26px; display: block; }
+  .sejour a { color: inherit; text-decoration: underline; text-underline-offset: 2px; }
+  @media screen and (max-width: 820px) { .page { zoom: .46; margin: 8px auto; } }
   .contacts { display: grid; grid-template-columns: 21% 1fr 1fr 1fr; padding: 10px 0 12px; row-gap: 12px; font-size: 13.5px; }
   .contacts .g { background: #c4c4c4; font-weight: 700; padding: 2px 3px; align-self: start; }
   .contacts .p { line-height: 1.55; padding-left: 4px; }
@@ -839,9 +919,9 @@ ${ecran ? '' : '<div class="barre">Vérifie la travel sheet puis <button onclick
   ${jours.length ? `<div class="sec"><div class="sec-t">${titreTrajets}</div><div class="sec-b">${jours.map(journeeHtml).join('')}</div></div>` : ''}
   ${bagages.length ? `<div class="sec"><div class="sec-t">${T.bagages}</div><div class="sec-b centre">${bagages.map(esc).join('<br>')}</div></div>` : ''}
   ${sejours.length ? `<div class="sec"><div class="sec-t">${T.sejour}</div><div class="sec-b">${sejours.map(x => {
-    const c = parseGps(x.gps);
-    return `<div class="sejour"><div class="txt"><b>${esc(String(x.nom || '').toUpperCase())}</b>${x.du ? `<b>${esc(T.periode(x.du, x.au))}</b>` : ''}${esc(x.adresse || '')}${x.tel ? `<br>${esc(x.tel)}` : ''}</div>
-      ${c ? tsCarteHtml(c, 180, 150) : ''}</div>`;
+    const c = parseGps(x.gps), lien = tsLienMaps(x);
+    return `<div class="sejour"><div class="txt"><b>${esc(String(x.nom || '').toUpperCase())}</b>${x.du ? `<b>${esc(T.periode(x.du, x.au))}</b>` : ''}${x.adresse ? (lien ? `<a href="${esc(lien)}">${esc(x.adresse)}</a>` : esc(x.adresse)) : lien ? `<a href="${esc(lien)}">${T.voirCarte}</a>` : ''}${x.tel ? `<br>${esc(x.tel)}` : ''}</div>
+      ${c ? (lien ? `<a class="carte-lien" href="${esc(lien)}">${tsCarteSejour(x, c)}</a>` : tsCarteSejour(x, c)) : ''}</div>`;
   }).join('')}</div></div>` : ''}
   ${groupes.length ? `<div class="sec"><div class="sec-t">${T.contacts}</div><div class="sec-b contacts">${groupes.map(g => {
     const lignes = [];
@@ -862,19 +942,9 @@ async function tsPdf() {
   const s = tsCur();
   if (!s) return;
   clearTimeout(tsSaveTimer); saveDb();
-  const w = window.open('', '_blank');
-  if (!w) { alert('Autorise les fenêtres pop-up pour ce site, puis recommence.'); return; }
-  w.document.open();
-  w.document.write(tsDocHtml(s, false));
-  w.document.close();
-  const imgs = [...w.document.images].filter(i => !i.complete);
-  await Promise.race([
-    Promise.all(imgs.map(i => new Promise(r => { i.onload = i.onerror = r; }))),
-    new Promise(r => setTimeout(r, 8000)),
-  ]);
-  try { await w.document.fonts.ready; } catch {}
-  w.focus();
-  w.print();
+  // Affiché à la place du site, avec RETOUR (l'appli sur téléphone ne sait pas fermer un nouvel onglet)
+  ouvrirDocument(tsDocHtml(s, false));
+  await imprimerDocument();
 }
 
 renderEspaces();
