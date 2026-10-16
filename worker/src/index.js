@@ -59,6 +59,103 @@ Règles :
 - Le sexe se déduit seulement d'un indice explicite (catégorie demandée, pronoms, mention « femme »/« homme ») ; sinon laisse vide.
 - Mets le nom de famille en majuscules comme dans le reste de l'annuaire.`;
 
+// ── TRAVEL SHEETS ────────────────────────────────────────────────────────────
+// La production colle une confirmation de réservation (texte, capture ou PDF),
+// ou seulement un numéro de vol / train et une date : Claude en tire les trajets,
+// les hôtels et les bagages, et cherche sur le web les horaires qui manquent.
+
+const Trajet = z.object({
+  type: z.enum(['avion', 'train', 'autre']),
+  date: z.string().describe('Date du départ, AAAA-MM-JJ. Vide si inconnue.'),
+  numero: z.string().describe('Numéro de vol ou de train, ex : « IB 1566 », « TGV 6201 ». Vide si aucun.'),
+  compagnie: z.string(),
+  depart_lieu: z.string().describe('Aéroport ou gare de départ, en MAJUSCULES, nom court comme sur un panneau : « TENERIFE NORTH », « PARIS GARE DE LYON ».'),
+  depart_detail: z.string().describe('Terminal, hall ou voie si connu, ex : « TERMINAL 1 ». Vide sinon.'),
+  depart_heure: z.string().describe('Heure locale de départ, HH:MM sur 24 h. Vide si inconnue.'),
+  arrivee_lieu: z.string(),
+  arrivee_detail: z.string(),
+  arrivee_heure: z.string().describe('Heure locale d\'arrivée, HH:MM sur 24 h. Vide si inconnue.'),
+  reference: z.string().describe('Référence de réservation (PNR) de ce trajet, si indiquée.'),
+  source: z.enum(['document', 'recherche', 'mixte']).describe('« document » si tout vient de ce qu\'on t\'a donné, « recherche » ou « mixte » si tu as complété avec le web.'),
+});
+
+const Sejour = z.object({
+  nom: z.string().describe('Nom de l\'hôtel ou du logement, ex : « NOVOTEL CENTRE ».'),
+  adresse: z.string().describe('Adresse postale complète, une ligne : « 1 Place Marie Curie, 74000 Annecy ». Vide si inconnue.'),
+  ville: z.string(),
+  pays: z.string(),
+  du: z.string().describe('Arrivée, AAAA-MM-JJ.'),
+  au: z.string().describe('Départ, AAAA-MM-JJ.'),
+  telephone: z.string(),
+  reference: z.string(),
+});
+
+const Travel = z.object({
+  voyageurs: z.array(z.string()).describe('Noms des voyageurs, « Prénom NOM ».'),
+  references: z.array(z.string()).describe('Toutes les références de réservation trouvées.'),
+  trajets: z.array(Trajet).describe('Chaque vol ou train séparément (une correspondance = deux trajets), dans l\'ordre chronologique.'),
+  bagages: z.array(z.string()).describe('Franchise bagages par personne, une ligne par type, en anglais : « Carry-on bag x 1 », « 23kg checked bag x 1 ». Vide si non indiqué.'),
+  sejours: z.array(Sejour),
+  remarque: z.string().describe('Une ou deux phrases courtes en français : ce que tu as cherché sur le web, ce qui reste incertain ou à vérifier. Vide si rien.'),
+});
+
+const TRAVEL_SYSTEM = `Tu aides la production de Widen (société de production photo et vidéo) à préparer les « travel sheets » des personnes qu'elle fait voyager pour un tournage.
+On te donne une confirmation de réservation (e-mail collé, capture, PDF), ou seulement quelques infos (« vol IB1566 le 28 septembre », « hôtel Novotel Annecy du 28/09 au 02/10 »).
+Remplis la fiche :
+- Recopie fidèlement ce qui est dans le document : numéros, horaires, terminaux, références, dates.
+- S'il manque des infos sur un vol ou un train dont tu connais le numéro et la date (aéroports, gares, horaires), cherche-les sur le web (site de la compagnie, FlightAware, Flightradar24, SNCF Connect, Trainline…). N'utilise la recherche que pour ça, et seulement si elle donne une réponse claire pour ce numéro ; sinon laisse vide.
+- Pour un hôtel dont l'adresse manque, cherche son adresse sur le web.
+- Les horaires sont en heure locale, au format HH:MM sur 24 h. Les dates au format AAAA-MM-JJ ; une date sans année est dans les mois qui viennent par rapport à la date du jour donnée.
+- N'invente jamais un horaire, un numéro ou une adresse. Un champ incertain reste vide et tu le signales dans « remarque ».`;
+
+async function handleTravel(request, env, cors) {
+  if (request.method !== 'POST') return json({ error: 'Méthode non autorisée' }, 405, cors);
+  if (!cors.ok) return json({ error: 'Origine non autorisée' }, 403, cors);
+  if (Number(request.headers.get('Content-Length') || 0) > MAX_BODY_BYTES) return json({ error: 'Fichiers trop lourds' }, 413, cors);
+  let body;
+  try { body = await request.json(); } catch { return json({ error: 'Requête illisible' }, 400, cors); }
+  const text = String(body.text || '').slice(0, 20000);
+  const files = (Array.isArray(body.files) ? body.files : []).slice(0, 5)
+    .filter(f => f && typeof f.data === 'string' && (IMAGE_TYPES.includes(f.media_type) || f.media_type === 'application/pdf'));
+  if (!text.trim() && !files.length) return json({ error: 'Colle une réservation, ou donne au moins un numéro de vol ou de train.' }, 400, cors);
+
+  const content = files.map(f => f.media_type === 'application/pdf'
+    ? { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: f.data } }
+    : { type: 'image', source: { type: 'base64', media_type: f.media_type, data: f.data } });
+  const today = new Date().toISOString().slice(0, 10);
+  content.push({ type: 'text', text: `Date du jour : ${today}\n\n<colle_par_utilisateur>\n${text || '(seulement des fichiers)'}\n</colle_par_utilisateur>` });
+
+  const client = new Anthropic({ apiKey: env.ANTHROPIC_API_KEY });
+  const messages = [{ role: 'user', content }];
+  try {
+    let response;
+    // La recherche web tourne côté Anthropic ; si elle s'arrête en route (pause_turn), on la relance
+    for (let tour = 0; tour < 4; tour++) {
+      response = await client.beta.messages.parse({
+        model: 'claude-opus-5-5',
+        max_tokens: 16000,
+        betas: ['server-side-fallback-2026-07-01'],
+        fallbacks: 'default',
+        output_config: { effort: 'medium', format: betaZodOutputFormat(Travel) },
+        tools: [{ type: 'web_search_20260209', name: 'web_search', max_uses: 8 }],
+        system: TRAVEL_SYSTEM,
+        messages,
+      });
+      if (response.stop_reason !== 'pause_turn') break;
+      messages.push({ role: 'assistant', content: response.content });
+    }
+    if (response.stop_reason === 'refusal' || !response.parsed_output) {
+      return json({ error: 'Impossible de lire ces infos, remplis la travel sheet à la main.' }, 422, cors);
+    }
+    return json(response.parsed_output, 200, cors);
+  } catch (err) {
+    if (err instanceof Anthropic.RateLimitError) return json({ error: 'Trop de demandes, réessaie dans une minute.' }, 429, cors);
+    if (err instanceof Anthropic.AuthenticationError) return json({ error: 'Clé Anthropic invalide côté serveur.' }, 500, cors);
+    if (err instanceof Anthropic.APIError) return json({ error: `Erreur du service IA (${err.status ?? 'réseau'}).` }, 502, cors);
+    throw err;
+  }
+}
+
 function corsHeaders(origin, env) {
   const allowed = (env.ALLOWED_ORIGINS || 'https://tijiii.github.io').split(',').map(s => s.trim());
   const ok = allowed.includes(origin) || allowed.includes('*');
@@ -166,6 +263,7 @@ export default {
       if (!cors.ok) return json({ error: 'Origine non autorisée' }, 403, cors);
       return json(await resolveMapsLink(url.searchParams.get('url') || ''), 200, cors);
     }
+    if (url.pathname === '/travel') return handleTravel(request, env, cors);
     if (request.method !== 'POST') return json({ error: 'Méthode non autorisée' }, 405, cors);
     if (!cors.ok) return json({ error: 'Origine non autorisée' }, 403, cors);
     if (Number(request.headers.get('Content-Length') || 0) > MAX_BODY_BYTES) return json({ error: 'Image trop lourde' }, 413, cors);
