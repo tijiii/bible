@@ -73,6 +73,9 @@ La grande carte est un globe 3D (MapLibre GL, gratuit et sans clé) qu'on fait t
 
 Les infos des lieux sont stockées avec le reste de la base. Les photos importées sont envoyées au serveur Cloudflare, comme celles des talents.
 
+### Carte dans la fiche d'un lieu
+La fiche d'un lieu avec des coordonnées GPS a sa propre carte : on zoome, dézoome (jusqu'au globe) et se déplace à la souris ou au doigt, sans passer par Google Maps. Boutons PLAN / SATELLITE, RECENTRER pour revenir sur le lieu, et plein écran (pratique sur téléphone). Les autres lieux y apparaissent en petits points gris : un clic ouvre leur fiche.
+
 ### Photo de couverture
 
 Dans la fiche d'un lieu, survoler une photo puis **☆** pour en faire la couverture (celle affichée dans la liste). Aussi possible dans le formulaire avec l'étoile sur chaque photo. Sans choix, c'est la première photo.
