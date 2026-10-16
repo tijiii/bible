@@ -645,13 +645,18 @@ async function resolveMapsLink(link) {
   if (direct && !/^https?:/i.test(link)) return { ...direct, nom: '', url: '' };
   let decoded = link; try { decoded = decodeURIComponent(link); } catch {}
   const num = '(-?\\d{1,3}(?:\\.\\d+)?)';
-  for (const re of [new RegExp(`!3d${num}!4d${num}`), new RegExp(`[?&](?:q|query|ll|destination|center)=${num},\\s*\\+?${num}`),
-                    new RegExp(`/search/${num},\\s*\\+?${num}`), new RegExp(`@${num},${num}`)]) {
-    const m = decoded.match(re);
-    if (m) {
-      const place = decoded.match(/\/maps\/place\/([^/@?]+)/);
-      return { lat: Number(m[1]), lng: Number(m[2]), nom: place ? place[1].replace(/\+/g, ' ') : '', url: link };
-    }
+  const trouve = (re, dernier) => {
+    const all = [...decoded.matchAll(new RegExp(re, 'g'))];
+    return all.length ? all[dernier ? all.length - 1 : 0] : null;
+  };
+  // Le dernier « !3d…!4d… » est la position du lieu (les précédents peuvent être un point déposé à côté)
+  const m = trouve(`!3d${num}!4d${num}`, true)
+    || trouve(`[?&](?:q|query|ll|destination|center)=${num},\\s*\\+?${num}`)
+    || trouve(`/search/${num},\\s*\\+?${num}`)
+    || trouve(`@${num},${num}`);
+  if (m) {
+    const place = decoded.match(/\/maps\/place\/([^/@?]+)/);
+    return { lat: Number(m[1]), lng: Number(m[2]), nom: place ? place[1].replace(/\+/g, ' ') : '', url: link };
   }
   const res = await fetch(SERVER_URL + '/maps?url=' + encodeURIComponent(link));
   const out = await res.json().catch(() => ({}));
@@ -1937,7 +1942,7 @@ function renderLieuForm(v) {
     <div class="field full">
       <label>LIEN GOOGLE MAPS</label>
       <div class="photo-upload-row">
-        <input id="f-maps" value="${esc(v.maps||'')}" placeholder="https://maps.app.goo.gl/..." style="flex:1" onchange="fillGpsFromMapsLink(true)">
+        <input id="f-maps" value="${esc(v.maps||'')}" placeholder="https://maps.app.goo.gl/..." style="flex:1" oninput="clearTimeout(mapsLinkTimer);mapsLinkTimer=setTimeout(()=>fillGpsFromMapsLink(true),400)" onchange="fillGpsFromMapsLink(true)">
         <button type="button" class="btn-upload" id="f-maps-go" onclick="fillGpsFromMapsLink()">LIRE LE LIEN</button>
       </div>
     </div>
@@ -2117,17 +2122,21 @@ async function handleLieuPhotos(input, kind) {
   renderLieuThumbs();
 }
 
+// Le lien est lu dès qu'il est collé (et encore au SAUVEGARDER si le GPS est vide)
+let mapsLinkTimer = null;
+let mapsLinkLu = '';
 async function fillGpsFromMapsLink(quiet) {
   const link = document.getElementById('f-maps').value.trim();
-  if (!link) return;
+  if (!link || (quiet && link === mapsLinkLu && document.getElementById('f-gps').value.trim())) return;
   const btn = document.getElementById('f-maps-go');
   btn.disabled = true; btn.textContent = 'LECTURE…';
   try {
     const r = await resolveMapsLink(link);
+    mapsLinkLu = link;
     document.getElementById('f-gps').value = formatGps(r);
     const nom = document.getElementById('f-nom');
     if (r.nom && !nom.value.trim()) nom.value = r.nom;
-    fillAddressFromGps();
+    await fillAddressFromGps();
   } catch (e) {
     if (!quiet) alert(e.message);
   } finally {
@@ -2374,6 +2383,17 @@ function submitForm() {
     else        db.clubs.push({ ...obj, id: uid() });
 
   } else if (type === 'lieu') {
+    // Lien Google Maps collé mais pas encore lu : on le lit avant d'enregistrer
+    if (!g('f-gps') && g('f-maps') && !submitForm.lienLu) {
+      const btn = document.getElementById('btn-save');
+      btn.disabled = true; btn.textContent = 'LECTURE DU LIEN…';
+      fillGpsFromMapsLink(true).finally(() => {
+        btn.disabled = false; btn.textContent = 'SAUVEGARDER';
+        submitForm.lienLu = true;
+        try { submitForm(); } finally { submitForm.lienLu = false; }
+      });
+      return;
+    }
     if (!g('f-nom')) { alert('Le nom est requis.'); return; }
     const obj = {
       nom: g('f-nom'), type: g('f-type'), adresse: g('f-adresse'),
