@@ -123,7 +123,7 @@ Mise en place, une seule fois :
 4. Onglet Actions → « Déployer l'ajout rapide » → Run workflow. À la fin, l'adresse du serveur s'affiche (`https://bible-ajout-rapide.<compte>.workers.dev`).
 5. Mettre cette adresse dans `SERVER_URL` (fichier `config.js`). Le bouton apparaît alors sur le site.
 
-Le serveur n'accepte que les demandes venant de `https://tijiii.github.io` (variable `ALLOWED_ORIGINS` dans `worker/wrangler.toml`).
+Le serveur n'accepte que les demandes venant de `https://bible.widenproduction.fr` et `https://tijiii.github.io` (variable `ALLOWED_ORIGINS` dans `worker/wrangler.toml`).
 
 ## Base partagée
 

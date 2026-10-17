@@ -22,7 +22,7 @@ const MAX_IMAGE_BYTES = 8 * 1024 * 1024;
 const BACKUP_DAYS = 30;
 
 function storeCors(origin, env) {
-  const allowed = (env.ALLOWED_ORIGINS || 'https://tijiii.github.io').split(',').map(s => s.trim());
+  const allowed = (env.ALLOWED_ORIGINS || 'https://bible.widenproduction.fr,https://tijiii.github.io').split(',').map(s => s.trim());
   const ok = allowed.includes(origin) || allowed.includes('*');
   return {
     'Access-Control-Allow-Origin': ok ? origin : allowed[0],
