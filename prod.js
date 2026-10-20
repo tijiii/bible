@@ -4,7 +4,8 @@
 // envoyer en PDF), remplies automatiquement à partir d'une réservation collée.
 // Tout est gardé dans la base partagée, sous db.prod.
 
-let espace = (() => { try { return localStorage.getItem('espace') === 'prod' ? 'prod' : 'bible'; } catch { return 'bible'; } })();
+// Onglets du haut : 'bible' | 'prod' (production interne) | 'projets' (production, projets.js)
+let espace = (() => { try { const e = localStorage.getItem('espace'); return e === 'prod' || e === 'projets' ? e : 'bible'; } catch { return 'bible'; } })();
 let prodVue = 'home';        // 'home' | 'travel' | 'sheet'
 let tsId = null;             // travel sheet ouverte
 let tsQ = '';                // recherche dans la liste
@@ -26,21 +27,23 @@ function prodData() {
 function tsList() { return prodData().travelSheets; }
 function tsById(id) { return tsList().find(s => s.id === id); }
 
-// ── Onglets BIBLE / PRODUCTION INTERNE ───────────────────────────────────────
+// ── Onglets BIBLE / PRODUCTION INTERNE / PRODUCTION ──────────────────────────
 function renderEspaces() {
   const nav = document.getElementById('espaces-nav');
   if (nav) nav.innerHTML = `<button type="button" class="${espace === 'bible' ? 'on' : ''}" onclick="setEspace('bible')">BIBLE</button>
-    <button type="button" class="${espace === 'prod' ? 'on' : ''}" onclick="setEspace('prod')">PRODUCTION INTERNE</button>`;
-  document.body.classList.toggle('espace-prod', espace === 'prod');
+    <button type="button" class="${espace === 'prod' ? 'on' : ''}" onclick="setEspace('prod')">PRODUCTION INTERNE</button>
+    <button type="button" class="${espace === 'projets' ? 'on' : ''}" onclick="setEspace('projets')">PRODUCTION</button>`;
+  document.body.classList.toggle('espace-prod', espace === 'prod' || espace === 'projets');
   const brand = document.querySelector('.hdr-brand');
-  if (brand) brand.textContent = espace === 'prod' ? 'PRODUCTION INTERNE' : 'CASTING BIBLE';
+  if (brand) brand.textContent = espace === 'prod' ? 'PRODUCTION INTERNE' : espace === 'projets' ? 'PRODUCTION' : 'CASTING BIBLE';
 }
 
 function setEspace(e) {
-  espace = e === 'prod' ? 'prod' : 'bible';
+  espace = e === 'prod' || e === 'projets' ? e : 'bible';
   try { localStorage.setItem('espace', espace); } catch {}
   renderEspaces();
-  if (espace === 'prod') prodGo(prodVue === 'sheet' && tsById(tsId) ? 'sheet' : prodVue === 'travel' ? 'travel' : 'home', tsId);
+  if (espace === 'projets') pjGo(pjVue === 'projet' && pjCur() ? 'projet' : 'liste');
+  else if (espace === 'prod') prodGo(prodVue === 'sheet' && tsById(tsId) ? 'sheet' : prodVue === 'travel' ? 'travel' : 'home', tsId);
   else { buildTabs(); render(); window.scrollTo(0, 0); }
 }
 

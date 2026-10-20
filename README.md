@@ -11,7 +11,8 @@ casting-bible/
 ├── geo.js       ← pays et villes (~33 pays, ~400 villes)
 ├── data.js      ← données initiales
 ├── app.js       ← logique de l'app
-└── prod.js      ← onglet Production interne (travel sheets)
+├── prod.js      ← onglet Production interne (travel sheets)
+└── projets.js   ← onglet Production (suivi des projets)
 ```
 
 ## Déployer sur GitHub Pages
@@ -110,6 +111,27 @@ En haut du site, deux onglets : **BIBLE** (tout ce qui précède, inchangé) et 
 **Contacts** : les contacts habituels (Widen) sont cochés d'avance ; on ajoute les autres (chauffeur, hôtel, client) et **garder dans les contacts habituels** les propose pour les feuilles suivantes. **Logo du client** : dès qu'on écrit le nom du client, le site cherche son logo officiel (route `/logo` du worker : Claude avec la recherche web, et l'image de sa page Wikipédia) et met le premier trouvé ; les autres propositions s'affichent pour choisir le bon. On peut aussi ajouter un fichier, le glisser, ou coller l'image ou son lien. Les marges vides sont coupées, et le logo choisi est repris pour les prochaines feuilles de ce client (RETIRER l'oublie). **DUPLIQUER POUR UN AUTRE VOYAGEUR** recopie la feuille (mêmes vols, hôtel et contacts) avec un nom vide.
 L'aperçu à droite montre le document ; **CRÉER LE PDF** l'affiche à la place du site avec la fenêtre d'impression (choisir **Enregistrer en PDF**), puis **← RETOUR** (ou le geste retour du téléphone) ramène à l'éditeur. L'export des lieux s'affiche de la même façon : dans l'appli installée, un nouvel onglet ne se refermait pas.
 **Carte de l'hébergement** : − / + pour zoomer, glisser pour déplacer le cadre, « recentrer » pour revenir au cadre de départ ; le PDF reprend exactement ce cadre. Dans le PDF, l'adresse et la carte sont des liens vers Google Maps. Langue du document : anglais ou français.
+
+## Production : suivi des projets
+Troisième onglet en haut du site, après **PRODUCTION INTERNE** (fichier `projets.js`, données dans la base partagée sous `projets`).
+**Vue globale** : la liste des projets (client, dates, étape en cours ou suivante, équipe, statut). Le filtre montre par défaut les projets en cours (ni livrés ni annulés). **PLANNING** affiche tous les projets sur 4 mois, une barre par étape (‹ › pour avancer, AUJOURD'HUI pour revenir). **PERSONNES** liste chaque personne avec ses projets et ses dates.
+**Dans un projet** : nom, client, statut, couleur ; un calendrier du mois avec les étapes (prépa, repérage, casting, tournage, post-prod, livraison, autre), chacune avec ses dates ; l'équipe ; des notes.
+**Équipe** : en tapant un nom, le site propose les talents et techniciens de la bible et les contacts Widen ; on peut aussi écrire n'importe quel nom. Pour chaque personne : son rôle, et quand elle est prise (tout le projet, certaines étapes cochées, ou AUTRES DATES).
+**Conflits de dates** : si une même personne est sur deux projets aux mêmes dates, le site le signale en haut de la liste, sur la ligne des projets (⚠), en haut du projet et sous la personne. Les projets annulés ne comptent pas. Les options de l'onglet OPTIONS TEAM comptent aussi (sauf N/A, relâché, release, over budget, pas retenu…).
+
+### Lien avec PROJETS WIDEN
+Le script `integrations/projets-widen-google-sheet.gs` envoie les projets du Google Sheet **PROJETS WIDEN** dans l'onglet Production, toutes les 15 minutes :
+- chaque ligne qui a une fiche de suivi devient un projet (reconnu par son N°, ex. P05), créé s'il n'existe pas ;
+- client, projet, producer, dates, lieu, usages et livrables sont recopiés (lecture seule dans la bible), avec les boutons **FICHE DE SUIVI ↗** et **DOSSIER DROPBOX ↗** ;
+- le statut est repris quand il change dans le tableau (Devis → En discussion, Pré-production → En prépa, Post-production, Livré…) ;
+- l'onglet **OPTIONS TEAM** de la fiche de suivi est recopié dans le bloc OPTIONS TEAM du projet (replié par défaut, un clic le déroule) : rôle, nom, téléphone, email, option par date (barrée si N/A, relâché…) et notes. Une personne de la bible est reconnue par son email ou son nom (lien vers sa fiche). **+ ÉQUIPE** la met dans l'équipe du projet, sur les dates où elle est en option.
+Le calendrier, l'équipe et les notes écrits dans la bible ne sont jamais touchés par le script.
+
+Installation (une seule fois) :
+1. Ouvrir PROJETS WIDEN → Extensions → Apps Script.
+2. **+** à côté de « Fichiers » → Script, le nommer `Bible`, coller le contenu de `integrations/projets-widen-google-sheet.gs`, enregistrer. Le code déjà là (création des dossiers et des fiches) ne change pas.
+3. Paramètres du projet (roue dentée) → Propriétés du script → ajouter `BIBLE_KEY` avec la même valeur que pour le check-in (voir « Base partagée »).
+4. Dans l'éditeur, choisir la fonction `bibleInstaller` puis **Exécuter**, et accepter les autorisations Google. Les projets partent tout de suite, puis toutes les 15 minutes ; un menu **Bible → Envoyer les projets vers la bible** apparaît dans le tableau pour forcer un envoi.
 
 ## Ajout rapide (lien, capture, texte)
 
