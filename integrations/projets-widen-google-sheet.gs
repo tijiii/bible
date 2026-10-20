@@ -14,6 +14,7 @@
  *  - le statut est repris quand il change dans le tableau ;
  *  - la liste des personnes de l'onglet OPTIONS TEAM de la fiche (rôle, nom,
  *    téléphone, email, option par date, notes) est recopiée dans le projet.
+ *    Les lignes et colonnes masquées (exemples du modèle) sont ignorées.
  * Le calendrier, l'équipe et les notes écrits dans la bible ne sont jamais
  * touchés.
  *
@@ -173,7 +174,7 @@ function bibleLireOptions(ficheId) {
   var ss = SpreadsheetApp.openById(ficheId);
   var sh = ss.getSheetByName(BIBLE_ONGLET_OPTIONS);
   if (!sh) return [];
-  var tz = ss.getSpreadsheetTimeZone();
+  var tz = bibleFuseau(ss);
   var vals = sh.getDataRange().getValues();
   // Ligne d'en-tête : celle qui contient « Name »
   var hr = -1, cNom = -1;
@@ -192,12 +193,15 @@ function bibleLireOptions(ficheId) {
   var debut = Math.max(cNom, cTel, cMail) + 1, fin = cNotes > debut ? cNotes : h.length;
   var dates = [];
   for (var j = debut; j < fin; j++) {
+    if (sh.isColumnHiddenByUser(j + 1)) continue;   // colonnes masquées : dates du modèle
     var d = h[j];
     if (d instanceof Date) dates.push({ c: j, date: Utilities.formatDate(d, tz, 'yyyy-MM-dd') });
     else if (String(d).trim()) dates.push({ c: j, date: '', label: String(d).trim() });
   }
   var out = [], horsPersonnes = false;
   for (var r2 = hr + 1; r2 < vals.length; r2++) {
+    // Lignes masquées (exemples restés du modèle P00) : ignorées
+    if (sh.isRowHiddenByUser(r2 + 1) || sh.isRowHiddenByFilter(r2 + 1)) continue;
     var v = vals[r2];
     var role = cRole >= 0 ? String(v[cRole]).trim() : '';
     var nom = String(v[cNom]).trim();
@@ -226,6 +230,14 @@ function bibleLireOptions(ficheId) {
 }
 
 // ── Outils ─────────────────────────────────────────────────────────────
+
+// Fuseau horaire pour lire les dates : celui de la fiche, sinon du script, sinon Paris
+function bibleFuseau(ss) {
+  var tz = '';
+  try { tz = ss.getSpreadsheetTimeZone(); } catch (e) {}
+  if (typeof tz !== 'string' || !tz) { try { tz = Session.getScriptTimeZone(); } catch (e) {} }
+  return typeof tz === 'string' && tz ? tz : 'Europe/Paris';
+}
 
 function bibleNorm(s) {
   return String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/\s+/g, ' ').trim();
