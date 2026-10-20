@@ -1216,10 +1216,54 @@ function removeLieuProjet(lieuId, i) {
   openDetail('lieu', lieuId);
 }
 
+// Les projets déjà saisis sur d'autres lieux, puis ceux du suivi production :
+// on les reprend d'un clic au lieu de recopier nom, année et lien sur chaque lieu.
+function projetsConnus() {
+  const out = [], vus = new Map();
+  const cle = n => String(n || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/\s+/g, ' ').trim();
+  lieuxList().forEach(l => lieuProjets(l).forEach(p => {
+    const k = cle(p.nom);
+    if (!k) return;
+    const deja = vus.get(k);
+    if (deja) { ['annee', 'lien', 'dossier'].forEach(c => { if (!deja[c] && p[c]) deja[c] = p[c]; }); return; }
+    const x = { nom: p.nom, annee: p.annee || '', lien: p.lien || '', dossier: p.dossier || '' };
+    vus.set(k, x); out.push(x);
+  }));
+  const suivis = (Array.isArray(db.projets) ? db.projets : []).filter(p => p.statut !== 'annule').map(p => {
+    const nom = typeof pjTitre === 'function' ? pjTitre(p) : [p.client, p.nom].filter(Boolean).join(' ');
+    const sp = typeof pjSpan === 'function' ? pjSpan(p) : null;
+    const lien = /^https?:\/\//.test(p.lienDropbox || '') ? p.lienDropbox : '';
+    return { nom, annee: sp ? sp.du.slice(0, 4) : '', lien, dossier: lien, source: 'suivi production' };
+  }).filter(p => p.nom && !vus.has(cle(p.nom)));
+  return out.sort((a, b) => String(b.annee).localeCompare(String(a.annee)) || a.nom.localeCompare(b.nom, 'fr')).concat(suivis);
+}
+
+function projetsConnusHtml() {
+  return `<datalist id="projets-connus">${projetsConnus().map(p => `<option value="${esc(p.nom)}"></option>`).join('')}</datalist>`;
+}
+
+// Un nom de projet déjà connu : l'année et le lien se remplissent s'ils sont vides
+function projetConnuNom(input) {
+  const p = projetsConnus().find(x => x.nom === input.value.trim());
+  if (!p) return;
+  const r = input.closest('.projet-row');
+  if (!r.querySelector('.proj-annee').value) r.querySelector('.proj-annee').value = p.annee;
+  if (!r.querySelector('.proj-lien').value) r.querySelector('.proj-lien').value = p.lien;
+  if (!r.dataset.dossier && p.dossier) r.dataset.dossier = p.dossier;
+}
+
+function addProjetConnu(sel) {
+  const p = projetsConnus()[Number(sel.value)];
+  sel.value = '';
+  const box = document.getElementById('projets-rows');
+  if (!p || !box) return;
+  box.insertAdjacentHTML('beforeend', projetRowHtml(p));
+}
+
 function projetRowHtml(p) {
   p = p || {};
   return `<div class="projet-row" data-dossier="${esc(p.dossier||'')}">
-    <input class="proj-nom" value="${esc(p.nom||'')}" placeholder="Nom du projet">
+    <input class="proj-nom" value="${esc(p.nom||'')}" placeholder="Nom du projet (ou choisis-en un déjà saisi)" list="projets-connus" onchange="projetConnuNom(this)">
     <input class="proj-annee" value="${esc(p.annee||'')}" placeholder="Année" inputmode="numeric">
     <input class="proj-lien" value="${esc(p.lien||'')}" placeholder="Lien Dropbox (vidéo finale ou dossier)">
     <button type="button" class="projet-del" title="Retirer" onclick="this.parentElement.remove()">✕</button>
@@ -2047,7 +2091,11 @@ function renderLieuForm(v) {
     <div class="field full">
       <label>PROJETS DÉJÀ TOURNÉS ICI (optionnel)</label>
       <div id="projets-rows">${lieuProjets(v).map(projetRowHtml).join('')}</div>
-      <button type="button" class="btn-ig projet-add" onclick="addProjetRow()">+ AJOUTER UN PROJET</button>
+      ${projetsConnusHtml()}
+      <div class="projet-add-row">
+        <button type="button" class="btn-ig projet-add" onclick="addProjetRow()">+ AJOUTER UN PROJET</button>
+        ${projetsConnus().length ? `<select class="projet-connu" onchange="addProjetConnu(this)"><option value="">+ UN PROJET DÉJÀ SAISI…</option>${projetsConnus().map((p, i) => `<option value="${i}">${esc(p.nom)}${p.annee ? ' · ' + esc(p.annee) : ''}${p.source ? ' · ' + esc(p.source) : ''}</option>`).join('')}</select>` : ''}
+      </div>
       <div class="field-hint">Dans Dropbox, clic droit sur la vidéo finale (ou le dossier du projet), « Copier le lien », puis colle-le ici. Sans projet, rien ne s'affiche sur la fiche.</div>
     </div>
     <div class="field"><label>PRÉCISION (optionnel)</label><input id="f-type" value="${esc(v.type||'')}" placeholder="ex: crique, sentier, parking..."></div>
