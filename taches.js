@@ -19,10 +19,14 @@ let tdFaitesOuvert = false;  // tâches faites d'un projet dépliées
 let tdBandeauFerme = false;  // bandeau « pour toi » fermé pour cette visite
 
 // ── Qui est sur cet appareil ─────────────────────────────────────────────────
-function tdMoi() { try { return localStorage.getItem('moi') || ''; } catch { return ''; } }
+// Les seules personnes qui peuvent se connecter
+const TD_EQUIPE = ['Théo Ledru', 'Tom Grandjean', 'Félicie Corby', 'Jonas Rouyer', 'Célian Durand', 'Philippine Monnier'];
+function tdMembre(nom) { return TD_EQUIPE.find(n => pjNorm(n) === pjNorm(nom)) || ''; }
+// Un nom gardé qui n'est plus dans l'équipe ne compte plus : on redemande
+function tdMoi() { try { return tdMembre(localStorage.getItem('moi')); } catch { return ''; } }
 // Choisir un profil : s'il a un mot de passe, on le demande d'abord
 function tdChoisir(nom) {
-  nom = String(nom || '').trim();
+  nom = tdMembre(nom);
   if (!nom) return;
   if (tdProfil(nom) && tdProfil(nom).hash && !tdEstMoi(nom)) { tdOuvrirMdp(nom); return; }
   tdSetMoi(nom);
@@ -37,10 +41,8 @@ function tdSetMoi(nom) {
 }
 function tdEstMoi(nom) { const m = tdMoi(); return !!m && pjNorm(nom) === pjNorm(m); }
 
-// Les gens de Widen (contacts habituels des travel sheets)
-function tdWiden() {
-  return prodData().contacts.filter(c => c.nom && /widen/i.test(c.groupe || '')).map(c => c.nom);
-}
+// Les gens de Widen
+function tdWiden() { return TD_EQUIPE.slice(); }
 
 function tdOuvrirQui() {
   tdFermerQui();
@@ -53,10 +55,6 @@ function tdOuvrirQui() {
     <div class="td-qui-corps">
       <p class="field-hint">Le site te montre les tâches qui te sont attribuées et te rappelle celles qui arrivent. C'est gardé sur cet appareil.</p>
       <div class="td-qui-noms">${tdNomsProfils().map(n => `<button type="button" class="btn-upload${tdEstMoi(n) ? ' on' : ''}" onclick="tdChoisir(this.dataset.n)" data-n="${esc(n)}">${tdProfil(n) && tdProfil(n).hash ? '🔒 ' : ''}${esc(n)}</button>`).join('')}</div>
-      <div class="td-qui-autre">
-        <input id="td-qui-nom" placeholder="Autre : ton prénom et nom" value="${esc(moi && !tdNomsProfils().some(n => tdEstMoi(n)) ? moi : '')}" onkeydown="if(event.key==='Enter')tdChoisir(this.value)">
-        <button type="button" class="btn-save" onclick="tdChoisir(document.getElementById('td-qui-nom').value)">C'EST MOI</button>
-      </div>
       ${moi ? `<button type="button" class="export-lien" onclick="tdSetMoi('')">se déconnecter (${esc(moi)})</button>` : ''}
     </div>
   </div>`;
@@ -72,12 +70,8 @@ function tdFermerQui() { document.querySelectorAll('.td-qui-bg').forEach(x => x.
 // elle-même n'est pas protégée par ce mot de passe).
 function tdProfils() { const p = prodData(); if (!p.profils || typeof p.profils !== 'object') p.profils = {}; return p.profils; }
 function tdProfil(nom) { return tdProfils()[pjNorm(nom)] || null; }
-// Les noms proposés : Widen, puis les autres profils qui ont un mot de passe
-function tdNomsProfils() {
-  const noms = tdWiden();
-  Object.values(tdProfils()).forEach(p => { if (p.nom && !noms.some(n => pjNorm(n) === pjNorm(p.nom))) noms.push(p.nom); });
-  return noms;
-}
+// Les noms proposés : l'équipe, et rien d'autre
+function tdNomsProfils() { return TD_EQUIPE.slice(); }
 async function tdHacher(mdp, sel) {
   if (!window.crypto || !crypto.subtle) throw new Error('Ce navigateur ne permet pas les mots de passe (page non sécurisée).');
   const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(sel + ':' + mdp));
