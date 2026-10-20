@@ -201,6 +201,7 @@ function fixTalentIds() {
 function render() {
   fixTalentIds();
   updateCounts();
+  if (typeof tdMajBadge === 'function') tdMajBadge();
   const main = document.getElementById('main-content');
   if (enProjets()) { renderProjets(main); return; }
 
@@ -888,6 +889,7 @@ function lieuxFiltered(withSearch) {
     if (fPays && l.pays !== fPays) return false;
     if (fLieuSport && !lieuSports(l).includes(fLieuSport)) return false;
     if (fLieuCat === LIEU_DEJA_TOURNE) { if (!lieuProjets(l).length) return false; }
+    else if (fLieuCat === LIEU_JAMAIS_TOURNE) { if (lieuProjets(l).length) return false; }
     else if (fLieuCat && !lieuCats(l).includes(fLieuCat)) return false;
     return true;
   });
@@ -912,6 +914,7 @@ function renderLieux(main) {
     <select class="filter-sel" onchange="fLieuCat=this.value;renderLieux(document.getElementById('main-content'))">
       <option value="">CATÉGORIE</option>
       <option value="${LIEU_DEJA_TOURNE}"${fLieuCat===LIEU_DEJA_TOURNE?' selected':''}>★ Déjà tourné ici (${lieuxList().filter(l=>lieuProjets(l).length).length})</option>
+      <option value="${LIEU_JAMAIS_TOURNE}"${fLieuCat===LIEU_JAMAIS_TOURNE?' selected':''}>☆ Jamais tourné (${lieuxList().filter(l=>!lieuProjets(l).length).length})</option>
       ${lieuCategoryList().map(c=>`<option value="${esc(c)}"${fLieuCat===c?' selected':''}>${esc(c)} (${lieuxList().filter(l=>lieuCats(l).includes(c)).length})</option>`).join('')}
     </select>
     ${sportsUtil.length || fLieuSport ? `<select class="filter-sel" onchange="fLieuSport=this.value;renderLieux(document.getElementById('main-content'))">
@@ -1185,6 +1188,7 @@ function lieuVideosHtml(l) {
 
 // ── Projets déjà tournés sur un lieu : nom, année et lien Dropbox vers la vidéo finale
 const LIEU_DEJA_TOURNE = '__tourne';
+const LIEU_JAMAIS_TOURNE = '__jamais';
 
 function lieuProjets(l) {
   return (Array.isArray(l.projets) ? l.projets : []).filter(p => p && (p.nom || p.lien));

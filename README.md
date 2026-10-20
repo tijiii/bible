@@ -94,6 +94,8 @@ Dans le formulaire d'un lieu, cocher les sports ou disciplines déjà shootés l
 
 Dans le formulaire d'un lieu, **+ AJOUTER UN PROJET** : nom, année et lien Dropbox de la vidéo finale (ou du dossier). Pour ne pas recopier un projet tourné sur plusieurs lieux : le menu **+ UN PROJET DÉJÀ SAISI…** reprend un projet d'un autre lieu (ou du suivi production) avec son année et son lien ; en tapant le nom, les projets connus sont proposés, et l'année et le lien se remplissent. La fiche n'affiche le bloc « Projets tournés ici » que s'il y a au moins un projet.
 
+Dans la liste des lieux, le filtre CATÉGORIE propose aussi **★ Déjà tourné ici** et **☆ Jamais tourné**.
+
 ### Catégories
 
 Liste de base dans `LIEU_CATEGORIES` (`app.js`). Les catégories ajoutées depuis le formulaire (**+ AJOUTER**) sont gardées dans la base (`lieuCategories`) et visibles par toute l'équipe.
@@ -124,6 +126,13 @@ Dans un projet, partie CALENDRIER : le bloc repliable **IMPORTER UN RÉTROPLANNI
 **Photo / vidéo** : chaque étape a une partie (vidéo, photo ou commune), lue dans les sections du rétroplanning, le nom de l'étape ou le nom du fichier (« Retro PHOTO.xlsx ») ; « Tout ce rétroplanning est : VIDÉO / PHOTO » la règle d'un coup. Un rétroplanning photo et un vidéo s'importent l'un après l'autre dans le même projet. Dans le calendrier, la couleur donne la partie (bleu vidéo, ocre photo) et le trait à gauche le type d'étape ; dans le planning, un liseré sous la barre.
 **Post-prod d'office** : à l'import, l'équipe va sur la post-prod de sa partie d'après son rôle : photographe et retoucheur sur la post-prod photo, réal sur toute la post-prod vidéo, monteur sur le montage, coloriste / étalonneur sur l'étalonnage, sound designer / mixeur sur le son (à défaut d'étape à leur nom, toute la post-prod de leur partie). Les personnes de l'OPTIONS TEAM qui ont ces rôles (et qui ne sont pas relâchées) entrent dans l'équipe. Tout est listé dans l'aperçu et peut être décoché. Taper ou changer un rôle dans l'équipe fait la même chose.
 La liste des étapes (pour modifier les dates) et les étapes de chaque personne sont repliées : un résumé s'affiche, « modifier » déplie.
+
+### To-do et rappels
+**Qui es-tu ?** À la première visite, le site demande qui on est (les gens de Widen des contacts habituels, ou un autre nom). C'est gardé sur l'appareil ; le bouton à son nom en haut à droite ouvre ses tâches, avec une pastille rouge pour celles à rappeler.
+**Dans un projet**, bloc TO-DO : chaque tâche a un texte, une personne (« pour qui », Widen ou l'équipe du projet), une échéance et un rappel (le jour même, la veille, 2 ou 3 jours avant, une semaine avant). Cocher une tâche la range dans FAITES, avec qui l'a faite et quand.
+**Vue TÂCHES** (onglet Suivi production) : MES TÂCHES, TOUT LE MONDE (par personne) ou FAITES, et une ligne pour ajouter une tâche à n'importe quel projet.
+**Rappels** : en haut du suivi production, le bandeau « POUR TOI » liste ses tâches en retard et celles dont le rappel est arrivé. « RECEVOIR LES RAPPELS SUR CET APPAREIL » active les notifications du navigateur : elles s'affichent à l'ouverture du site, une fois par jour et par tâche. (Il n'y a pas encore d'e-mail ni de notification quand le site est fermé.)
+Le bloc ÉQUIPE d'un projet se replie comme OPTIONS TEAM.
 
 ### Lien avec PROJETS WIDEN
 Le script `integrations/projets-widen-google-sheet.gs` envoie les projets du Google Sheet **PROJETS WIDEN** dans l'onglet Suivi production, toutes les 15 minutes :
