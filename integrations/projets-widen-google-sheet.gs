@@ -173,7 +173,7 @@ function bibleLireOptions(ficheId) {
   var ss = SpreadsheetApp.openById(ficheId);
   var sh = ss.getSheetByName(BIBLE_ONGLET_OPTIONS);
   if (!sh) return [];
-  var tz = ss.getSpreadsheetTimeZone();
+  var tz = bibleFuseau(ss);
   var vals = sh.getDataRange().getValues();
   // Ligne d'en-tête : celle qui contient « Name »
   var hr = -1, cNom = -1;
@@ -226,6 +226,14 @@ function bibleLireOptions(ficheId) {
 }
 
 // ── Outils ─────────────────────────────────────────────────────────────
+
+// Fuseau horaire pour lire les dates : celui de la fiche, sinon du script, sinon Paris
+function bibleFuseau(ss) {
+  var tz = '';
+  try { tz = ss.getSpreadsheetTimeZone(); } catch (e) {}
+  if (typeof tz !== 'string' || !tz) { try { tz = Session.getScriptTimeZone(); } catch (e) {} }
+  return typeof tz === 'string' && tz ? tz : 'Europe/Paris';
+}
 
 function bibleNorm(s) {
   return String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/\s+/g, ' ').trim();
