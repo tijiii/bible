@@ -166,6 +166,7 @@ function chapterAdd(key) { const c = chapterByKey(key); if (c && c.add) c.add();
 function buildTabs() {
   const nav = document.getElementById('tabs-nav');
   if (enProd()) { buildProdTabs(nav); return; }
+  if (enProjets()) { buildPjTabs(nav); return; }
   if (curCatId === 'home') { nav.innerHTML = ''; nav.style.display = 'none'; return; }
   const ch = chapterByKey(curCatId);
   if (!ch) { curCatId = 'home'; buildTabs(); return; }
@@ -184,9 +185,11 @@ function switchCat(catId) {
   render();
   window.scrollTo(0, 0);
 }
-function goHome() { if (enProd()) { prodGo('home'); return; } homeQ = ''; switchCat('home'); }
+function goHome() { if (enProd()) { prodGo('home'); return; } if (enProjets()) { pjGo('liste'); return; } homeQ = ''; switchCat('home'); }
 // Onglet « Production interne » (prod.js, chargé après ce fichier)
 function enProd() { return typeof espace !== 'undefined' && espace === 'prod'; }
+// Onglet « Production » (projets.js, chargé après prod.js)
+function enProjets() { return typeof espace !== 'undefined' && espace === 'projets'; }
 
 // ── RENDER ────────────────────────────────────────────────────────────────────
 // Les ids de talents sont des nombres (ils sont écrits tels quels dans les
@@ -203,6 +206,7 @@ function render() {
   updateCounts();
   const main = document.getElementById('main-content');
   if (enProd()) { renderProd(main); return; }
+  if (enProjets()) { renderProjets(main); return; }
 
   if (curCatId === 'home')     { renderHome(main); return; }
   if (curCatId === 'clubs')    { renderClubs(main); return; }

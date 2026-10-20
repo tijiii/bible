@@ -90,10 +90,13 @@ async function pullRemoteDb() {
       // Travel sheet ouverte : on prend les changements des autres sans toucher
       // à la feuille en cours ni redessiner l'écran
       const tsOuverte = document.querySelector('.ts-editor') ? tsCur() : null;
+      // Pareil pour un projet en cours de modification (onglet Production)
+      const pjOuvert = !tsOuverte && typeof pjEnEdition === 'function' && pjEnEdition() ? pjCur() : null;
       db = remote;
       lastRemoteJson = remoteJson;
       try { localStorage.setItem(STORAGE_KEY, remoteJson); } catch (e) {}
       if (tsOuverte) tsReprendre(tsOuverte);
+      else if (pjOuvert) pjReprendre(pjOuvert);
       else { buildTabs(); render(); }
     }
     setSyncStatus('ok');
