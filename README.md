@@ -11,8 +11,8 @@ casting-bible/
 ├── geo.js       ← pays et villes (~33 pays, ~400 villes)
 ├── data.js      ← données initiales
 ├── app.js       ← logique de l'app
-├── prod.js      ← onglet Production interne (travel sheets)
-└── projets.js   ← onglet Production (suivi des projets)
+├── prod.js      ← travel sheets (dans l'onglet Suivi production)
+└── projets.js   ← onglet Suivi production (suivi des projets)
 ```
 
 ## Déployer sur GitHub Pages
@@ -104,23 +104,26 @@ Le bouton **EXPORTER EN PDF** (barre des Lieux) ouvre une fenêtre : nom du proj
 **PHOTOS ET TEXTE** (à côté d'un lieu coché) : on choisit les photos du PDF (7 au plus, la première en grand, la couverture est en tête) et on écrit la **description pour le client**. Elle est enregistrée sur le lieu (aussi modifiable dans la fiche) et sert aux exports suivants ; la description interne ne part jamais dans le PDF.
 La météo vient d'Open-Meteo (gratuit, sans clé) : prévisions jour par jour si la période est dans les 15 prochains jours, sinon la moyenne des 5 dernières années à la même période (températures, jours de pluie, lever et coucher du soleil).
 
-## Production interne : travel sheets
-En haut du site, deux onglets : **BIBLE** (tout ce qui précède, inchangé) et **PRODUCTION INTERNE** (fichier `prod.js`, données dans la base partagée sous `prod`). Le premier outil est **Travel sheets** : une feuille de voyage par personne, au format de la travel sheet IKKS, à enregistrer en PDF.
+## Travel sheets
+Dans l'onglet **SUIVI PRODUCTION** (fichier `prod.js`, données dans la base partagée sous `prod`) : une feuille de voyage par personne, au format de la travel sheet IKKS, à enregistrer en PDF. Dans un projet, le bloc **TRAVEL SHEETS** liste ses feuilles ; **+ NOUVELLE TRAVEL SHEET** en crée une avec le client et le projet déjà remplis, et **Rattacher une travel sheet existante** y range une feuille faite avant. Le champ **PROJET (SUIVI PRODUCTION)** de l'éditeur permet aussi de changer de projet. Toutes les feuilles sont dans la vue **TRAVEL SHEETS** de la liste des projets.
 **Remplissage automatique** : coller la confirmation de réservation (ou ajouter le PDF / des captures, 5 au plus), ou écrire simplement « vol IB1566 le 28/09, hôtel Novotel Annecy du 28/09 au 02/10 », puis **REMPLIR**. Le serveur (route `/travel` du worker, avec Claude et la recherche web) lit la réservation et cherche les aéroports, terminaux et horaires qui manquent. Ce qui vient d'une recherche et pas du document est marqué « trouvé sur internet, à vérifier ». Rien de ce qui est déjà rempli n'est écrasé.
 **compléter avec le numéro** (sur un vol ou un train) : cherche ce trajet seul à partir de son numéro et de sa date. **trouver l'adresse et la carte** (sur un hébergement) : adresse et point GPS via OpenStreetMap, et la petite carte du PDF.
 **Contacts** : les contacts habituels (Widen) sont cochés d'avance ; on ajoute les autres (chauffeur, hôtel, client) et **garder dans les contacts habituels** les propose pour les feuilles suivantes. **Logo du client** : dès qu'on écrit le nom du client, le site cherche son logo officiel (route `/logo` du worker : Claude avec la recherche web, et l'image de sa page Wikipédia) et met le premier trouvé ; les autres propositions s'affichent pour choisir le bon. On peut aussi ajouter un fichier, le glisser, ou coller l'image ou son lien. Les marges vides sont coupées, et le logo choisi est repris pour les prochaines feuilles de ce client (RETIRER l'oublie). **DUPLIQUER POUR UN AUTRE VOYAGEUR** recopie la feuille (mêmes vols, hôtel et contacts) avec un nom vide.
 L'aperçu à droite montre le document ; **CRÉER LE PDF** l'affiche à la place du site avec la fenêtre d'impression (choisir **Enregistrer en PDF**), puis **← RETOUR** (ou le geste retour du téléphone) ramène à l'éditeur. L'export des lieux s'affiche de la même façon : dans l'appli installée, un nouvel onglet ne se refermait pas.
 **Carte de l'hébergement** : − / + pour zoomer, glisser pour déplacer le cadre, « recentrer » pour revenir au cadre de départ ; le PDF reprend exactement ce cadre. Dans le PDF, l'adresse et la carte sont des liens vers Google Maps. Langue du document : anglais ou français.
 
-## Production : suivi des projets
-Troisième onglet en haut du site, après **PRODUCTION INTERNE** (fichier `projets.js`, données dans la base partagée sous `projets`).
-**Vue globale** : la liste des projets (client, dates, étape en cours ou suivante, équipe, statut). Le filtre montre par défaut les projets en cours (ni livrés ni annulés). **PLANNING** affiche tous les projets sur 4 mois, une barre par étape (‹ › pour avancer, AUJOURD'HUI pour revenir). **PERSONNES** liste chaque personne avec ses projets et ses dates.
-**Dans un projet** : nom, client, statut, couleur ; un calendrier du mois avec les étapes (prépa, repérage, casting, tournage, post-prod, livraison, autre), chacune avec ses dates ; l'équipe ; des notes.
+## Suivi production
+En haut du site, deux onglets : **BIBLE** (tout ce qui précède) et **SUIVI PRODUCTION** (fichier `projets.js`, données dans la base partagée sous `projets` ; l'ancien onglet « Production interne » y est regroupé).
+**Vue globale** : la liste des projets (client, dates, étape en cours ou suivante, équipe, statut). Le filtre montre par défaut les projets en cours (ni livrés ni annulés). **PLANNING** affiche tous les projets sur 4 mois, une barre par étape (‹ › pour avancer, AUJOURD'HUI pour revenir). **PERSONNES** liste chaque personne avec ses projets et ses dates. **TRAVEL SHEETS** liste toutes les feuilles de voyage, avec leur projet.
+**Dans un projet** : nom, client, statut, couleur ; un calendrier du mois avec les étapes (prépa, repérage, casting, tournage, post-prod, livraison, autre), chacune avec ses dates ; l'équipe ; ses travel sheets ; des notes.
 **Équipe** : en tapant un nom, le site propose les talents et techniciens de la bible et les contacts Widen ; on peut aussi écrire n'importe quel nom. Pour chaque personne : son rôle, et quand elle est prise (tout le projet, certaines étapes cochées, ou AUTRES DATES).
 **Conflits de dates** : si une même personne est sur deux projets aux mêmes dates, le site le signale en haut de la liste, sur la ligne des projets (⚠), en haut du projet et sous la personne. Les projets annulés ne comptent pas. Les options de l'onglet OPTIONS TEAM comptent aussi (sauf N/A, relâché, release, over budget, pas retenu…).
 
+### Import du rétroplanning
+Dans un projet, partie CALENDRIER : **IMPORTER UN RÉTROPLANNING** prend un Excel (.xlsx, .xls, .ods, .csv), un PDF ou une capture. Un Excel au format de la fiche de suivi (colonnes PHASE / DÉBUT / FIN, sections VIDÉO, PHOTO…) est lu directement dans le navigateur. Les autres mises en page, les PDF et les captures sont lus par Claude via le serveur (`/retro` dans `worker/src/index.js`). On peut aussi coller le contenu du rétroplanning (« ou colle le contenu »). Les étapes trouvées s'affichent pour vérification : on décoche, on corrige le type, le nom ou les dates, puis **AJOUTER AU CALENDRIER**. Les étapes déjà présentes (même nom, mêmes dates) ne sont pas ajoutées deux fois.
+
 ### Lien avec PROJETS WIDEN
-Le script `integrations/projets-widen-google-sheet.gs` envoie les projets du Google Sheet **PROJETS WIDEN** dans l'onglet Production, toutes les 15 minutes :
+Le script `integrations/projets-widen-google-sheet.gs` envoie les projets du Google Sheet **PROJETS WIDEN** dans l'onglet Suivi production, toutes les 15 minutes :
 - chaque ligne qui a une fiche de suivi devient un projet (reconnu par son N°, ex. P05), créé s'il n'existe pas ;
 - client, projet, producer, dates, lieu, usages et livrables sont recopiés (lecture seule dans la bible), avec les boutons **FICHE DE SUIVI ↗** et **DOSSIER DROPBOX ↗** ;
 - le statut est repris quand il change dans le tableau (Devis → En discussion, Pré-production → En prépa, Post-production, Livré…) ;

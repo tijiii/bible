@@ -1,17 +1,19 @@
-// ── PRODUCTION ───────────────────────────────────────────────────────────────
-// Troisième onglet du site, après « Production interne » : le suivi des projets
-// (comme la base Airtable). Une vue globale des projets, et dans chaque projet
+// ── SUIVI PRODUCTION ─────────────────────────────────────────────────────────
+// Deuxième onglet du site, après la bible : le suivi des projets (comme la
+// base Airtable), avec les travel sheets de chaque projet (prod.js). Une vue globale des projets, et dans chaque projet
 // son calendrier d'étapes et les gens qui sont dessus. Le site prévient quand
 // une même personne est sur deux projets aux mêmes dates.
 // Tout est gardé dans la base partagée, sous db.projets.
 
-let pjVue = 'liste';         // 'liste' | 'projet'
+let pjVue = 'liste';         // 'liste' | 'projet' | 'ts' (travel sheet ouverte, prod.js)
+let pjTsDepuis = null;       // projet d'où la travel sheet a été ouverte (pour y revenir)
 let pjId = null;             // projet ouvert
 let pjQ = '';                // recherche dans la liste
 let pjFStatut = '';          // filtre statut ('' = tous sauf livrés et annulés, 'tous' = tout)
-let pjMode = (() => { try { return localStorage.getItem('pjMode') || 'liste'; } catch { return 'liste'; } })(); // 'liste' | 'planning' | 'personnes'
+let pjMode = (() => { try { return localStorage.getItem('pjMode') || 'liste'; } catch { return 'liste'; } })(); // 'liste' | 'planning' | 'personnes' | 'travel'
 let pjPlanDebut = '';        // premier mois du planning ('AAAA-MM')
 let pjMois = '';             // mois affiché dans le calendrier du projet ('AAAA-MM')
+let pjRetro = null;          // import de rétroplanning en cours : { pid, fichier, enCours, msg, etapes }
 let pjOptionsOuvert = false; // bloc OPTIONS TEAM déplié (fermé par défaut, il est long)
 let pjEnDessin = false;      // la page est en train d'être remplacée (le champ quitté envoie « change »)
 
@@ -174,14 +176,33 @@ function pjMien(c, p) { return c.x.p.id === p.id ? c.x : c.y; }
 
 // ── Navigation ───────────────────────────────────────────────────────────────
 function pjGo(vue, id) {
+  if (vue === 'ts' && pjVue !== 'ts') pjTsDepuis = pjVue === 'projet' && pjCur() ? pjId : null;
   pjVue = vue;
-  if (id !== undefined && id !== pjId) { pjId = id; pjMois = ''; pjOptionsOuvert = false; }
+  if (id !== undefined && id !== pjId) { pjId = id; pjMois = ''; pjOptionsOuvert = false; if (pjRetro && !pjRetro.enCours) pjRetro = null; }
   buildTabs();
   render();
   window.scrollTo(0, 0);
 }
 
+// Retour depuis une travel sheet : le projet d'où on venait, sinon la liste des travel sheets
+function pjRetourTs() {
+  const s = tsById(tsId);
+  const dest = (pjTsDepuis && pjById(pjTsDepuis)) || (s && s.projetId && pjById(s.projetId));
+  if (dest) { pjGo('projet', dest.id); return; }
+  pjMode = 'travel';
+  pjGo('liste');
+}
+
 function buildPjTabs(nav) {
+  if (pjVue === 'ts' && tsById(tsId)) {
+    const s = tsById(tsId);
+    const dest = (pjTsDepuis && pjById(pjTsDepuis)) || (s.projetId && pjById(s.projetId));
+    nav.style.display = '';
+    nav.innerHTML = `<button class="crumb-back" onclick="pjRetourTs()">← ${esc((dest ? pjTitre(dest) : 'TRAVEL SHEETS').toUpperCase())}</button>
+      <span class="crumb-sep">/</span>
+      <span class="crumb-title"><span class="ch-dot" style="background:#3c6e8f"></span>${esc((s.voyageur || 'Nouvelle travel sheet').toUpperCase())}</span>`;
+    return;
+  }
   if (pjVue !== 'projet' || !pjCur()) { nav.innerHTML = ''; nav.style.display = 'none'; return; }
   const p = pjCur();
   nav.style.display = '';
@@ -193,7 +214,8 @@ function buildPjTabs(nav) {
 function renderProjets(main) {
   pjEnDessin = true;
   try {
-    if (pjVue === 'projet' && pjCur()) renderPjProjet(main);
+    if (pjVue === 'ts' && tsById(tsId)) renderTsEditor(main);
+    else if (pjVue === 'projet' && pjCur()) renderPjProjet(main);
     else { pjVue = 'liste'; renderPjListe(main); }
   } finally { pjEnDessin = false; }
 }
@@ -229,17 +251,17 @@ function pjAlertesHtml(conflits, p) {
 function renderPjListe(main) {
   const list = pjFiltres();
   const conflits = pjConflits();
-  const modes = [['liste', 'LISTE'], ['planning', 'PLANNING'], ['personnes', 'PERSONNES']];
+  const modes = [['liste', 'LISTE'], ['planning', 'PLANNING'], ['personnes', 'PERSONNES'], ['travel', 'TRAVEL SHEETS']];
   main.innerHTML = `<div class="toolbar">
       <div class="search-wrap"><input id="pj-q" placeholder="Projet, client, personne..." value="${esc(pjQ)}" oninput="pjQ=this.value;pjRedessinerListe()"></div>
-      <select class="filter-sel" onchange="pjFStatut=this.value;pjRedessinerListe()">
+      <select class="filter-sel"${pjMode === 'travel' ? ' style="display:none"' : ''} onchange="pjFStatut=this.value;pjRedessinerListe()">
         <option value=""${pjFStatut === '' ? ' selected' : ''}>En cours</option>
         <option value="tous"${pjFStatut === 'tous' ? ' selected' : ''}>Tous les projets</option>
         ${PJ_STATUTS.map(s => `<option value="${s[0]}"${pjFStatut === s[0] ? ' selected' : ''}>${esc(s[1])}</option>`).join('')}
       </select>
       <div class="pj-modes">${modes.map(m => `<button type="button" class="${pjMode === m[0] ? 'on' : ''}" onclick="pjSetMode('${m[0]}')">${m[1]}</button>`).join('')}</div>
       <div class="spacer"></div>
-      <button class="btn-add" onclick="pjNouveau()">+ NOUVEAU PROJET</button>
+      ${pjMode === 'travel' ? '<button class="btn-add" onclick="tsNouvelle()">+ NOUVELLE TRAVEL SHEET</button>' : '<button class="btn-add" onclick="pjNouveau()">+ NOUVEAU PROJET</button>'}
     </div>
     ${pjAlertesHtml(conflits)}
     <div id="pj-liste-corps">${pjCorpsListe(list)}</div>`;
@@ -258,6 +280,7 @@ function pjSetMode(m) {
 }
 
 function pjCorpsListe(list) {
+  if (pjMode === 'travel') return pjTsListeHtml();
   if (!list.length) return `<div class="empty">${pjList().length ? 'AUCUN PROJET ICI' : 'AUCUN PROJET POUR LE MOMENT'}</div>`;
   if (pjMode === 'planning') return pjPlanningHtml(list);
   if (pjMode === 'personnes') return pjPersonnesHtml(list);
@@ -347,6 +370,55 @@ function pjPersonnesHtml(list) {
       </div>`).join('')}
     </div>`;
   }).join('')}</div>`;
+}
+
+// Toutes les travel sheets, avec leur projet (la recherche filtre aussi ici)
+function pjTsListeHtml() {
+  const q = pjNorm(pjQ);
+  const l = tsList().filter(s => {
+    if (!q) return true;
+    const pj = s.projetId && pjById(s.projetId);
+    return [s.voyageur, s.client, s.projet, pj ? pjTitre(pj) : '', ...(s.trajets || []).flatMap(t => [t.numero, t.de, t.a])].some(v => pjNorm(v).includes(q));
+  }).sort((a, b) => (tsPremiereDate(b) || '').localeCompare(tsPremiereDate(a) || '') || (b.maj || 0) - (a.maj || 0));
+  if (!l.length) return `<div class="empty">${tsList().length ? 'AUCUN RÉSULTAT' : 'AUCUNE TRAVEL SHEET POUR LE MOMENT'}</div>`;
+  return `<div class="pj-table">${l.map(pjTsLigneHtml).join('')}</div>`;
+}
+
+function pjTsLigneHtml(s, avecProjet = true) {
+  const d = tsPremiereDate(s);
+  const pj = s.projetId && pjById(s.projetId);
+  return `<div class="pj-ts-ligne" onclick="prodGo('sheet', ${s.id})">
+    <span class="pj-nom"><span class="ch-dot" style="background:#3c6e8f"></span>${esc(s.voyageur || 'Sans nom')}</span>
+    <span class="pj-muted">${esc(avecProjet ? (pj ? pjTitre(pj) : [s.client, s.projet].filter(Boolean).join(' ') || 'sans projet') : [s.client, s.projet].filter(Boolean).join(' '))}</span>
+    <span class="pj-muted">${d ? esc(tsDateCourte(d)) : ''}</span>
+  </div>`;
+}
+
+// Bloc TRAVEL SHEETS d'un projet : ses feuilles, en créer une, en rattacher une existante
+function pjTravelHtml(p) {
+  const siennes = tsList().filter(s => s.projetId === p.id)
+    .sort((a, b) => (tsPremiereDate(a) || '9').localeCompare(tsPremiereDate(b) || '9'));
+  const libres = tsList().filter(s => !s.projetId || !pjById(s.projetId));
+  return `<section class="ts-bloc">
+    <h3>TRAVEL SHEETS${siennes.length ? ` <small class="pj-muted">· ${siennes.length}</small>` : ''}</h3>
+    ${siennes.length ? `<div class="pj-ts-liste">${siennes.map(s => pjTsLigneHtml(s, false)).join('')}</div>` : '<p class="field-hint">Aucune travel sheet pour ce projet.</p>'}
+    <div class="ts-add-row">
+      <button type="button" class="btn-upload" onclick="tsNouvelle(null, ${p.id})">+ NOUVELLE TRAVEL SHEET</button>
+      ${libres.length ? `<select class="filter-sel pj-ts-rattacher" onchange="pjRattacherTs(this.value)">
+        <option value="">Rattacher une travel sheet existante…</option>
+        ${libres.map(s => `<option value="${s.id}">${esc([s.voyageur || 'Sans nom', [s.client, s.projet].filter(Boolean).join(' ')].filter(Boolean).join(' · '))}</option>`).join('')}
+      </select>` : ''}
+    </div>
+  </section>`;
+}
+
+function pjRattacherTs(v) {
+  const p = pjCur();
+  const s = v && tsById(Number(v));
+  if (!p || !s) return;
+  s.projetId = p.id;
+  s.maj = Date.now();
+  pjChange(true);
 }
 
 function pjNouveau() {
@@ -463,6 +535,7 @@ function pjPageHtml(p, conflits, choix) {
 
     <section class="ts-bloc">
       <h3>CALENDRIER</h3>
+      <div class="pj-retro">${pjRetroHtml(p)}</div>
       ${pjCalendrierHtml(p)}
       <div class="pj-etapes">${pjEtapesDatees(p).concat((p.etapes || []).filter(e => !pjEtapeDates(e))).map(e => pjEtapeHtml(e)).join('') || '<p class="field-hint">Aucune étape. Ajoute la prépa, le tournage, la post-prod… avec leurs dates.</p>'}</div>
       <div class="ts-add-row">${PJ_ETAPES.map(t => `<button type="button" class="btn-upload" onclick="pjAjouterEtape('${t[0]}')">+ ${t[1].toUpperCase()}</button>`).join('')}</div>
@@ -476,6 +549,8 @@ function pjPageHtml(p, conflits, choix) {
     </section>
 
     ${pjOptionsHtml(p)}
+
+    ${pjTravelHtml(p)}
 
     <section class="ts-bloc">
       <h3>NOTES</h3>
@@ -577,6 +652,192 @@ function pjOptionVersEquipe(i) {
   const dates = pjOptionDates(o).map(d => d.date).sort();
   if (!Array.isArray(p.equipe)) p.equipe = [];
   p.equipe.push({ id: uid(), ref: a.ref, nom: a.nom, role: o.role || '', etapes: [], du: dates[0] || '', au: dates[dates.length - 1] || '' });
+  pjChange(true);
+}
+
+// ── Import du rétroplanning ──────────────────────────────────────────────────
+// Un tableur (Excel, CSV) avec des colonnes PHASE / DÉBUT / FIN, comme l'onglet
+// RÉTROPLANNING des fiches de suivi, est lu directement dans le navigateur.
+// Les autres (PDF, capture, tableur en grille) sont lus par le serveur (route
+// /retro, avec Claude). Dans les deux cas, les étapes trouvées s'affichent
+// pour être vérifiées avant d'être ajoutées au calendrier.
+
+const PJ_XLSX_URL = 'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js';
+
+function pjRetroHtml(p) {
+  const r = pjRetro && pjRetro.pid === p.id ? pjRetro : null;
+  if (r && r.etapes && r.etapes.length) {
+    const n = r.etapes.filter(e => e.choisi).length;
+    return `<div class="pj-retro-apercu">
+      <div class="pj-retro-titre">RÉTROPLANNING${r.fichier ? ` « ${esc(r.fichier)} »` : ''} · ${r.etapes.length} ${r.etapes.length > 1 ? 'étapes trouvées' : 'étape trouvée'}, à vérifier</div>
+      ${r.etapes.map((e, i) => `<div class="pj-retro-ligne${e.choisi ? '' : ' off'}">
+        <input type="checkbox" ${e.choisi ? 'checked' : ''} onchange="pjRetro.etapes[${i}].choisi=this.checked;pjRedessiner()">
+        <select onchange="pjRetro.etapes[${i}].type=this.value">${PJ_ETAPES.map(t => `<option value="${t[0]}"${e.type === t[0] ? ' selected' : ''}>${t[1]}</option>`).join('')}</select>
+        <input type="text" value="${esc(e.nom)}" oninput="pjRetro.etapes[${i}].nom=this.value">
+        <input type="date" value="${esc(e.du)}" onchange="pjRetro.etapes[${i}].du=this.value">
+        <input type="date" value="${esc(e.au)}" onchange="pjRetro.etapes[${i}].au=this.value">
+      </div>`).join('')}
+      ${r.msg ? `<p class="field-hint">${esc(r.msg)}</p>` : ''}
+      <div class="ts-add-row">
+        <button type="button" class="btn-cancel" onclick="pjRetro=null;pjRedessiner()">ANNULER</button>
+        <button type="button" class="btn-save" onclick="pjRetroAjouter()"${n ? '' : ' disabled'}>AJOUTER AU CALENDRIER (${n})</button>
+      </div>
+    </div>`;
+  }
+  const dernier = p.retro && p.retro.fichier ? `Dernier import : « ${esc(p.retro.fichier)} »${p.retro.date ? ' le ' + esc(pjDateCourte(p.retro.date)) : ''}.` : '';
+  return `<div class="pj-retro-import">
+      <label class="btn-upload${r && r.enCours ? ' attente' : ''}">IMPORTER UN RÉTROPLANNING<input type="file" hidden accept=".xlsx,.xlsm,.xls,.csv,.ods,application/pdf,image/*" onchange="pjRetroFichier(this)"${r && r.enCours ? ' disabled' : ''}></label>
+      <span class="field-hint">Excel, PDF ou capture : les étapes et leurs dates sont lues, tu vérifies, puis elles vont dans le calendrier. ${dernier}</span>
+    </div>
+    <details class="pj-retro-colle"><summary>ou colle le contenu du rétroplanning</summary>
+      <textarea id="pj-retro-texte" rows="4" placeholder="Copie les lignes du tableau (Excel, Google Sheets) ou le texte d'un e-mail…"></textarea>
+      <div class="ts-add-row"><button type="button" class="btn-upload" onclick="pjRetroTexte()"${r && r.enCours ? ' disabled' : ''}>LIRE</button></div>
+    </details>
+    ${r && r.msg ? `<p class="field-hint pj-retro-msg">${esc(r.msg)}</p>` : ''}`;
+}
+
+async function pjRetroFichier(input) {
+  const f = input.files && input.files[0];
+  input.value = '';
+  const p = pjCur();
+  if (!f || !p) return;
+  await pjRetroLire(p, f.name, async () => {
+    if (/\.(xlsx|xlsm|xls|csv|ods)$/i.test(f.name)) {
+      const XLSX = await pjChargerXlsx();
+      const wb = XLSX.read(await f.arrayBuffer(), { type: 'array' });
+      const etapes = pjRetroTableur(pjFeuilles(XLSX, wb));
+      if (etapes.length) return { etapes };
+      return pjRetroServeur(p, { text: pjTableurTexte(XLSX, wb) });
+    }
+    if (f.type === 'application/pdf' || /^image\/(jpeg|png|gif|webp)$/.test(f.type)) {
+      if (f.size > 6 * 1024 * 1024) throw new Error('Fichier trop lourd (6 Mo au plus).');
+      const data = await new Promise((ok, ko) => { const r = new FileReader(); r.onload = () => ok(String(r.result).split(',')[1]); r.onerror = ko; r.readAsDataURL(f); });
+      return pjRetroServeur(p, { files: [{ media_type: f.type, data }] });
+    }
+    throw new Error('Format non reconnu : dépose un Excel, un CSV, un PDF ou une image.');
+  });
+}
+
+async function pjRetroTexte() {
+  const t = (document.getElementById('pj-retro-texte') || {}).value || '';
+  const p = pjCur();
+  if (!p || !t.trim()) return;
+  await pjRetroLire(p, '', async () => {
+    // Lignes copiées d'un tableur : colonnes séparées par des tabulations
+    const etapes = t.includes('\t') ? pjRetroTableur([t.split(/\r?\n/).map(l => l.split('\t'))]) : [];
+    return etapes.length ? { etapes } : pjRetroServeur(p, { text: t });
+  });
+}
+
+async function pjRetroLire(p, fichier, lire) {
+  pjRetro = { pid: p.id, fichier, enCours: true, msg: 'Lecture du rétroplanning…' };
+  pjRedessiner();
+  try {
+    const r = await lire();
+    const etapes = (r.etapes || []).filter(e => e.du).map(e => ({
+      nom: e.nom || '', type: PJ_ETAPES.some(t => t[0] === e.type) ? e.type : pjDevinerType(e.nom),
+      du: e.du, au: e.au && e.au >= e.du ? e.au : e.du, choisi: true,
+    }));
+    pjRetro = { pid: p.id, fichier, etapes, msg: r.remarque || (etapes.length ? '' : 'Aucune étape datée trouvée dans ce rétroplanning.') };
+  } catch (e) {
+    pjRetro = { pid: p.id, fichier, msg: e.message || 'Lecture impossible.' };
+  }
+  pjRedessiner();
+}
+
+async function pjRetroServeur(p, corps) {
+  if (typeof SERVER_URL === 'undefined' || !SERVER_URL) throw new Error('Serveur non configuré : ce format ne peut pas être lu.');
+  const sp = pjSpan(p);
+  const projet = [pjTitre(p), p.datesTexte, sp ? pjPeriodeTexte(sp.du, sp.au) : ''].filter(Boolean).join(' · ');
+  const res = await fetch(SERVER_URL + '/retro', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...corps, projet }) });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || 'Le serveur n\'a pas pu lire ce rétroplanning.');
+  return data;
+}
+
+function pjChargerXlsx() {
+  if (window.XLSX) return Promise.resolve(window.XLSX);
+  return new Promise((ok, ko) => {
+    const sc = document.createElement('script');
+    sc.src = PJ_XLSX_URL;
+    sc.onload = () => window.XLSX ? ok(window.XLSX) : ko(new Error('Lecteur Excel indisponible.'));
+    sc.onerror = () => ko(new Error('Lecteur Excel indisponible (connexion ?).'));
+    document.head.appendChild(sc);
+  });
+}
+
+// Les feuilles du classeur, celle qui ressemble à un rétroplanning en premier
+function pjFeuilles(XLSX, wb) {
+  const noms = wb.SheetNames.slice().sort((a, b) => (/r[ée]tro|planning|schedule/i.test(b) ? 1 : 0) - (/r[ée]tro|planning|schedule/i.test(a) ? 1 : 0));
+  return noms.map(n => XLSX.utils.sheet_to_json(wb.Sheets[n], { header: 1, raw: true, defval: '' }));
+}
+
+function pjTableurTexte(XLSX, wb) {
+  return wb.SheetNames.slice(0, 4).map(n => `# Feuille « ${n} »\n` + XLSX.utils.sheet_to_csv(wb.Sheets[n], { blankrows: false })).join('\n\n').slice(0, 60000);
+}
+
+// Une case de date : numéro de série Excel, ou texte « 15/06/2026 », « 2026-06-15 »
+function pjCaseDate(v) {
+  if (typeof v === 'number' && v > 30000 && v < 80000) {
+    const d = new Date(Date.UTC(1899, 11, 30) + Math.round(v) * 86400000);
+    return d.toISOString().slice(0, 10);
+  }
+  const t = String(v || '').trim();
+  let m = t.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (m) return `${m[1]}-${m[2]}-${m[3]}`;
+  m = t.match(/^(\d{1,2})[\/.-](\d{1,2})[\/.-](\d{2,4})$/);
+  if (m) { const y = m[3].length === 2 ? '20' + m[3] : m[3]; return `${y}-${m[2].padStart(2, '0')}-${m[1].padStart(2, '0')}`; }
+  return '';
+}
+
+// Tableau avec une ligne d'en-tête PHASE (ou ÉTAPE, TÂCHE…) / DÉBUT / FIN
+function pjRetroTableur(feuilles) {
+  for (const rows of feuilles) {
+    for (let r = 0; r < Math.min(rows.length, 30); r++) {
+      const h = (rows[r] || []).map(c => pjNorm(c).replace(/[^a-z ]/g, '').trim());
+      const cNom = h.findIndex(c => /^(phase|phases|etape|etapes|tache|taches|task|tasks|quoi|step|steps)$/.test(c));
+      const cDu = h.findIndex(c => /^(debut|start|du|date|dates|date de debut|start date)$/.test(c));
+      if (cNom < 0 || cDu < 0) continue;
+      const cAu = h.findIndex(c => /^(fin|end|au|date de fin|end date)$/.test(c));
+      const out = [];
+      let section = '';
+      for (let i = r + 1; i < rows.length; i++) {
+        const row = rows[i] || [];
+        const nom = String(row[cNom] || '').trim();
+        const du = pjCaseDate(row[cDu]);
+        const au = cAu >= 0 ? pjCaseDate(row[cAu]) : '';
+        if (!nom) continue;
+        if (!du) { if (nom === nom.toUpperCase()) section = nom; continue; }
+        out.push({ nom: section ? `${nom} (${section.toLowerCase()})` : nom, du, au: au || du });
+      }
+      if (out.length) return out;
+    }
+  }
+  return [];
+}
+
+function pjDevinerType(nom) {
+  const n = pjNorm(nom);
+  if (/livraison|delivery|livrable|rendu final/.test(n)) return 'livraison';
+  if (/shoot|tournage|prise de vue|\bpdv\b/.test(n)) return 'tournage';
+  if (/recce|reperage|scouting/.test(n)) return 'reperage';
+  if (/casting|fitting/.test(n)) return 'casting';
+  if (/montage|edit|\bv\d\b|feedback|retour|etalo|grading|color|son|sound|mix|retouche|selection|post/.test(n)) return 'postprod';
+  if (/prepa|prep|pre-prod|preprod|brief|devis|pitch|ppm/.test(n)) return 'prepa';
+  return 'autre';
+}
+
+function pjRetroAjouter() {
+  const p = pjCur();
+  if (!p || !pjRetro || !pjRetro.etapes) return;
+  if (!Array.isArray(p.etapes)) p.etapes = [];
+  const deja = new Set(p.etapes.map(e => pjNorm(e.nom || pjEtapeType(e.type)[1]) + '|' + e.du + '|' + (e.au || e.du)));
+  const ajout = pjRetro.etapes.filter(e => e.choisi && e.du && !deja.has(pjNorm(e.nom) + '|' + e.du + '|' + (e.au || e.du)));
+  ajout.forEach(e => p.etapes.push({ id: uid(), type: e.type, nom: e.nom, du: e.du, au: e.au && e.au >= e.du ? e.au : e.du }));
+  p.retro = { fichier: pjRetro.fichier || 'texte collé', date: pjAujourdhui() };
+  const premier = ajout.map(e => e.du).sort()[0];
+  if (premier) pjMois = premier.slice(0, 7);
+  pjRetro = null;
   pjChange(true);
 }
 
@@ -685,6 +946,7 @@ function pjSupprimer() {
   const p = pjCur();
   if (!p || !confirm('Supprimer le projet « ' + pjTitre(p) + ' » ?' + (p.code ? '\n\nIl vient de PROJETS WIDEN : il reviendra au prochain envoi tant que sa ligne y est.' : ''))) return;
   db.projets = pjList().filter(x => x.id !== p.id);
+  tsList().forEach(s => { if (s.projetId === p.id) delete s.projetId; });   // ses travel sheets restent, sans projet
   clearTimeout(pjSaveTimer); pjSaveTimer = null;
   saveDb();
   pjGo('liste');
