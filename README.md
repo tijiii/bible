@@ -119,6 +119,9 @@ En haut du site, deux onglets : **BIBLE** (tout ce qui précède) et **SUIVI PRO
 **Équipe** : en tapant un nom, le site propose les talents et techniciens de la bible et les contacts Widen ; on peut aussi écrire n'importe quel nom. Pour chaque personne : son rôle, et quand elle est prise (tout le projet, certaines étapes cochées, ou AUTRES DATES).
 **Conflits de dates** : si une même personne est sur deux projets aux mêmes dates, le site le signale en haut de la liste, sur la ligne des projets (⚠), en haut du projet et sous la personne. Les projets annulés ne comptent pas. Les options de l'onglet OPTIONS TEAM comptent aussi (sauf N/A, relâché, release, over budget, pas retenu…).
 
+### Import du rétroplanning
+Dans un projet, partie CALENDRIER : **IMPORTER UN RÉTROPLANNING** prend un Excel (.xlsx, .xls, .ods, .csv), un PDF ou une capture. Un Excel au format de la fiche de suivi (colonnes PHASE / DÉBUT / FIN, sections VIDÉO, PHOTO…) est lu directement dans le navigateur. Les autres mises en page, les PDF et les captures sont lus par Claude via le serveur (`/retro` dans `worker/src/index.js`). On peut aussi coller le contenu du rétroplanning (« ou colle le contenu »). Les étapes trouvées s'affichent pour vérification : on décoche, on corrige le type, le nom ou les dates, puis **AJOUTER AU CALENDRIER**. Les étapes déjà présentes (même nom, mêmes dates) ne sont pas ajoutées deux fois.
+
 ### Lien avec PROJETS WIDEN
 Le script `integrations/projets-widen-google-sheet.gs` envoie les projets du Google Sheet **PROJETS WIDEN** dans l'onglet Suivi production, toutes les 15 minutes :
 - chaque ligne qui a une fiche de suivi devient un projet (reconnu par son N°, ex. P05), créé s'il n'existe pas ;

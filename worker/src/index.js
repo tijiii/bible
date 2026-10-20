@@ -156,6 +156,68 @@ async function handleTravel(request, env, cors) {
   }
 }
 
+// ── RÉTROPLANNING ────────────────────────────────────────────────────────────
+// Onglet Suivi production : on dépose le rétroplanning d'un projet (PDF, capture,
+// tableur converti en texte par le site) et Claude en tire les étapes datées
+// pour le calendrier du projet. Le site les montre avant de les ajouter.
+
+const Retro = z.object({
+  etapes: z.array(z.object({
+    nom: z.string().describe('Nom de l\'étape tel qu\'écrit dans le document (ex : « Shoot », « V1 montage », « Feedback client »).'),
+    type: z.enum(['prepa', 'reperage', 'casting', 'tournage', 'postprod', 'livraison', 'autre']),
+    du: z.string().describe('Premier jour, AAAA-MM-JJ.'),
+    au: z.string().describe('Dernier jour, AAAA-MM-JJ (le même jour pour une étape d\'un jour).'),
+  })),
+  remarque: z.string().describe('Une phrase courte en français : ce qui est incertain ou n\'a pas pu être daté. Vide si rien.'),
+});
+
+const RETRO_SYSTEM = `Tu lis le rétroplanning d'un projet de production photo/vidéo (Widen) et tu en tires les étapes datées, pour un calendrier.
+- Une étape par ligne ou par bloc du planning : prépa, repérage (recce), casting, tournage (shoot), post-production (montage, V1, V2, feedbacks, étalonnage, son, retouches, sélection), livraison (delivery), ou autre.
+- Garde le nom écrit dans le document. Si une même étape revient pour plusieurs livrables (ex : « Feedback » côté vidéo et côté photo), précise-le dans le nom (« Feedback V1 vidéo »).
+- Dates au format AAAA-MM-JJ. Une date sans année est dans l'année du projet (ou la plus proche après la date du jour). Dans un planning en grille (cases colorées sous des colonnes de jours), l'étape va de la première à la dernière case remplie.
+- N'invente aucune date : une étape sans date lisible n'est pas renvoyée, et tu le dis dans « remarque ». Ignore les titres de section (VIDÉO, PHOTO…) et les lignes vides.`;
+
+async function handleRetro(request, env, cors) {
+  if (request.method !== 'POST') return json({ error: 'Méthode non autorisée' }, 405, cors);
+  if (!cors.ok) return json({ error: 'Origine non autorisée' }, 403, cors);
+  if (Number(request.headers.get('Content-Length') || 0) > MAX_BODY_BYTES) return json({ error: 'Fichier trop lourd' }, 413, cors);
+  let body;
+  try { body = await request.json(); } catch { return json({ error: 'Requête illisible' }, 400, cors); }
+  const text = String(body.text || '').slice(0, 60000);
+  const files = (Array.isArray(body.files) ? body.files : []).slice(0, 5)
+    .filter(f => f && typeof f.data === 'string' && (IMAGE_TYPES.includes(f.media_type) || f.media_type === 'application/pdf'));
+  if (!text.trim() && !files.length) return json({ error: 'Ajoute le fichier du rétroplanning ou colle son contenu.' }, 400, cors);
+
+  const content = files.map(f => f.media_type === 'application/pdf'
+    ? { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: f.data } }
+    : { type: 'image', source: { type: 'base64', media_type: f.media_type, data: f.data } });
+  const today = new Date().toISOString().slice(0, 10);
+  const projet = String(body.projet || '').slice(0, 300);
+  content.push({ type: 'text', text: `Date du jour : ${today}\nProjet : ${projet || '(non précisé)'}\n\n<retroplanning>\n${text || '(voir le fichier joint)'}\n</retroplanning>` });
+
+  const client = new Anthropic({ apiKey: env.ANTHROPIC_API_KEY });
+  try {
+    const response = await client.beta.messages.parse({
+      model: 'claude-opus-5-5',
+      max_tokens: 16000,
+      betas: ['server-side-fallback-2026-07-01'],
+      fallbacks: 'default',
+      output_config: { effort: 'medium', format: betaZodOutputFormat(Retro) },
+      system: RETRO_SYSTEM,
+      messages: [{ role: 'user', content }],
+    });
+    if (response.stop_reason === 'refusal' || !response.parsed_output) {
+      return json({ error: 'Impossible de lire ce rétroplanning, ajoute les étapes à la main.' }, 422, cors);
+    }
+    return json(response.parsed_output, 200, cors);
+  } catch (err) {
+    if (err instanceof Anthropic.RateLimitError) return json({ error: 'Trop de demandes, réessaie dans une minute.' }, 429, cors);
+    if (err instanceof Anthropic.AuthenticationError) return json({ error: 'Clé Anthropic invalide côté serveur.' }, 500, cors);
+    if (err instanceof Anthropic.APIError) return json({ error: `Erreur du service IA (${err.status ?? 'réseau'}).` }, 502, cors);
+    throw err;
+  }
+}
+
 // ── LOGO DU CLIENT ───────────────────────────────────────────────────────────
 // Pour l'en-tête des travel sheets : on cherche le logo officiel d'une marque
 // (Claude + recherche web, et l'image de sa page Wikipédia), ou on récupère une
@@ -378,6 +440,7 @@ export default {
     }
     if (url.pathname === '/travel') return handleTravel(request, env, cors);
     if (url.pathname === '/logo') return handleLogo(request, env, cors);
+    if (url.pathname === '/retro') return handleRetro(request, env, cors);
     if (request.method !== 'POST') return json({ error: 'Méthode non autorisée' }, 405, cors);
     if (!cors.ok) return json({ error: 'Origine non autorisée' }, 403, cors);
     if (Number(request.headers.get('Content-Length') || 0) > MAX_BODY_BYTES) return json({ error: 'Image trop lourde' }, 413, cors);
