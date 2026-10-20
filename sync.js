@@ -90,7 +90,7 @@ async function pullRemoteDb() {
       // Travel sheet ouverte : on prend les changements des autres sans toucher
       // à la feuille en cours ni redessiner l'écran
       const tsOuverte = document.querySelector('.ts-editor') ? tsCur() : null;
-      // Pareil pour un projet en cours de modification (onglet Production)
+      // Pareil pour un projet en cours de modification (onglet Suivi production)
       const pjOuvert = !tsOuverte && typeof pjEnEdition === 'function' && pjEnEdition() ? pjCur() : null;
       db = remote;
       lastRemoteJson = remoteJson;

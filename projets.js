@@ -1,15 +1,16 @@
-// ── PRODUCTION ───────────────────────────────────────────────────────────────
-// Troisième onglet du site, après « Production interne » : le suivi des projets
-// (comme la base Airtable). Une vue globale des projets, et dans chaque projet
+// ── SUIVI PRODUCTION ─────────────────────────────────────────────────────────
+// Deuxième onglet du site, après la bible : le suivi des projets (comme la
+// base Airtable), avec les travel sheets de chaque projet (prod.js). Une vue globale des projets, et dans chaque projet
 // son calendrier d'étapes et les gens qui sont dessus. Le site prévient quand
 // une même personne est sur deux projets aux mêmes dates.
 // Tout est gardé dans la base partagée, sous db.projets.
 
-let pjVue = 'liste';         // 'liste' | 'projet'
+let pjVue = 'liste';         // 'liste' | 'projet' | 'ts' (travel sheet ouverte, prod.js)
+let pjTsDepuis = null;       // projet d'où la travel sheet a été ouverte (pour y revenir)
 let pjId = null;             // projet ouvert
 let pjQ = '';                // recherche dans la liste
 let pjFStatut = '';          // filtre statut ('' = tous sauf livrés et annulés, 'tous' = tout)
-let pjMode = (() => { try { return localStorage.getItem('pjMode') || 'liste'; } catch { return 'liste'; } })(); // 'liste' | 'planning' | 'personnes'
+let pjMode = (() => { try { return localStorage.getItem('pjMode') || 'liste'; } catch { return 'liste'; } })(); // 'liste' | 'planning' | 'personnes' | 'travel'
 let pjPlanDebut = '';        // premier mois du planning ('AAAA-MM')
 let pjMois = '';             // mois affiché dans le calendrier du projet ('AAAA-MM')
 let pjOptionsOuvert = false; // bloc OPTIONS TEAM déplié (fermé par défaut, il est long)
@@ -174,6 +175,7 @@ function pjMien(c, p) { return c.x.p.id === p.id ? c.x : c.y; }
 
 // ── Navigation ───────────────────────────────────────────────────────────────
 function pjGo(vue, id) {
+  if (vue === 'ts' && pjVue !== 'ts') pjTsDepuis = pjVue === 'projet' && pjCur() ? pjId : null;
   pjVue = vue;
   if (id !== undefined && id !== pjId) { pjId = id; pjMois = ''; pjOptionsOuvert = false; }
   buildTabs();
@@ -181,7 +183,25 @@ function pjGo(vue, id) {
   window.scrollTo(0, 0);
 }
 
+// Retour depuis une travel sheet : le projet d'où on venait, sinon la liste des travel sheets
+function pjRetourTs() {
+  const s = tsById(tsId);
+  const dest = (pjTsDepuis && pjById(pjTsDepuis)) || (s && s.projetId && pjById(s.projetId));
+  if (dest) { pjGo('projet', dest.id); return; }
+  pjMode = 'travel';
+  pjGo('liste');
+}
+
 function buildPjTabs(nav) {
+  if (pjVue === 'ts' && tsById(tsId)) {
+    const s = tsById(tsId);
+    const dest = (pjTsDepuis && pjById(pjTsDepuis)) || (s.projetId && pjById(s.projetId));
+    nav.style.display = '';
+    nav.innerHTML = `<button class="crumb-back" onclick="pjRetourTs()">← ${esc((dest ? pjTitre(dest) : 'TRAVEL SHEETS').toUpperCase())}</button>
+      <span class="crumb-sep">/</span>
+      <span class="crumb-title"><span class="ch-dot" style="background:#3c6e8f"></span>${esc((s.voyageur || 'Nouvelle travel sheet').toUpperCase())}</span>`;
+    return;
+  }
   if (pjVue !== 'projet' || !pjCur()) { nav.innerHTML = ''; nav.style.display = 'none'; return; }
   const p = pjCur();
   nav.style.display = '';
@@ -193,7 +213,8 @@ function buildPjTabs(nav) {
 function renderProjets(main) {
   pjEnDessin = true;
   try {
-    if (pjVue === 'projet' && pjCur()) renderPjProjet(main);
+    if (pjVue === 'ts' && tsById(tsId)) renderTsEditor(main);
+    else if (pjVue === 'projet' && pjCur()) renderPjProjet(main);
     else { pjVue = 'liste'; renderPjListe(main); }
   } finally { pjEnDessin = false; }
 }
@@ -229,17 +250,17 @@ function pjAlertesHtml(conflits, p) {
 function renderPjListe(main) {
   const list = pjFiltres();
   const conflits = pjConflits();
-  const modes = [['liste', 'LISTE'], ['planning', 'PLANNING'], ['personnes', 'PERSONNES']];
+  const modes = [['liste', 'LISTE'], ['planning', 'PLANNING'], ['personnes', 'PERSONNES'], ['travel', 'TRAVEL SHEETS']];
   main.innerHTML = `<div class="toolbar">
       <div class="search-wrap"><input id="pj-q" placeholder="Projet, client, personne..." value="${esc(pjQ)}" oninput="pjQ=this.value;pjRedessinerListe()"></div>
-      <select class="filter-sel" onchange="pjFStatut=this.value;pjRedessinerListe()">
+      <select class="filter-sel"${pjMode === 'travel' ? ' style="display:none"' : ''} onchange="pjFStatut=this.value;pjRedessinerListe()">
         <option value=""${pjFStatut === '' ? ' selected' : ''}>En cours</option>
         <option value="tous"${pjFStatut === 'tous' ? ' selected' : ''}>Tous les projets</option>
         ${PJ_STATUTS.map(s => `<option value="${s[0]}"${pjFStatut === s[0] ? ' selected' : ''}>${esc(s[1])}</option>`).join('')}
       </select>
       <div class="pj-modes">${modes.map(m => `<button type="button" class="${pjMode === m[0] ? 'on' : ''}" onclick="pjSetMode('${m[0]}')">${m[1]}</button>`).join('')}</div>
       <div class="spacer"></div>
-      <button class="btn-add" onclick="pjNouveau()">+ NOUVEAU PROJET</button>
+      ${pjMode === 'travel' ? '<button class="btn-add" onclick="tsNouvelle()">+ NOUVELLE TRAVEL SHEET</button>' : '<button class="btn-add" onclick="pjNouveau()">+ NOUVEAU PROJET</button>'}
     </div>
     ${pjAlertesHtml(conflits)}
     <div id="pj-liste-corps">${pjCorpsListe(list)}</div>`;
@@ -258,6 +279,7 @@ function pjSetMode(m) {
 }
 
 function pjCorpsListe(list) {
+  if (pjMode === 'travel') return pjTsListeHtml();
   if (!list.length) return `<div class="empty">${pjList().length ? 'AUCUN PROJET ICI' : 'AUCUN PROJET POUR LE MOMENT'}</div>`;
   if (pjMode === 'planning') return pjPlanningHtml(list);
   if (pjMode === 'personnes') return pjPersonnesHtml(list);
@@ -347,6 +369,55 @@ function pjPersonnesHtml(list) {
       </div>`).join('')}
     </div>`;
   }).join('')}</div>`;
+}
+
+// Toutes les travel sheets, avec leur projet (la recherche filtre aussi ici)
+function pjTsListeHtml() {
+  const q = pjNorm(pjQ);
+  const l = tsList().filter(s => {
+    if (!q) return true;
+    const pj = s.projetId && pjById(s.projetId);
+    return [s.voyageur, s.client, s.projet, pj ? pjTitre(pj) : '', ...(s.trajets || []).flatMap(t => [t.numero, t.de, t.a])].some(v => pjNorm(v).includes(q));
+  }).sort((a, b) => (tsPremiereDate(b) || '').localeCompare(tsPremiereDate(a) || '') || (b.maj || 0) - (a.maj || 0));
+  if (!l.length) return `<div class="empty">${tsList().length ? 'AUCUN RÉSULTAT' : 'AUCUNE TRAVEL SHEET POUR LE MOMENT'}</div>`;
+  return `<div class="pj-table">${l.map(pjTsLigneHtml).join('')}</div>`;
+}
+
+function pjTsLigneHtml(s, avecProjet = true) {
+  const d = tsPremiereDate(s);
+  const pj = s.projetId && pjById(s.projetId);
+  return `<div class="pj-ts-ligne" onclick="prodGo('sheet', ${s.id})">
+    <span class="pj-nom"><span class="ch-dot" style="background:#3c6e8f"></span>${esc(s.voyageur || 'Sans nom')}</span>
+    <span class="pj-muted">${esc(avecProjet ? (pj ? pjTitre(pj) : [s.client, s.projet].filter(Boolean).join(' ') || 'sans projet') : [s.client, s.projet].filter(Boolean).join(' '))}</span>
+    <span class="pj-muted">${d ? esc(tsDateCourte(d)) : ''}</span>
+  </div>`;
+}
+
+// Bloc TRAVEL SHEETS d'un projet : ses feuilles, en créer une, en rattacher une existante
+function pjTravelHtml(p) {
+  const siennes = tsList().filter(s => s.projetId === p.id)
+    .sort((a, b) => (tsPremiereDate(a) || '9').localeCompare(tsPremiereDate(b) || '9'));
+  const libres = tsList().filter(s => !s.projetId || !pjById(s.projetId));
+  return `<section class="ts-bloc">
+    <h3>TRAVEL SHEETS${siennes.length ? ` <small class="pj-muted">· ${siennes.length}</small>` : ''}</h3>
+    ${siennes.length ? `<div class="pj-ts-liste">${siennes.map(s => pjTsLigneHtml(s, false)).join('')}</div>` : '<p class="field-hint">Aucune travel sheet pour ce projet.</p>'}
+    <div class="ts-add-row">
+      <button type="button" class="btn-upload" onclick="tsNouvelle(null, ${p.id})">+ NOUVELLE TRAVEL SHEET</button>
+      ${libres.length ? `<select class="filter-sel pj-ts-rattacher" onchange="pjRattacherTs(this.value)">
+        <option value="">Rattacher une travel sheet existante…</option>
+        ${libres.map(s => `<option value="${s.id}">${esc([s.voyageur || 'Sans nom', [s.client, s.projet].filter(Boolean).join(' ')].filter(Boolean).join(' · '))}</option>`).join('')}
+      </select>` : ''}
+    </div>
+  </section>`;
+}
+
+function pjRattacherTs(v) {
+  const p = pjCur();
+  const s = v && tsById(Number(v));
+  if (!p || !s) return;
+  s.projetId = p.id;
+  s.maj = Date.now();
+  pjChange(true);
 }
 
 function pjNouveau() {
@@ -476,6 +547,8 @@ function pjPageHtml(p, conflits, choix) {
     </section>
 
     ${pjOptionsHtml(p)}
+
+    ${pjTravelHtml(p)}
 
     <section class="ts-bloc">
       <h3>NOTES</h3>
@@ -685,6 +758,7 @@ function pjSupprimer() {
   const p = pjCur();
   if (!p || !confirm('Supprimer le projet « ' + pjTitre(p) + ' » ?' + (p.code ? '\n\nIl vient de PROJETS WIDEN : il reviendra au prochain envoi tant que sa ligne y est.' : ''))) return;
   db.projets = pjList().filter(x => x.id !== p.id);
+  tsList().forEach(s => { if (s.projetId === p.id) delete s.projetId; });   // ses travel sheets restent, sans projet
   clearTimeout(pjSaveTimer); pjSaveTimer = null;
   saveDb();
   pjGo('liste');

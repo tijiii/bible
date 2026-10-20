@@ -1,14 +1,13 @@
-// ── PRODUCTION INTERNE ───────────────────────────────────────────────────────
-// Deuxième onglet du site, à côté de la bible : les outils de la production.
-// Premier outil : les travel sheets (une feuille de voyage par personne, à
-// envoyer en PDF), remplies automatiquement à partir d'une réservation collée.
-// Tout est gardé dans la base partagée, sous db.prod.
+// ── TRAVEL SHEETS ────────────────────────────────────────────────────────────
+// Une feuille de voyage par personne (à envoyer en PDF), remplie
+// automatiquement à partir d'une réservation collée. Elles vivent dans
+// l'onglet SUIVI PRODUCTION (projets.js) : chacune peut être rattachée à un
+// projet (projetId). Tout est gardé dans la base partagée, sous db.prod.
 
-// Onglets du haut : 'bible' | 'prod' (production interne) | 'projets' (production, projets.js)
-let espace = (() => { try { const e = localStorage.getItem('espace'); return e === 'prod' || e === 'projets' ? e : 'bible'; } catch { return 'bible'; } })();
-let prodVue = 'home';        // 'home' | 'travel' | 'sheet'
+// Onglets du haut : 'bible' | 'projets' (suivi production, avec les travel sheets).
+// L'ancien onglet « production interne » ('prod') ouvre maintenant le suivi production.
+let espace = (() => { try { const e = localStorage.getItem('espace'); return e === 'prod' || e === 'projets' ? 'projets' : 'bible'; } catch { return 'bible'; } })();
 let tsId = null;             // travel sheet ouverte
-let tsQ = '';                // recherche dans la liste
 
 const TS_CONTACTS_DEFAUT = [
   { id: 'widen-felicie', groupe: 'WIDEN', nom: 'Félicie Corby', role: 'Executive Producer', tel: '+33 6 19 39 78 92' },
@@ -27,67 +26,30 @@ function prodData() {
 function tsList() { return prodData().travelSheets; }
 function tsById(id) { return tsList().find(s => s.id === id); }
 
-// ── Onglets BIBLE / PRODUCTION INTERNE / PRODUCTION ──────────────────────────
+// ── Onglets BIBLE / SUIVI PRODUCTION ─────────────────────────────────────────
 function renderEspaces() {
   const nav = document.getElementById('espaces-nav');
   if (nav) nav.innerHTML = `<button type="button" class="${espace === 'bible' ? 'on' : ''}" onclick="setEspace('bible')">BIBLE</button>
-    <button type="button" class="${espace === 'prod' ? 'on' : ''}" onclick="setEspace('prod')">PRODUCTION INTERNE</button>
-    <button type="button" class="${espace === 'projets' ? 'on' : ''}" onclick="setEspace('projets')">PRODUCTION</button>`;
-  document.body.classList.toggle('espace-prod', espace === 'prod' || espace === 'projets');
+    <button type="button" class="${espace === 'projets' ? 'on' : ''}" onclick="setEspace('projets')">SUIVI PRODUCTION</button>`;
+  document.body.classList.toggle('espace-prod', espace === 'projets');
   const brand = document.querySelector('.hdr-brand');
-  if (brand) brand.textContent = espace === 'prod' ? 'PRODUCTION INTERNE' : espace === 'projets' ? 'PRODUCTION' : 'CASTING BIBLE';
+  if (brand) brand.textContent = espace === 'projets' ? 'SUIVI PRODUCTION' : 'CASTING BIBLE';
 }
 
 function setEspace(e) {
-  espace = e === 'prod' || e === 'projets' ? e : 'bible';
+  espace = e === 'projets' || e === 'prod' ? 'projets' : 'bible';
   try { localStorage.setItem('espace', espace); } catch {}
   renderEspaces();
-  if (espace === 'projets') pjGo(pjVue === 'projet' && pjCur() ? 'projet' : 'liste');
-  else if (espace === 'prod') prodGo(prodVue === 'sheet' && tsById(tsId) ? 'sheet' : prodVue === 'travel' ? 'travel' : 'home', tsId);
+  if (espace === 'projets') pjGo(pjVue === 'ts' && tsById(tsId) ? 'ts' : pjVue === 'projet' && pjCur() ? 'projet' : 'liste');
   else { buildTabs(); render(); window.scrollTo(0, 0); }
 }
 
+// Ouvre une travel sheet ('sheet') ou revient d'où on l'avait ouverte (projet ou liste)
 function prodGo(vue, id) {
-  if (vue !== prodVue || id !== tsId) tsMsgTexte = '';
-  prodVue = vue;
+  if (vue !== 'sheet' || (id !== undefined && id !== tsId)) tsMsgTexte = '';
   if (id !== undefined) tsId = id;
-  buildTabs();
-  render();
-  window.scrollTo(0, 0);
-}
-
-function buildProdTabs(nav) {
-  if (prodVue === 'home') { nav.innerHTML = ''; nav.style.display = 'none'; return; }
-  nav.style.display = '';
-  if (prodVue === 'travel') {
-    nav.innerHTML = `<button class="crumb-back" onclick="prodGo('home')">← PRODUCTION</button>
-      <span class="crumb-sep">/</span>
-      <span class="crumb-title"><span class="ch-dot" style="background:#3c6e8f"></span>TRAVEL SHEETS</span>
-      <span class="crumb-count">${tsList().length}</span>`;
-    return;
-  }
-  const s = tsById(tsId);
-  nav.innerHTML = `<button class="crumb-back" onclick="prodGo('travel')">← TRAVEL SHEETS</button>
-    <span class="crumb-sep">/</span>
-    <span class="crumb-title"><span class="ch-dot" style="background:#3c6e8f"></span>${esc((s && (s.voyageur || 'Nouvelle travel sheet')) || '').toUpperCase()}</span>`;
-}
-
-function renderProd(main) {
-  if (prodVue === 'sheet' && tsById(tsId)) return renderTsEditor(main);
-  if (prodVue === 'travel' || prodVue === 'sheet') { prodVue = 'travel'; return renderTsList(main); }
-  const outils = [
-    { label: 'Travel sheets', color: '#3c6e8f', count: tsList().length, open: "prodGo('travel')", add: 'tsNouvelle()' },
-  ];
-  main.innerHTML = `<div class="home"><div id="home-body">
-    <div class="home-head"><span>OUTILS DE PRODUCTION</span><span>${outils.length}</span></div>
-    <ol class="chapters">${outils.map((o, i) => `<li class="chapter" onclick="${o.open}">
-      <span class="ch-num">${String(i + 1).padStart(2, '0')}</span>
-      <span class="ch-dot" style="background:${o.color}"></span>
-      <span class="ch-name">${esc(o.label)}</span>
-      <span class="ch-count">${o.count}</span>
-      <button class="ch-add" title="Nouvelle" onclick="event.stopPropagation();${o.add}">+</button>
-    </li>`).join('')}</ol>
-  </div></div>`;
+  if (vue === 'sheet' && tsById(tsId)) pjGo('ts');
+  else pjRetourTs();
 }
 
 // ── Liste des travel sheets ──────────────────────────────────────────────────
@@ -95,35 +57,15 @@ function tsPremiereDate(s) {
   return (s.trajets || []).map(t => t.date).filter(Boolean).sort()[0] || (s.sejours || []).map(x => x.du).filter(Boolean).sort()[0] || '';
 }
 
-function renderTsList(main) {
-  const q = tsQ.trim().toLowerCase();
-  const list = tsList().filter(s => !q || [s.voyageur, s.client, s.projet, ...(s.trajets || []).flatMap(t => [t.numero, t.de, t.a])]
-    .some(v => String(v || '').toLowerCase().includes(q)))
-    .sort((a, b) => (tsPremiereDate(b) || '').localeCompare(tsPremiereDate(a) || '') || (b.maj || 0) - (a.maj || 0));
-  main.innerHTML = `<div class="toolbar">
-      <div class="search-wrap"><input placeholder="Voyageur, client, projet, vol..." value="${esc(tsQ)}"
-        oninput="tsQ=this.value;renderTsList(document.getElementById('main-content'));this.focus&&document.querySelector('.toolbar input').focus()"></div>
-      <div class="spacer"></div>
-      <button class="btn-add" onclick="tsNouvelle()">+ NOUVELLE TRAVEL SHEET</button>
-    </div>
-    ${list.length ? `<ol class="chapters results ts-liste">${list.map(s => {
-      const d = tsPremiereDate(s);
-      return `<li class="chapter" onclick="prodGo('sheet', ${s.id})">
-        <span class="ch-dot" style="background:#3c6e8f"></span>
-        <span class="ch-name">${esc(s.voyageur || 'Sans nom')}</span>
-        <span class="ch-where">${esc([[s.client, s.projet].filter(Boolean).join(' '), d ? tsDateCourte(d) : ''].filter(Boolean).join(' · '))}</span>
-      </li>`;
-    }).join('')}</ol>` : `<div class="empty">${tsList().length ? 'AUCUN RÉSULTAT' : 'AUCUNE TRAVEL SHEET POUR LE MOMENT'}</div>`}`;
-  const inp = main.querySelector('.toolbar input');
-  if (inp && q) { inp.focus(); inp.setSelectionRange(inp.value.length, inp.value.length); }
-}
-
-function tsNouvelle(modele) {
+// projetId : la nouvelle feuille est rattachée à ce projet (client et projet pré-remplis)
+function tsNouvelle(modele, projetId) {
+  const pj = projetId != null && typeof pjById === 'function' ? pjById(projetId) : null;
   const s = modele ? JSON.parse(JSON.stringify(modele)) : {
-    client: '', projet: '', voyageur: '', langue: 'en', references: '',
+    client: pj ? pj.client || '' : '', projet: pj ? pj.nom || '' : '', voyageur: '', langue: 'en', references: '',
     trajets: [], bagages: '', sejours: [],
     contacts: prodData().contacts.map(c => ({ ...c, ref: c.id })),
   };
+  if (pj) s.projetId = pj.id;
   s.id = uid();
   s.maj = Date.now();
   if (modele) s.voyageur = '';
@@ -211,6 +153,10 @@ function renderTsEditor(main) {
           ${tsField('PROJET', 'projet', s.projet, { ph: 'ex : FW26' })}
           ${tsField('RÉFÉRENCES DE RÉSERVATION', 'references', s.references, { ph: 'ex : JS2Q5 & YNTVGD' })}
           ${tsField('LANGUE DU DOCUMENT', 'langue', s.langue || 'en', { select: [['en', 'Anglais'], ['fr', 'Français']] })}
+          <div class="field"><label>PROJET (SUIVI PRODUCTION)</label><select onchange="tsLierProjet(this.value)">
+            <option value="">Aucun</option>
+            ${pjList().slice().sort((a, b) => pjTitre(a).localeCompare(pjTitre(b), 'fr')).map(p => `<option value="${p.id}"${s.projetId === p.id ? ' selected' : ''}>${esc((p.code ? p.code + ' · ' : '') + pjTitre(p))}</option>`).join('')}
+          </select></div>
           <div class="field full ts-logo" id="ts-logo-zone" ondragover="event.preventDefault()" ondrop="tsLogoDepose(event)">${tsLogoZoneHtml(s)}</div>
         </div>
       </section>
@@ -378,6 +324,15 @@ function tsGarderContact(i) {
   c.ref = id;
   tsChange();
   renderTsEditor(document.getElementById('main-content'));
+}
+
+// Rattache la feuille ouverte à un projet du suivi production (ou la détache)
+function tsLierProjet(v) {
+  const s = tsCur();
+  if (!s) return;
+  if (v) s.projetId = Number(v); else delete s.projetId;
+  buildTabs();
+  tsChange();
 }
 
 function tsSupprimer() {
@@ -951,4 +906,3 @@ async function tsPdf() {
 }
 
 renderEspaces();
-if (espace === 'prod') { buildTabs(); render(); }
