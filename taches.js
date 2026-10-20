@@ -20,6 +20,13 @@ let tdBandeauFerme = false;  // bandeau « pour toi » fermé pour cette visite
 
 // ── Qui est sur cet appareil ─────────────────────────────────────────────────
 function tdMoi() { try { return localStorage.getItem('moi') || ''; } catch { return ''; } }
+// Choisir un profil : s'il a un mot de passe, on le demande d'abord
+function tdChoisir(nom) {
+  nom = String(nom || '').trim();
+  if (!nom) return;
+  if (tdProfil(nom) && tdProfil(nom).hash && !tdEstMoi(nom)) { tdOuvrirMdp(nom); return; }
+  tdSetMoi(nom);
+}
 function tdSetMoi(nom) {
   try { if (nom) localStorage.setItem('moi', nom); else localStorage.removeItem('moi'); } catch {}
   tdFermerQui();
@@ -45,18 +52,164 @@ function tdOuvrirQui() {
     <div class="modal-hdr"><span class="modal-title">Qui es-tu ?</span><button class="modal-close" onclick="tdFermerQui()">✕</button></div>
     <div class="td-qui-corps">
       <p class="field-hint">Le site te montre les tâches qui te sont attribuées et te rappelle celles qui arrivent. C'est gardé sur cet appareil.</p>
-      <div class="td-qui-noms">${tdWiden().map(n => `<button type="button" class="btn-upload${tdEstMoi(n) ? ' on' : ''}" onclick="tdSetMoi(this.dataset.n)" data-n="${esc(n)}">${esc(n)}</button>`).join('')}</div>
+      <div class="td-qui-noms">${tdNomsProfils().map(n => `<button type="button" class="btn-upload${tdEstMoi(n) ? ' on' : ''}" onclick="tdChoisir(this.dataset.n)" data-n="${esc(n)}">${tdProfil(n) && tdProfil(n).hash ? '🔒 ' : ''}${esc(n)}</button>`).join('')}</div>
       <div class="td-qui-autre">
-        <input id="td-qui-nom" placeholder="Autre : ton prénom et nom" value="${esc(moi && !tdWiden().some(n => tdEstMoi(n)) ? moi : '')}" onkeydown="if(event.key==='Enter')tdSetMoi(this.value.trim())">
-        <button type="button" class="btn-save" onclick="tdSetMoi(document.getElementById('td-qui-nom').value.trim())">C'EST MOI</button>
+        <input id="td-qui-nom" placeholder="Autre : ton prénom et nom" value="${esc(moi && !tdNomsProfils().some(n => tdEstMoi(n)) ? moi : '')}" onkeydown="if(event.key==='Enter')tdChoisir(this.value)">
+        <button type="button" class="btn-save" onclick="tdChoisir(document.getElementById('td-qui-nom').value)">C'EST MOI</button>
       </div>
-      ${moi ? `<button type="button" class="export-lien" onclick="tdSetMoi('')">je ne suis pas ${esc(moi)}</button>` : ''}
+      ${moi ? `<button type="button" class="export-lien" onclick="tdSetMoi('')">se déconnecter (${esc(moi)})</button>` : ''}
     </div>
   </div>`;
   el.addEventListener('click', e => { if (e.target === el) tdFermerQui(); });
   document.body.appendChild(el);
 }
 function tdFermerQui() { document.querySelectorAll('.td-qui-bg').forEach(x => x.remove()); }
+
+// ── Profils et mots de passe ─────────────────────────────────────────────────
+// Un profil peut avoir un mot de passe, pour que personne ne prenne le nom d'un
+// autre par erreur. Il est gardé haché (SHA-256 avec un sel) dans la base
+// partagée : c'est un verrou entre collègues, pas une vraie sécurité (la base
+// elle-même n'est pas protégée par ce mot de passe).
+function tdProfils() { const p = prodData(); if (!p.profils || typeof p.profils !== 'object') p.profils = {}; return p.profils; }
+function tdProfil(nom) { return tdProfils()[pjNorm(nom)] || null; }
+// Les noms proposés : Widen, puis les autres profils qui ont un mot de passe
+function tdNomsProfils() {
+  const noms = tdWiden();
+  Object.values(tdProfils()).forEach(p => { if (p.nom && !noms.some(n => pjNorm(n) === pjNorm(p.nom))) noms.push(p.nom); });
+  return noms;
+}
+async function tdHacher(mdp, sel) {
+  if (!window.crypto || !crypto.subtle) throw new Error('Ce navigateur ne permet pas les mots de passe (page non sécurisée).');
+  const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(sel + ':' + mdp));
+  return [...new Uint8Array(buf)].map(b => b.toString(16).padStart(2, '0')).join('');
+}
+async function tdMdpOk(nom, mdp) {
+  const p = tdProfil(nom);
+  return !p || !p.hash || (await tdHacher(mdp, p.sel)) === p.hash;
+}
+
+function tdModale(titre, corps) {
+  tdFermerQui();
+  const el = document.createElement('div');
+  el.className = 'modal-bg td-qui-bg';
+  el.style.display = 'flex';
+  el.innerHTML = `<div class="modal td-qui">
+    <div class="modal-hdr"><span class="modal-title">${titre}</span><button class="modal-close" onclick="tdFermerQui()">✕</button></div>
+    <div class="td-qui-corps">${corps}</div>
+  </div>`;
+  el.addEventListener('click', e => { if (e.target === el) tdFermerQui(); });
+  document.body.appendChild(el);
+  const champ = el.querySelector('input');
+  if (champ) setTimeout(() => champ.focus(), 50);
+}
+
+// Se connecter à un profil protégé
+function tdOuvrirMdp(nom) {
+  tdModale(esc(nom), `
+    <p class="field-hint">Ce profil a un mot de passe.</p>
+    <div class="td-qui-autre">
+      <input type="password" id="td-mdp" placeholder="Mot de passe" autocomplete="current-password" onkeydown="if(event.key==='Enter')tdValiderMdp(this.dataset.n)" data-n="${esc(nom)}">
+      <button type="button" class="btn-save" onclick="tdValiderMdp(document.getElementById('td-mdp').dataset.n)">ENTRER</button>
+    </div>
+    <p class="field-hint td-mdp-msg" id="td-mdp-msg"></p>
+    <p class="field-hint">Mot de passe oublié : un collègue connecté peut le retirer depuis le menu sous son nom (PROFILS PROTÉGÉS).</p>
+    <button type="button" class="export-lien" onclick="tdOuvrirQui()">← autre profil</button>`);
+}
+async function tdValiderMdp(nom) {
+  const mdp = (document.getElementById('td-mdp') || {}).value || '';
+  if (await tdMdpOk(nom, mdp)) { tdSetMoi(nom); return; }
+  const m = document.getElementById('td-mdp-msg');
+  if (m) m.textContent = 'Mot de passe incorrect.';
+  const c = document.getElementById('td-mdp');
+  if (c) { c.value = ''; c.focus(); }
+}
+
+// Ajouter, changer ou retirer le mot de passe de mon profil
+function tdOuvrirGererMdp() {
+  const moi = tdMoi();
+  if (!moi) { tdOuvrirQui(); return; }
+  const a = !!(tdProfil(moi) && tdProfil(moi).hash);
+  tdModale(a ? 'Changer le mot de passe' : 'Ajouter un mot de passe', `
+    <p class="field-hint">${a ? 'Pour changer ou retirer le mot de passe de ' + esc(moi) + ', tape d\'abord l\'actuel.' : 'Personne ne pourra plus choisir le profil ' + esc(moi) + ' sans ce mot de passe, sur aucun appareil.'}</p>
+    <div class="td-mdp-champs">
+      ${a ? '<input type="password" id="td-mdp-ancien" placeholder="Mot de passe actuel" autocomplete="current-password">' : ''}
+      <input type="password" id="td-mdp-nouveau" placeholder="${a ? 'Nouveau mot de passe' : 'Mot de passe'}" autocomplete="new-password">
+      <input type="password" id="td-mdp-encore" placeholder="Encore une fois" autocomplete="new-password" onkeydown="if(event.key==='Enter')tdEnregistrerMdp(false)">
+    </div>
+    <p class="field-hint td-mdp-msg" id="td-mdp-msg"></p>
+    <div class="ts-add-row">
+      ${a ? '<button type="button" class="btn-cancel" onclick="tdEnregistrerMdp(true)">RETIRER LE MOT DE PASSE</button>' : ''}
+      <span class="spacer"></span>
+      <button type="button" class="btn-save" onclick="tdEnregistrerMdp(false)">ENREGISTRER</button>
+    </div>`);
+}
+async function tdEnregistrerMdp(retirer) {
+  const moi = tdMoi();
+  const v = id => (document.getElementById(id) || {}).value || '';
+  const dire = t => { const m = document.getElementById('td-mdp-msg'); if (m) m.textContent = t; };
+  if (!moi) return;
+  try { await tdHacher('', ''); } catch (e) { dire(e.message); return; }
+  if (!(await tdMdpOk(moi, v('td-mdp-ancien')))) { dire('Le mot de passe actuel est incorrect.'); return; }
+  const profils = tdProfils();
+  if (retirer) {
+    delete profils[pjNorm(moi)];
+  } else {
+    const n = v('td-mdp-nouveau');
+    if (n.length < 4) { dire('4 caractères au moins.'); return; }
+    if (n !== v('td-mdp-encore')) { dire('Les deux mots de passe ne sont pas pareils.'); return; }
+    const sel = [...crypto.getRandomValues(new Uint8Array(12))].map(b => b.toString(16).padStart(2, '0')).join('');
+    profils[pjNorm(moi)] = { nom: moi, sel, hash: await tdHacher(n, sel), le: pjAujourdhui() };
+  }
+  saveDb();
+  tdModale(retirer ? 'Mot de passe retiré' : 'Mot de passe enregistré', `<p>${retirer ? 'Le profil ' + esc(moi) + ' n\'a plus de mot de passe.' : 'Le profil ' + esc(moi) + ' est protégé. Sur un autre appareil, il faudra ce mot de passe pour le choisir.'}</p>
+    <div class="ts-add-row"><span class="spacer"></span><button type="button" class="btn-save" onclick="tdFermerQui()">OK</button></div>`);
+}
+
+// Menu sous mon nom : mes tâches, changer de profil, mot de passe, se déconnecter
+function tdMenu(ev) {
+  if (ev) ev.stopPropagation();
+  const moi = tdMoi();
+  if (!moi) { tdOuvrirQui(); return; }
+  const ouvert = document.querySelector('.td-menu');
+  if (ouvert) { ouvert.remove(); return; }
+  const b = document.getElementById('btn-moi');
+  const a = !!(tdProfil(moi) && tdProfil(moi).hash);
+  const n = tdUrgentes().length;
+  const m = document.createElement('div');
+  m.className = 'td-menu';
+  m.innerHTML = `<div class="td-menu-qui">${a ? '🔒 ' : ''}${esc(moi)}</div>
+    <button type="button" onclick="tdMenuFermer();tdMesTachesVoir()">MES TÂCHES${n ? ` <span class="td-badge">${n}</span>` : ''}</button>
+    <button type="button" onclick="tdMenuFermer();tdOuvrirQui()">CHANGER DE PROFIL</button>
+    <button type="button" onclick="tdMenuFermer();tdOuvrirGererMdp()">${a ? 'CHANGER LE MOT DE PASSE' : 'AJOUTER UN MOT DE PASSE'}</button>
+    ${Object.values(tdProfils()).some(p => p.hash && !tdEstMoi(p.nom)) ? '<button type="button" onclick="tdMenuFermer();tdOuvrirProteges()">PROFILS PROTÉGÉS</button>' : ''}
+    <button type="button" onclick="tdMenuFermer();tdSetMoi('')">SE DÉCONNECTER</button>`;
+  const r = b.getBoundingClientRect();
+  m.style.top = (r.bottom + window.scrollY + 6) + 'px';
+  document.body.appendChild(m);
+  // Aligné sur la droite du bouton, sans sortir de l'écran
+  const w = m.offsetWidth, W = document.documentElement.clientWidth;
+  m.style.left = Math.max(8, Math.min(r.right - w, W - w - 8)) + 'px';
+  setTimeout(() => document.addEventListener('click', tdMenuFermer, { once: true }), 0);
+}
+// Les profils protégés des autres : retirer un mot de passe oublié
+function tdOuvrirProteges() {
+  const l = Object.values(tdProfils()).filter(p => p.hash && !tdEstMoi(p.nom));
+  tdModale('Profils protégés', `<p class="field-hint">Si quelqu'un a oublié son mot de passe, retire-le ici : il pourra en remettre un depuis son menu.</p>
+    ${l.map(p => `<div class="td-protege"><span>🔒 ${esc(p.nom)}${p.le ? ` <small class="pj-muted">depuis le ${esc(pjDateCourte(p.le))}</small>` : ''}</span><button type="button" class="btn-edit-inline" data-n="${esc(p.nom)}" onclick="tdRetirerMdpDe(this.dataset.n)">RETIRER LE MOT DE PASSE</button></div>`).join('') || '<p>Aucun.</p>'}`);
+}
+function tdRetirerMdpDe(nom) {
+  if (!confirm('Retirer le mot de passe du profil « ' + nom + ' » ?')) return;
+  delete tdProfils()[pjNorm(nom)];
+  saveDb();
+  tdOuvrirProteges();
+}
+function tdMenuFermer() { document.querySelectorAll('.td-menu').forEach(x => x.remove()); }
+function tdMesTachesVoir() {
+  if (!enProjets()) setEspace('projets');
+  tdFiltre = 'moi';
+  pjSetMode('taches');
+  if (pjVue !== 'liste') pjGo('liste');
+}
 
 // À l'arrivée sur le site : on demande qui c'est (une fois par visite tant qu'on n'a pas répondu)
 function tdAccueil() {
@@ -261,7 +414,7 @@ function tdMajBadge() {
     b = document.createElement('button');
     b.id = 'btn-moi';
     b.className = 'btn-quick btn-moi';
-    b.onclick = () => { if (!tdMoi()) { tdOuvrirQui(); return; } if (!enProjets()) setEspace('projets'); tdFiltre = 'moi'; pjSetMode('taches'); if (pjVue !== 'liste') pjGo('liste'); };
+    b.onclick = tdMenu;
     hdr.insertBefore(b, hdr.firstChild);
   }
   const moi = tdMoi();

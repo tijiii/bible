@@ -865,3 +865,11 @@ body.doc-vue-ouvert > *:not(#doc-vue) { display:none !important; }
   .td-vdate { grid-column:3; grid-row:1; font-size:12.5px; }
   .td-bandeau { margin:12px 12px 0; }
 }
+.td-menu { position:absolute; z-index:60; background:#fff; border:1px solid var(--border2); box-shadow:0 6px 24px rgba(0,0,0,.12); min-width:220px; display:flex; flex-direction:column; }
+.td-menu-qui { padding:10px 14px 8px; font-size:14px; border-bottom:1px solid var(--border); }
+.td-menu button { background:none; border:none; text-align:left; padding:10px 14px; font-family:var(--serif); font-size:13px; letter-spacing:.03em; color:var(--text); cursor:pointer; }
+.td-menu button:hover { background:var(--bg3); }
+.td-mdp-champs { display:flex; flex-direction:column; gap:8px; margin:10px 0; }
+.td-mdp-champs input { background:#fff; border:1px solid var(--border); padding:8px 10px; font-family:var(--serif); font-size:15px; outline:none; }
+.td-mdp-msg { color:var(--red); min-height:1em; }
+.td-protege { display:flex; justify-content:space-between; align-items:center; gap:8px; padding:8px 0; border-bottom:1px solid var(--border); }
