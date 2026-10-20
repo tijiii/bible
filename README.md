@@ -117,7 +117,21 @@ Troisième onglet en haut du site, après **PRODUCTION INTERNE** (fichier `proje
 **Vue globale** : la liste des projets (client, dates, étape en cours ou suivante, équipe, statut). Le filtre montre par défaut les projets en cours (ni livrés ni annulés). **PLANNING** affiche tous les projets sur 4 mois, une barre par étape (‹ › pour avancer, AUJOURD'HUI pour revenir). **PERSONNES** liste chaque personne avec ses projets et ses dates.
 **Dans un projet** : nom, client, statut, couleur ; un calendrier du mois avec les étapes (prépa, repérage, casting, tournage, post-prod, livraison, autre), chacune avec ses dates ; l'équipe ; des notes.
 **Équipe** : en tapant un nom, le site propose les talents et techniciens de la bible et les contacts Widen ; on peut aussi écrire n'importe quel nom. Pour chaque personne : son rôle, et quand elle est prise (tout le projet, certaines étapes cochées, ou AUTRES DATES).
-**Conflits de dates** : si une même personne est sur deux projets aux mêmes dates, le site le signale en haut de la liste, sur la ligne des projets (⚠), en haut du projet et sous la personne. Les projets annulés ne comptent pas.
+**Conflits de dates** : si une même personne est sur deux projets aux mêmes dates, le site le signale en haut de la liste, sur la ligne des projets (⚠), en haut du projet et sous la personne. Les projets annulés ne comptent pas. Les options de l'onglet OPTIONS TEAM comptent aussi (sauf N/A, relâché, release, over budget, pas retenu…).
+
+### Lien avec PROJETS WIDEN
+Le script `integrations/projets-widen-google-sheet.gs` envoie les projets du Google Sheet **PROJETS WIDEN** dans l'onglet Production, toutes les 15 minutes :
+- chaque ligne qui a une fiche de suivi devient un projet (reconnu par son N°, ex. P05), créé s'il n'existe pas ;
+- client, projet, producer, dates, lieu, usages et livrables sont recopiés (lecture seule dans la bible), avec les boutons **FICHE DE SUIVI ↗** et **DOSSIER DROPBOX ↗** ;
+- le statut est repris quand il change dans le tableau (Devis → En discussion, Pré-production → En prépa, Post-production, Livré…) ;
+- l'onglet **OPTIONS TEAM** de la fiche de suivi est recopié dans le bloc OPTIONS TEAM du projet : rôle, nom, téléphone, email, option par date (barrée si N/A, relâché…) et notes. Une personne de la bible est reconnue par son email ou son nom (lien vers sa fiche). **+ ÉQUIPE** la met dans l'équipe du projet, sur les dates où elle est en option.
+Le calendrier, l'équipe et les notes écrits dans la bible ne sont jamais touchés par le script.
+
+Installation (une seule fois) :
+1. Ouvrir PROJETS WIDEN → Extensions → Apps Script.
+2. **+** à côté de « Fichiers » → Script, le nommer `Bible`, coller le contenu de `integrations/projets-widen-google-sheet.gs`, enregistrer. Le code déjà là (création des dossiers et des fiches) ne change pas.
+3. Paramètres du projet (roue dentée) → Propriétés du script → ajouter `BIBLE_KEY` avec la même valeur que pour le check-in (voir « Base partagée »).
+4. Dans l'éditeur, choisir la fonction `bibleInstaller` puis **Exécuter**, et accepter les autorisations Google. Les projets partent tout de suite, puis toutes les 15 minutes ; un menu **Bible → Envoyer les projets vers la bible** apparaît dans le tableau pour forcer un envoi.
 
 ## Ajout rapide (lien, capture, texte)
 

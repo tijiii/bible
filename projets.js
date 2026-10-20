@@ -45,6 +45,18 @@ function pjCur() { return pjById(pjId); }
 function pjStatut(k) { return PJ_STATUTS.find(s => s[0] === k) || PJ_STATUTS[0]; }
 function pjEtapeType(k) { return PJ_ETAPES.find(t => t[0] === k) || PJ_ETAPES[PJ_ETAPES.length - 1]; }
 function pjEtapeNom(e) { return e.nom || pjEtapeType(e.type)[1]; }
+// Nom affiché : « IKKS FW27 » (le client devant, s'il n'est pas déjà dans le nom)
+function pjTitre(p) {
+  const nom = (p.nom || '').trim();
+  if (!p.client || pjNorm(nom).includes(pjNorm(p.client))) return nom || p.client || 'Sans nom';
+  return (p.client.trim() + ' ' + nom).trim();
+}
+// Les projets venus de PROJETS WIDEN n'ont pas de couleur : une couleur fixe tirée de leur N°
+function pjCouleur(p) {
+  if (p.couleur) return p.couleur;
+  const n = parseInt(String(p.code || p.id).replace(/\D/g, ''), 10) || 0;
+  return PJ_COULEURS[n % PJ_COULEURS.length];
+}
 
 // ── Dates (texte 'AAAA-MM-JJ', qu'on compare comme du texte) ────────────────
 function pjAujourdhui() { const d = new Date(); return pjIso(d); }
@@ -106,6 +118,22 @@ function pjPeriodes(p, a) {
   return choix.map(e => ({ ...pjEtapeDates(e), label: pjEtapeNom(e) }));
 }
 
+// ── Options de la fiche de suivi (onglet OPTIONS TEAM, envoyé par PROJETS WIDEN)
+// Une option compte comme « pris » sauf si elle est relâchée, refusée, N/A…
+function pjOptionLibre(statut) { return /n\/?a\b|relach|release|over budget|pas retenu|pas dispo|annul|trop/i.test(pjNorm(statut)); }
+function pjOptionDates(o) { return (o.dispos || []).filter(d => d.date && !pjOptionLibre(d.statut)); }
+function pjTalentPour(nom, mail) {
+  const m = pjNorm(mail);
+  const n = pjNorm(String(nom || '').replace(/\(.*?\)/g, ''));
+  return (db.talents || []).find(t => m && pjNorm(t.mail) === m)
+    || (n ? (db.talents || []).find(t => pjNorm(pjNomTalent(t)) === n || pjNorm([t.nom, t.prenom].join(' ')) === n) : null);
+}
+// L'option vue comme une personne : le talent de la bible s'il existe, sinon le nom
+function pjOptionPersonne(o) {
+  const t = pjTalentPour(o.nom, o.mail);
+  return t ? { ref: t.id, nom: '', role: o.role, opt: o } : { ref: null, nom: o.nom, role: o.role, opt: o };
+}
+
 // ── Conflits : une même personne sur deux projets aux mêmes dates ────────────
 function pjConflits() {
   const prises = {};
@@ -115,6 +143,14 @@ function pjConflits() {
       if (!pjNomPersonne(a)) return;
       const cle = pjCle(a);
       pjPeriodes(p, a).forEach(per => (prises[cle] = prises[cle] || []).push({ p, a, per }));
+    });
+    // Options de la fiche de suivi (OPTIONS TEAM), sauf pour qui est déjà dans l'équipe du projet
+    const dansEquipe = new Set((p.equipe || []).filter(a => pjNomPersonne(a)).map(pjCle));
+    (p.options || []).forEach(o => {
+      const a = pjOptionPersonne(o);
+      const cle = pjCle(a);
+      if (!o.nom || dansEquipe.has(cle)) return;
+      pjOptionDates(o).forEach(d => (prises[cle] = prises[cle] || []).push({ p, a, per: { du: d.date, au: d.date, label: d.statut } }));
     });
   });
   const out = [];
@@ -150,7 +186,7 @@ function buildPjTabs(nav) {
   nav.style.display = '';
   nav.innerHTML = `<button class="crumb-back" onclick="pjGo('liste')">← PROJETS</button>
     <span class="crumb-sep">/</span>
-    <span class="crumb-title"><span class="ch-dot" style="background:${esc(p.couleur || '#3c6e8f')}"></span>${esc((p.nom || 'Nouveau projet').toUpperCase())}</span>`;
+    <span class="crumb-title"><span class="ch-dot" style="background:${esc(pjCouleur(p))}"></span>${esc((pjTitre(p) || 'Nouveau projet').toUpperCase())}</span>`;
 }
 
 function renderProjets(main) {
@@ -168,7 +204,7 @@ function pjFiltres() {
     if (pjFStatut === '' && (p.statut === 'livre' || p.statut === 'annule')) return false;
     if (pjFStatut && pjFStatut !== 'tous' && p.statut !== pjFStatut) return false;
     if (!q) return true;
-    return [p.nom, p.client, ...(p.equipe || []).map(pjNomPersonne)].some(v => pjNorm(v).includes(q));
+    return [p.code, p.nom, p.client, ...(p.equipe || []).map(pjNomPersonne), ...(p.options || []).map(o => o.nom)].some(v => pjNorm(v).includes(q));
   }).sort((a, b) => {
     const sa = pjSpan(a), sb = pjSpan(b);
     if (sa && sb) return sa.du.localeCompare(sb.du);
@@ -183,7 +219,7 @@ function pjAlertesHtml(conflits, p) {
     <div class="pj-alertes-titre">⚠ ${conflits.length === 1 ? 'UN CONFLIT DE DATES' : conflits.length + ' CONFLITS DE DATES'}</div>
     ${conflits.map(c => {
       const a = p ? pjMien(c, p) : c.x, b = p ? pjAutre(c, p) : c.y;
-      const lien = q => `<a href="#" onclick="event.preventDefault();pjGo('projet', ${q.p.id})">${esc(q.p.nom || 'Sans nom')}</a> <small>(${esc(q.per.label)})</small>`;
+      const lien = q => `<a href="#" onclick="event.preventDefault();pjGo('projet', ${q.p.id})">${esc(pjTitre(q.p))}</a> <small>(${esc(q.per.label)})</small>`;
       return `<div class="pj-alerte"><b>${esc(c.nom)}</b> est sur ${p ? '' : lien(a) + ' et '}${lien(b)}${p ? ` pendant ${esc(a.per.label)}` : ''} : ${esc(pjPeriodeTexte(c.du, c.au))}</div>`;
     }).join('')}
   </div>`;
@@ -236,7 +272,7 @@ function pjCorpsListe(list) {
       const nb = conflits.filter(c => c.x.p.id === p.id || c.y.p.id === p.id).length;
       const n = (p.equipe || []).filter(a => pjNomPersonne(a)).length;
       return `<div class="pj-tr" onclick="pjGo('projet', ${p.id})">
-        <span class="pj-nom"><span class="ch-dot" style="background:${esc(p.couleur || '#3c6e8f')}"></span>${esc(p.nom || 'Sans nom')}${nb ? ` <span class="pj-warn" title="Conflits de dates">⚠ ${nb}</span>` : ''}</span>
+        <span class="pj-nom"><span class="ch-dot" style="background:${esc(pjCouleur(p))}"></span>${p.code ? `<span class="pj-code">${esc(p.code)}</span>` : ''}${esc(p.nom || 'Sans nom')}${nb ? ` <span class="pj-warn" title="Conflits de dates">⚠ ${nb}</span>` : ''}</span>
         <span class="pj-muted">${esc(p.client || '')}</span>
         <span>${sp ? esc(pjPeriodeTexte(sp.du, sp.au)) : '<span class="pj-muted">pas de dates</span>'}</span>
         <span>${enCours ? `<span class="pj-chip" style="--c:${pjEtapeType(enCours.type)[2]}">${esc(pjEtapeNom(enCours))}</span> <small class="pj-muted">${esc(pjDateCourte(enCours.du))}</small>` : ''}</span>
@@ -277,7 +313,7 @@ function pjPlanningHtml(list) {
           return `<div class="pj-plan-barre" style="left:${pos(a)}%;width:${Math.max((pjJours(a, b) + 1) / total * 100, .6)}%;--c:${pjEtapeType(e.type)[2]}" title="${esc(pjEtapeNom(e) + ' · ' + pjPeriodeTexte(d.du, d.au))}"><span>${esc(pjEtapeNom(e))}</span></div>`;
         }).join('');
         return `<div class="pj-plan-row" onclick="pjGo('projet', ${p.id})">
-          <div class="pj-plan-nom"><span class="ch-dot" style="background:${esc(p.couleur || '#3c6e8f')}"></span>${esc(p.nom || 'Sans nom')}</div>
+          <div class="pj-plan-nom"><span class="ch-dot" style="background:${esc(pjCouleur(p))}"></span>${esc(pjTitre(p))}</div>
           <div class="pj-plan-piste">${grille}${ligneAuj}${barres}</div>
         </div>`;
       }).join('')}
@@ -304,8 +340,8 @@ function pjPersonnesHtml(list) {
     return `<div class="pj-gens-bloc">
       <div class="pj-gens-nom">${g.ref != null ? `<a href="#" onclick="event.preventDefault();openDetail('talent', ${g.ref})">${esc(g.nom)}</a>` : esc(g.nom)}${nbc ? ` <span class="pj-warn">⚠ ${nbc === 1 ? 'conflit' : nbc + ' conflits'}</span>` : ''}</div>
       ${g.lignes.sort((a, b) => (a.du || '9').localeCompare(b.du || '9')).map(x => `<div class="pj-gens-ligne" onclick="pjGo('projet', ${x.p.id})">
-        <span class="ch-dot" style="background:${esc(x.p.couleur || '#3c6e8f')}"></span>
-        <span class="pj-gens-projet">${esc(x.p.nom || 'Sans nom')}${x.a.role ? ` <small class="pj-muted">${esc(x.a.role)}</small>` : ''}</span>
+        <span class="ch-dot" style="background:${esc(pjCouleur(x.p))}"></span>
+        <span class="pj-gens-projet">${esc(pjTitre(x.p))}${x.a.role ? ` <small class="pj-muted">${esc(x.a.role)}</small>` : ''}</span>
         <span class="pj-muted">${x.per.length ? x.per.map(per => esc(per.label + ' ' + pjPeriodeTexte(per.du, per.au))).join(' · ') : 'pas de dates'}</span>
       </div>`).join('')}
     </div>`;
@@ -419,8 +455,9 @@ function pjPageHtml(p, conflits, choix) {
         ${pjField('NOM DU PROJET', 'nom', p.nom, { ph: 'ex : IKKS FW26', change: true })}
         ${pjField('CLIENT', 'client', p.client, { ph: 'ex : IKKS' })}
         ${pjField('STATUT', 'statut', p.statut, { select: PJ_STATUTS.map(s => [s[0], s[1]]) })}
-        <div class="field pj-couleur"><label>COULEUR</label><input type="color" value="${esc(p.couleur || '#3c6e8f')}" data-k="couleur" onchange="pjInput(this, true)"></div>
+        <div class="field pj-couleur"><label>COULEUR</label><input type="color" value="${esc(pjCouleur(p))}" data-k="couleur" onchange="pjInput(this, true)"></div>
       </div>
+      ${pjInfosTableauHtml(p)}
     </section>
 
     <section class="ts-bloc">
@@ -436,6 +473,8 @@ function pjPageHtml(p, conflits, choix) {
       <div class="pj-equipe">${(p.equipe || []).map(a => pjAffectationHtml(p, a)).join('') || '<p class="field-hint">Personne pour le moment. Les talents et techniciens de la bible sont proposés quand tu tapes un nom ; tu peux aussi écrire n\'importe quel nom.</p>'}</div>
       <div class="ts-add-row"><button type="button" class="btn-upload" onclick="pjAjouterPersonne()">+ PERSONNE</button></div>
     </section>
+
+    ${pjOptionsHtml(p)}
 
     <section class="ts-bloc">
       <h3>NOTES</h3>
@@ -485,6 +524,60 @@ function pjCalendrierHtml(p) {
     </div>`;
 }
 
+// Ce qui vient du tableau PROJETS WIDEN (lecture seule) et les liens
+function pjInfosTableauHtml(p) {
+  const lignes = [['N°', p.code], ['PRODUCER', p.producer], ['DATES', p.datesTexte], ['LIEU', p.lieu], ['USAGES', p.usages], ['LIVRABLES', p.livrables]]
+    .filter(l => l[1]);
+  const liens = [[p.lienFiche, 'FICHE DE SUIVI'], [p.lienDropbox, 'DOSSIER DROPBOX']].filter(l => /^https?:\/\//.test(l[0] || ''));
+  if (!lignes.length && !liens.length) return '';
+  return `<div class="pj-tableau">
+    ${liens.length ? `<div class="pj-liens">${liens.map(l => `<a class="btn-upload" href="${esc(l[0])}" target="_blank" rel="noopener">${l[1]} ↗</a>`).join('')}</div>` : ''}
+    ${lignes.length ? `<dl>${lignes.map(l => `<dt>${l[0]}</dt><dd>${esc(l[1])}</dd>`).join('')}</dl>` : ''}
+    ${p.code ? '<p class="field-hint">Ces infos viennent du tableau PROJETS WIDEN et se mettent à jour toutes seules.</p>' : ''}
+  </div>`;
+}
+
+// Onglet OPTIONS TEAM de la fiche de suivi : qui est en option, et quand
+function pjOptionsHtml(p) {
+  const options = p.options || [];
+  if (!options.length) return p.code ? `<section class="ts-bloc"><h3>OPTIONS TEAM</h3><p class="field-hint">Personne dans l'onglet OPTIONS TEAM de la fiche de suivi pour le moment.</p></section>` : '';
+  const conflits = pjConflits();
+  const equipe = new Set((p.equipe || []).filter(a => pjNomPersonne(a)).map(pjCle));
+  return `<section class="ts-bloc">
+    <h3>OPTIONS TEAM <small class="pj-muted">· fiche de suivi</small></h3>
+    <div class="pj-options">${options.map((o, i) => {
+      const a = pjOptionPersonne(o);
+      const t = pjTalent(a.ref);
+      const cle = pjCle(a);
+      const dejaLa = equipe.has(cle);
+      const sesConflits = conflits.filter(c => [c.x, c.y].some(q => q.p.id === p.id && q.a.opt === o));
+      return `<div class="pj-option${sesConflits.length ? ' conflit' : ''}">
+        <div class="pj-option-tete">
+          <span class="pj-option-role">${esc(o.role || '')}</span>
+          <span class="pj-option-nom">${t ? `<a href="#" onclick="event.preventDefault();openDetail('talent', ${t.id})">${esc(o.nom)}</a>` : esc(o.nom)}</span>
+          <span class="pj-muted pj-option-contact">${[o.tel, o.mail].filter(Boolean).map(x => esc(x)).join(' · ')}</span>
+          ${dejaLa ? '<span class="pj-muted pj-option-ok">dans l\'équipe</span>' : `<button type="button" class="btn-edit-inline" onclick="pjOptionVersEquipe(${i})">+ ÉQUIPE</button>`}
+        </div>
+        ${(o.dispos || []).length ? `<div class="pj-option-dispos">${o.dispos.map(d => `<span class="pj-dispo${pjOptionLibre(d.statut) ? ' libre' : ''}">${esc(d.date ? pjDateCourte(d.date) : d.label || '')} : ${esc(d.statut)}</span>`).join('')}</div>` : ''}
+        ${o.notes ? `<div class="pj-muted pj-option-notes">${esc(o.notes)}</div>` : ''}
+        ${sesConflits.map(c => { const b = c.x.p.id === p.id && c.x.a.opt === o ? c.y : c.x; return `<div class="pj-aff-conflit">⚠ Aussi sur <a href="#" onclick="event.preventDefault();pjGo('projet', ${b.p.id})">${esc(pjTitre(b.p))}</a> (${esc(b.per.label)}) : ${esc(pjPeriodeTexte(c.du, c.au))}</div>`; }).join('')}
+      </div>`;
+    }).join('')}</div>
+  </section>`;
+}
+
+// « + ÉQUIPE » sur une option : la personne passe dans l'équipe, sur les dates où elle est prise
+function pjOptionVersEquipe(i) {
+  const p = pjCur();
+  const o = p && (p.options || [])[i];
+  if (!o) return;
+  const a = pjOptionPersonne(o);
+  const dates = pjOptionDates(o).map(d => d.date).sort();
+  if (!Array.isArray(p.equipe)) p.equipe = [];
+  p.equipe.push({ id: uid(), ref: a.ref, nom: a.nom, role: o.role || '', etapes: [], du: dates[0] || '', au: dates[dates.length - 1] || '' });
+  pjChange(true);
+}
+
 function pjEtapeHtml(e) {
   const o = { l: 'etapes', i: e.id };
   return `<div class="pj-etape" style="--c:${pjEtapeType(e.type)[2]}">
@@ -517,7 +610,7 @@ function pjAffectationHtml(p, a) {
         <button type="button" class="btn-edit-inline" onclick="pjDatesLibres(${a.id}, false)">SUIVRE LES ÉTAPES</button>`
         : `<button type="button" class="btn-edit-inline" onclick="pjDatesLibres(${a.id}, true)">AUTRES DATES</button>`}
     </div>
-    ${conflits.map(c => { const b = pjAutre(c, p); return `<div class="pj-aff-conflit">⚠ Déjà sur <a href="#" onclick="event.preventDefault();pjGo('projet', ${b.p.id})">${esc(b.p.nom || 'Sans nom')}</a> (${esc(b.per.label)}) : ${esc(pjPeriodeTexte(c.du, c.au))}</div>`; }).join('')}
+    ${conflits.map(c => { const b = pjAutre(c, p); return `<div class="pj-aff-conflit">⚠ Déjà sur <a href="#" onclick="event.preventDefault();pjGo('projet', ${b.p.id})">${esc(pjTitre(b.p))}</a> (${esc(b.per.label)}) : ${esc(pjPeriodeTexte(c.du, c.au))}</div>`; }).join('')}
   </div>`;
 }
 
@@ -588,7 +681,7 @@ function pjRetirer(liste, id) {
 
 function pjSupprimer() {
   const p = pjCur();
-  if (!p || !confirm('Supprimer le projet « ' + (p.nom || 'Sans nom') + ' » ?')) return;
+  if (!p || !confirm('Supprimer le projet « ' + pjTitre(p) + ' » ?' + (p.code ? '\n\nIl vient de PROJETS WIDEN : il reviendra au prochain envoi tant que sa ligne y est.' : ''))) return;
   db.projets = pjList().filter(x => x.id !== p.id);
   clearTimeout(pjSaveTimer); pjSaveTimer = null;
   saveDb();
