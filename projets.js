@@ -12,6 +12,7 @@ let pjFStatut = '';          // filtre statut ('' = tous sauf livrés et annulé
 let pjMode = (() => { try { return localStorage.getItem('pjMode') || 'liste'; } catch { return 'liste'; } })(); // 'liste' | 'planning' | 'personnes'
 let pjPlanDebut = '';        // premier mois du planning ('AAAA-MM')
 let pjMois = '';             // mois affiché dans le calendrier du projet ('AAAA-MM')
+let pjOptionsOuvert = false; // bloc OPTIONS TEAM déplié (fermé par défaut, il est long)
 let pjEnDessin = false;      // la page est en train d'être remplacée (le champ quitté envoie « change »)
 
 const PJ_STATUTS = [
@@ -543,8 +544,9 @@ function pjOptionsHtml(p) {
   if (!options.length) return p.code ? `<section class="ts-bloc"><h3>OPTIONS TEAM</h3><p class="field-hint">Personne dans l'onglet OPTIONS TEAM de la fiche de suivi pour le moment.</p></section>` : '';
   const conflits = pjConflits();
   const equipe = new Set((p.equipe || []).filter(a => pjNomPersonne(a)).map(pjCle));
-  return `<section class="ts-bloc">
-    <h3>OPTIONS TEAM <small class="pj-muted">· fiche de suivi</small></h3>
+  const nbConflits = conflits.filter(c => [c.x, c.y].some(q => q.p.id === p.id && q.a.opt)).length;
+  return `<details class="ts-bloc pj-options-bloc"${pjOptionsOuvert ? ' open' : ''} ontoggle="pjOptionsOuvert=this.open">
+    <summary><h3>OPTIONS TEAM <small class="pj-muted">· fiche de suivi · ${options.length} ${options.length > 1 ? 'personnes' : 'personne'}</small>${nbConflits ? ` <span class="pj-warn">⚠ ${nbConflits}</span>` : ''}</h3></summary>
     <div class="pj-options">${options.map((o, i) => {
       const a = pjOptionPersonne(o);
       const t = pjTalent(a.ref);
@@ -563,7 +565,7 @@ function pjOptionsHtml(p) {
         ${sesConflits.map(c => { const b = c.x.p.id === p.id && c.x.a.opt === o ? c.y : c.x; return `<div class="pj-aff-conflit">⚠ Aussi sur <a href="#" onclick="event.preventDefault();pjGo('projet', ${b.p.id})">${esc(pjTitre(b.p))}</a> (${esc(b.per.label)}) : ${esc(pjPeriodeTexte(c.du, c.au))}</div>`; }).join('')}
       </div>`;
     }).join('')}</div>
-  </section>`;
+  </details>`;
 }
 
 // « + ÉQUIPE » sur une option : la personne passe dans l'équipe, sur les dates où elle est prise
