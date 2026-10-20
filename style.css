@@ -419,6 +419,8 @@ a.lieu-projet:hover .lieu-projet-go, a.lieu-projet:hover .lieu-projet-annee { co
 .projet-row { display:grid; grid-template-columns:2fr 80px 3fr auto; gap:6px; margin-bottom:6px; }
 .projet-del { background:none; border:1px solid var(--border); color:var(--muted); cursor:pointer; padding:0 10px; }
 .projet-add { margin-top:2px; }
+.projet-add-row { display:flex; gap:8px; flex-wrap:wrap; align-items:center; }
+.projet-connu { font-family:var(--serif); font-size:13px; padding:6px 8px; border:1px solid var(--border); background:#fff; color:var(--text); max-width:100%; }
 @media (max-width:600px) {
   .projet-row { grid-template-columns:1fr 80px auto; }
   .projet-row .proj-lien { grid-column:1 / 3; grid-row:2; }
@@ -808,3 +810,4 @@ body.doc-vue-ouvert > *:not(#doc-vue) { display:none !important; }
 .pj-aff-modif { font-size:12px; text-decoration:underline; }
 .pj-aff-quand-bloc[open] .pj-aff-modif { display:none; }
 .pj-aff-quand-bloc .pj-aff-quand { margin-top:8px; }
+.projet-add-row .projet-connu { width:auto; flex:0 1 auto; }

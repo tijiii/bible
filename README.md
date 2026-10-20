@@ -92,7 +92,7 @@ Dans le formulaire d'un lieu, cocher les sports ou disciplines déjà shootés l
 
 ### Projets tournés sur un lieu
 
-Dans le formulaire d'un lieu, **+ AJOUTER UN PROJET** : nom, année et lien Dropbox de la vidéo finale (ou du dossier). La fiche n'affiche le bloc « Projets tournés ici » que s'il y a au moins un projet.
+Dans le formulaire d'un lieu, **+ AJOUTER UN PROJET** : nom, année et lien Dropbox de la vidéo finale (ou du dossier). Pour ne pas recopier un projet tourné sur plusieurs lieux : le menu **+ UN PROJET DÉJÀ SAISI…** reprend un projet d'un autre lieu (ou du suivi production) avec son année et son lien ; en tapant le nom, les projets connus sont proposés, et l'année et le lien se remplissent. La fiche n'affiche le bloc « Projets tournés ici » que s'il y a au moins un projet.
 
 ### Catégories
 

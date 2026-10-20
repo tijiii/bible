@@ -1006,6 +1006,11 @@ function pjRetroAjouter() {
   // Une étape déjà là (même nom, même partie, mêmes dates) n'est pas ajoutée deux fois
   const cleEt = (nom, piste, du, au) => pjNorm(nom) + '|' + (piste || '') + '|' + du + '|' + (au || du);
   const deja = new Map(p.etapes.map(e => [cleEt(pjEtapeNom(e), pjPisteDe(e), e.du, e.au), e.id]));
+  // Imports d'avant les parties : « Montage (vidéo) » vaut « Montage » côté vidéo
+  p.etapes.forEach(e => {
+    const m = pjEtapeNom(e).match(/^(.*?)\s*\((vid[ée]o|photo)\)$/i);
+    if (m) deja.set(cleEt(m[1], pjDevinerPiste(m[2]), e.du, e.au), e.id);
+  });
   const ids = {};   // indice dans l'aperçu → id de l'étape du projet
   const ajout = [];
   r.etapes.forEach((e, i) => {
