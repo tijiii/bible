@@ -106,6 +106,7 @@ let fSexe      = '';
 let fPays      = '';
 let fLieuCat   = '';
 let fLieuSport = '';
+let fLieuTri = (() => { try { return localStorage.getItem('lieuxTri') || 'couleur'; } catch { return 'couleur'; } })(); // 'couleur' | 'ajout' | 'nom'
 let fAgence    = '';
 let fTri       = '';    // '' (ordre habituel), 'age-asc' ou 'age-desc'
 let fSubCat    = '';    // sous-catégorie dans un groupe (ex: DOP chez les techniciens)
@@ -926,6 +927,9 @@ function renderLieux(main) {
       ${paysUtil.length ? `<optgroup label="Avec des lieux">${paysUtil.map(p=>`<option value="${esc(p)}"${fPays===p?' selected':''}>${FLAGS[p]||''} ${esc(p)} (${paysCount[p]})</option>`).join('')}</optgroup>` : ''}
       <optgroup label="Tous les pays">${paysAutres.map(p=>`<option value="${esc(p)}"${fPays===p?' selected':''}>${FLAGS[p]||''} ${esc(p)}</option>`).join('')}</optgroup>
     </select>
+    <select class="filter-sel" title="Ordre des lieux sous la carte" onchange="setLieuxTri(this.value)">
+      ${[['couleur', 'PAR COULEUR'], ['ajout', 'PAR AJOUT'], ['nom', 'PAR NOM']].map(([v, l]) => `<option value="${v}"${fLieuTri === v ? ' selected' : ''}>${l}</option>`).join('')}
+    </select>
     <button class="btn-ig lieux-export-btn" onclick="openLieuxExport()">EXPORTER EN PDF</button>
     <div class="spacer"></div>
     <div class="lieu-maps-add">
@@ -945,7 +949,7 @@ function renderLieux(main) {
 function renderLieuxList() {
   const box = document.getElementById('lieux-list');
   if (!box) return;
-  const list = lieuxFiltered(true);
+  const list = lieuxTries(lieuxFiltered(true));
   let html = '';
   if (!list.length) {
     html += `<div class="empty">${lieuxList().length ? (searchQ ? 'AUCUN DE TES LIEUX NE CORRESPOND' : 'AUCUN LIEU TROUVÉ') : 'AUCUN LIEU POUR LE MOMENT'}</div>`;
@@ -954,7 +958,8 @@ function renderLieuxList() {
     list.forEach(l => {
       const photos = lieuPhotoUrls(l);
       const cover = lieuCoverPhoto(l, photos)?.url;
-      html += `<div class="card" onclick="openDetail('lieu',${l.id})">`;
+      const teinte = cover && lieuTeintes[cover];
+      html += `<div class="card" onclick="openDetail('lieu',${l.id})"${teinte && teinte.hex ? ` style="--teinte:${teinte.hex}"` : ''}>`;
       if (cover) {
         html += `<img class="card-img lieu" src="${esc(cover)}" alt="${esc(l.nom)}"
           onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">
@@ -979,6 +984,111 @@ function renderLieuxList() {
     html += `</div>`;
   }
   box.innerHTML = html;
+}
+
+// ── Lieux rangés par couleur : la couleur dominante de chaque photo de couverture
+// (verdure, mer, roche, neige…) est calculée une fois et gardée sur l'appareil,
+// puis la grille suit l'arc-en-ciel, les photos sans couleur (gris, noir et blanc) à la fin.
+let lieuTeintes = (() => { try { return JSON.parse(localStorage.getItem('lieuxTeintes') || '{}') || {}; } catch { return {}; } })();
+const lieuTeintesEnCours = new Set();
+let lieuTeintesTimer = null;
+
+function setLieuxTri(v) {
+  fLieuTri = v;
+  try { localStorage.setItem('lieuxTri', v); } catch {}
+  renderLieuxList();
+}
+
+// Ordre des teintes : rouges, oranges, jaunes, verts, bleus, violets ; puis les neutres
+function lieuTeinteRang(t) {
+  if (!t || t.illisible) return [3, 0, 0];
+  if (t.gris) return [2, 0, -t.l];
+  return [1, (t.h + 15) % 360, -t.l];    // l'arc-en-ciel commence aux rouges (−15°)
+}
+
+function lieuxTries(list) {
+  if (fLieuTri === 'nom') return list.slice().sort((a, b) => String(a.nom || '').localeCompare(String(b.nom || ''), 'fr'));
+  if (fLieuTri !== 'couleur') return list;
+  const rang = new Map(list.map(l => {
+    const cover = lieuCoverPhoto(l)?.url;
+    if (cover && !lieuTeintes[cover]) lieuCalculerTeinte(cover);
+    return [l, lieuTeinteRang(cover && lieuTeintes[cover])];
+  }));
+  return list.slice().sort((a, b) => {
+    const x = rang.get(a), y = rang.get(b);
+    // Les teintes voisines (même famille de 30°) restent ensemble, de la plus claire à la plus foncée
+    if (x[0] !== y[0]) return x[0] - y[0];
+    if (x[0] === 1 && Math.floor(x[1] / 30) !== Math.floor(y[1] / 30)) return x[1] - y[1];
+    return x[2] - y[2];
+  });
+}
+
+function lieuCalculerTeinte(url) {
+  if (lieuTeintesEnCours.has(url)) return;
+  lieuTeintesEnCours.add(url);
+  const img = new Image();
+  img.crossOrigin = 'anonymous';
+  img.onload = () => {
+    let t;
+    try { t = lieuTeinteImage(img); } catch { t = { gris: true, l: .5, hex: '', illisible: true }; }
+    lieuTeinteNotee(url, t);
+  };
+  img.onerror = () => lieuTeinteNotee(url, { gris: true, l: .5, hex: '', illisible: true });
+  img.src = url;
+}
+
+function lieuTeinteNotee(url, t) {
+  lieuTeintes[url] = t;
+  // Une photo illisible (lien sans autorisation, réseau) sera réessayée à la prochaine visite
+  const garder = Object.fromEntries(Object.entries(lieuTeintes).filter(([, x]) => !x.illisible));
+  try { localStorage.setItem('lieuxTeintes', JSON.stringify(garder)); } catch {}
+  // Une seule remise en ordre quand les couleurs arrivent
+  clearTimeout(lieuTeintesTimer);
+  lieuTeintesTimer = setTimeout(() => { if (curCatId === 'lieux' && !enProjets() && fLieuTri === 'couleur') renderLieuxList(); }, 400);
+}
+
+// La teinte dominante : histogramme des teintes des pixels assez colorés,
+// pondéré par la saturation ; une photo surtout grise est « neutre »
+function lieuTeinteImage(img) {
+  const N = 40;
+  const c = document.createElement('canvas');
+  c.width = N; c.height = N;
+  const ctx = c.getContext('2d', { willReadFrequently: true });
+  ctx.drawImage(img, 0, 0, N, N);
+  const d = ctx.getImageData(0, 0, N, N).data;
+  const bins = new Array(24).fill(0), sommes = Array.from({ length: 24 }, () => [0, 0, 0, 0]);
+  let poidsCouleur = 0, lumTotale = 0;
+  for (let i = 0; i < d.length; i += 4) {
+    const r = d[i] / 255, g = d[i + 1] / 255, b = d[i + 2] / 255;
+    const max = Math.max(r, g, b), min = Math.min(r, g, b), l = (max + min) / 2;
+    lumTotale += l;
+    const delta = max - min;
+    if (delta < .06 || l < .08 || l > .94) continue;
+    const sat = delta / (1 - Math.abs(2 * l - 1));
+    let h = max === r ? ((g - b) / delta) % 6 : max === g ? (b - r) / delta + 2 : (r - g) / delta + 4;
+    h = (h * 60 + 360) % 360;
+    // Le haut de l'image (souvent le ciel) compte moitié moins
+    const k = Math.floor(h / 15), w = sat * (1 - Math.abs(2 * l - 1)) * ((i / 4) < N * N / 3 ? .5 : 1);
+    bins[k] += w; poidsCouleur += w;
+    sommes[k][0] += d[i] * w; sommes[k][1] += d[i + 1] * w; sommes[k][2] += d[i + 2] * w; sommes[k][3] += l * w;
+  }
+  const lMoy = lumTotale / (N * N);
+  if (poidsCouleur / (N * N) < .06) {
+    const v = Math.round(lMoy * 255).toString(16).padStart(2, '0');
+    return { gris: true, l: +lMoy.toFixed(3), hex: '#' + v + v + v };
+  }
+  // La famille dominante : le meilleur groupe de 3 cases voisines (45°)
+  let best = 0, bestW = -1;
+  for (let k = 0; k < 24; k++) { const w = bins[(k + 23) % 24] + bins[k] + bins[(k + 1) % 24]; if (w > bestW) { bestW = w; best = k; } }
+  const ks = [(best + 23) % 24, best, (best + 1) % 24];
+  const W = ks.reduce((a, k) => a + bins[k], 0) || 1;
+  const rgb = [0, 1, 2].map(j => Math.round(ks.reduce((a, k) => a + sommes[k][j], 0) / W));
+  const l = ks.reduce((a, k) => a + sommes[k][3], 0) / W;
+  const [r, g, b] = rgb.map(x => x / 255);
+  const max = Math.max(r, g, b), min = Math.min(r, g, b), delta = max - min || 1e-6;
+  let h = max === r ? ((g - b) / delta) % 6 : max === g ? (b - r) / delta + 2 : (r - g) / delta + 4;
+  h = Math.round((h * 60 + 360) % 360);
+  return { h, l: +l.toFixed(3), hex: '#' + rgb.map(x => x.toString(16).padStart(2, '0')).join('') };
 }
 
 // ── Recherche dans le monde entier (OpenStreetMap / Nominatim, gratuit, sans clé)
