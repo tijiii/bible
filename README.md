@@ -96,6 +96,9 @@ Dans le formulaire d'un lieu, **+ AJOUTER UN PROJET** : nom, année et lien Drop
 
 Dans la liste des lieux, le filtre CATÉGORIE propose aussi **★ Déjà tourné ici** et **☆ Jamais tourné**.
 
+### Ordre des lieux sous la carte
+Par défaut **PAR COULEUR** : la couleur dominante de la photo de couverture de chaque lieu (verdure, mer, roche, sable, neige…) est calculée dans le navigateur et gardée sur l'appareil ; la grille suit l'arc-en-ciel (rouges, ocres, verts, bleus, violets), les photos sans vraie couleur (neige, béton, noir et blanc) à la fin. Aussi **PAR AJOUT** et **PAR NOM**. Les photos collées en lien depuis un site qui ne permet pas de les lire passent à la fin.
+
 ### Catégories
 
 Liste de base dans `LIEU_CATEGORIES` (`app.js`). Les catégories ajoutées depuis le formulaire (**+ AJOUTER**) sont gardées dans la base (`lieuCategories`) et visibles par toute l'équipe.
