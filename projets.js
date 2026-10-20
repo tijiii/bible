@@ -175,7 +175,7 @@ function pjMien(c, p) { return c.x.p.id === p.id ? c.x : c.y; }
 // ── Navigation ───────────────────────────────────────────────────────────────
 function pjGo(vue, id) {
   pjVue = vue;
-  if (id !== undefined && id !== pjId) { pjId = id; pjMois = ''; }
+  if (id !== undefined && id !== pjId) { pjId = id; pjMois = ''; pjOptionsOuvert = false; }
   buildTabs();
   render();
   window.scrollTo(0, 0);
