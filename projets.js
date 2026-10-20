@@ -15,6 +15,8 @@ let pjPlanDebut = '';        // premier mois du planning ('AAAA-MM')
 let pjMois = '';             // mois affiché dans le calendrier du projet ('AAAA-MM')
 let pjRetro = null;          // import de rétroplanning en cours : { pid, fichier, enCours, msg, etapes }
 let pjOptionsOuvert = false; // bloc OPTIONS TEAM déplié (fermé par défaut, il est long)
+let pjRetroOuvert = false;   // bloc d'import du rétroplanning déplié
+let pjEtapesOuvert = false;  // liste des étapes (à modifier) dépliée
 let pjEnDessin = false;      // la page est en train d'être remplacée (le champ quitté envoie « change »)
 
 const PJ_STATUTS = [
@@ -35,6 +37,11 @@ const PJ_ETAPES = [
   ['livraison', 'Livraison', '#111111'],
   ['autre', 'Autre', '#9a9a96'],
 ];
+// Partie du projet : une étape peut être côté vidéo, côté photo, ou commune
+const PJ_PISTES = [
+  ['video', 'Vidéo', '#24527a'],
+  ['photo', 'Photo', '#c9821a'],
+];
 const PJ_COULEURS = ['#3c6e8f', '#b3261e', '#3c8f6e', '#8f7a3c', '#7a3c8f', '#c46a2b', '#2b7a8a', '#8a2b5c'];
 const PJ_MOIS = ['janvier', 'février', 'mars', 'avril', 'mai', 'juin', 'juillet', 'août', 'septembre', 'octobre', 'novembre', 'décembre'];
 const PJ_MOIS_COURT = ['janv.', 'févr.', 'mars', 'avr.', 'mai', 'juin', 'juil.', 'août', 'sept.', 'oct.', 'nov.', 'déc.'];
@@ -48,6 +55,15 @@ function pjCur() { return pjById(pjId); }
 function pjStatut(k) { return PJ_STATUTS.find(s => s[0] === k) || PJ_STATUTS[0]; }
 function pjEtapeType(k) { return PJ_ETAPES.find(t => t[0] === k) || PJ_ETAPES[PJ_ETAPES.length - 1]; }
 function pjEtapeNom(e) { return e.nom || pjEtapeType(e.type)[1]; }
+function pjPisteInfo(k) { return PJ_PISTES.find(x => x[0] === k) || null; }
+// La piste d'une étape : celle choisie, sinon devinée d'après son nom (anciens imports « Montage (vidéo) »)
+function pjPisteDe(e) { return typeof e.piste === 'string' ? e.piste : pjDevinerPiste(e.nom); }
+function pjDevinerPiste(t) {
+  const n = pjNorm(t);
+  if (/\bphotos?\b|stills|retouch|selection|print/.test(n)) return 'photo';
+  if (/\bvideos?\b|\bfilm\b|motion|montage|etalo|grading|sound|mixage|\bv\d\b/.test(n)) return 'video';
+  return '';
+}
 // Nom affiché : « IKKS FW27 » (le client devant, s'il n'est pas déjà dans le nom)
 function pjTitre(p) {
   const nom = (p.nom || '').trim();
@@ -113,12 +129,65 @@ function pjChoixGens() {
 }
 
 // Les périodes où une personne est prise sur un projet :
-// dates libres si on en a mis, sinon les étapes cochées, sinon toutes les étapes.
+// ses dates libres si on en a mis, plus les étapes cochées ;
+// sans dates libres ni étape cochée, toutes les étapes (tout le projet).
 function pjPeriodes(p, a) {
-  if (a.du) return [{ du: a.du, au: a.au && a.au >= a.du ? a.au : a.du, label: 'dates choisies' }];
   const et = pjEtapesDatees(p);
-  const choix = (a.etapes || []).length ? et.filter(e => a.etapes.includes(e.id)) : et;
-  return choix.map(e => ({ ...pjEtapeDates(e), label: pjEtapeNom(e) }));
+  const coches = et.filter(e => (a.etapes || []).includes(e.id));
+  const out = coches.length || a.du ? coches : et;
+  return (a.du ? [{ du: a.du, au: a.au && a.au >= a.du ? a.au : a.du, label: 'dates choisies' }] : [])
+    .concat(out.map(e => ({ ...pjEtapeDates(e), label: pjEtapeNom(e) })));
+}
+
+// ── Post-prod d'office ───────────────────────────────────────────────────────
+// D'après son rôle, une personne va sur la post-prod de sa partie :
+// le photographe et le retoucheur sur la post-prod photo, le réal sur la
+// post-prod vidéo, le monteur sur le montage, le coloriste sur l'étalonnage,
+// le sound designer sur le son. Sans étape à son nom (pas d'étape « étalonnage »),
+// elle va sur toute la post-prod de sa partie.
+// [rôle, partie, étapes qui lui reviennent, ne fait que la post-prod]
+const PJ_ROLES_POSTPROD = [
+  [/retouch/, 'photo', /retouch/, true],
+  [/photograph|photographe|^photo$/, 'photo', null, false],
+  [/colori|etalonn|grading/, 'video', /etalo|grading|colou?r/, true],
+  [/sound|\bson\b|mixeu|mixage|\bmix\b|musique|music|compos|audio/, 'video', /\bson\b|sound|mix|musique|music|audio/, true],
+  [/monteu|monteuse|editor|\bmontage\b|\bedit\b/, 'video', /montage|\bedit|\bv\d|feedback|retour|conform|offline|online/, true],
+  [/post ?-?prod/, null, null, true],
+  [/\breal\b|\breals\b|realisat|director/, 'video', null, false],
+];
+function pjRolePostProd(role) {
+  const r = pjNorm(role);
+  if (!r) return null;
+  for (const [re, piste, motif, seulPost] of PJ_ROLES_POSTPROD) {
+    if (!re.test(r)) continue;
+    // « Art director », « Director of photography », « Casting director »… ne font pas la post-prod
+    if (re === PJ_ROLES_POSTPROD[6][0] && /art|photograph|\bdop\b|casting|production|creati|artistique|photo/.test(r)) return null;
+    return { piste: piste === null ? (/film|video/.test(r) ? 'video' : /photo/.test(r) ? 'photo' : '') : piste, motif, seulPost };
+  }
+  return null;
+}
+// Parmi des étapes, celles de post-prod qui reviennent à ce rôle
+function pjEtapesPourRole(role, etapes) {
+  const pp = pjRolePostProd(role);
+  if (!pp) return [];
+  const siennes = etapes.filter(e => e.type === 'postprod' && (!pp.piste || (pp.piste === 'photo' ? pjPisteDe(e) === 'photo' : pjPisteDe(e) !== 'photo')));
+  const precises = pp.motif ? siennes.filter(e => pp.motif.test(pjNorm(pjEtapeNom(e)))) : [];
+  return precises.length ? precises : siennes;
+}
+// Ajoute à une personne de l'équipe les étapes de post-prod de son rôle.
+// Si elle était sur « tout le projet » : le monteur, le coloriste… ne gardent
+// que leur post-prod ; le réal et le photographe gardent aussi le reste de leur
+// partie (prépa, tournage…), sans la post-prod des autres.
+function pjMettreSurPostProd(p, a, ids) {
+  ids = ids || pjEtapesPourRole(a.role, pjEtapesDatees(p)).map(e => e.id);
+  if (!ids.length) return false;
+  const avant = (a.etapes || []).slice();
+  if (!avant.length && !a.du) {
+    const pp = pjRolePostProd(a.role);
+    a.etapes = pp.seulPost ? [] : pjEtapesDatees(p).filter(e => e.type !== 'postprod' && (!pp.piste || [pp.piste, ''].includes(pjPisteDe(e)))).map(e => e.id);
+  }
+  ids.forEach(id => { if (!a.etapes.includes(id)) a.etapes.push(id); });
+  return a.etapes.length !== avant.length;
 }
 
 // ── Options de la fiche de suivi (onglet OPTIONS TEAM, envoyé par PROJETS WIDEN)
@@ -178,7 +247,7 @@ function pjMien(c, p) { return c.x.p.id === p.id ? c.x : c.y; }
 function pjGo(vue, id) {
   if (vue === 'ts' && pjVue !== 'ts') pjTsDepuis = pjVue === 'projet' && pjCur() ? pjId : null;
   pjVue = vue;
-  if (id !== undefined && id !== pjId) { pjId = id; pjMois = ''; pjOptionsOuvert = false; if (pjRetro && !pjRetro.enCours) pjRetro = null; }
+  if (id !== undefined && id !== pjId) { pjId = id; pjMois = ''; pjOptionsOuvert = false; pjRetroOuvert = false; pjEtapesOuvert = false; pjAffOuvert = new Set(); if (pjRetro && !pjRetro.enCours) pjRetro = null; }
   buildTabs();
   render();
   window.scrollTo(0, 0);
@@ -334,7 +403,8 @@ function pjPlanningHtml(list) {
           const d = pjEtapeDates(e);
           if (d.au < debut || d.du > fin) return '';
           const a = d.du < debut ? debut : d.du, b = d.au > fin ? fin : d.au;
-          return `<div class="pj-plan-barre" style="left:${pos(a)}%;width:${Math.max((pjJours(a, b) + 1) / total * 100, .6)}%;--c:${pjEtapeType(e.type)[2]}" title="${esc(pjEtapeNom(e) + ' · ' + pjPeriodeTexte(d.du, d.au))}"><span>${esc(pjEtapeNom(e))}</span></div>`;
+          const pi = pjPisteInfo(pjPisteDe(e));
+          return `<div class="pj-plan-barre" style="left:${pos(a)}%;width:${Math.max((pjJours(a, b) + 1) / total * 100, .6)}%;--c:${pjEtapeType(e.type)[2]}${pi ? ';--p:' + pi[2] : ''}"${pi ? ` data-piste="${pi[0]}"` : ''} title="${esc(pjEtapeNom(e) + (pi ? ' · ' + pi[1] : '') + ' · ' + pjPeriodeTexte(d.du, d.au))}"><span>${esc(pjEtapeNom(e))}</span></div>`;
         }).join('');
         return `<div class="pj-plan-row" onclick="pjGo('projet', ${p.id})">
           <div class="pj-plan-nom"><span class="ch-dot" style="background:${esc(pjCouleur(p))}"></span>${esc(pjTitre(p))}</div>
@@ -508,7 +578,7 @@ function pjField(label, k, v, opts = {}) {
   if (opts.textarea) input = `<textarea rows="${opts.rows || 3}" ${attrs} oninput="pjInput(this)" placeholder="${esc(opts.ph || '')}">${esc(v || '')}</textarea>`;
   else if (opts.select) input = `<select ${attrs} onchange="pjInput(this, true)">${opts.select.map(([val, lab]) => `<option value="${val}"${v === val ? ' selected' : ''}>${esc(lab)}</option>`).join('')}</select>`;
   else if (opts.type === 'date') input = `<input type="date" ${attrs} value="${esc(v || '')}" onchange="pjInput(this, true)">`;
-  else input = `<input type="${opts.type || 'text'}" ${attrs} value="${esc(v || '')}" placeholder="${esc(opts.ph || '')}" oninput="pjInput(this)"${opts.change ? ' onchange="pjRedessiner()"' : ''}>`;
+  else input = `<input type="${opts.type || 'text'}" ${attrs} value="${esc(v || '')}" placeholder="${esc(opts.ph || '')}" oninput="pjInput(this)"${opts.change ? ' onchange="pjRedessiner()"' : opts.onchange ? ` onchange="${opts.onchange}"` : ''}>`;
   return `<div class="field${opts.full ? ' full' : ''}${opts.cls ? ' ' + opts.cls : ''}"><label>${esc(label)}</label>${input}</div>`;
 }
 
@@ -535,10 +605,9 @@ function pjPageHtml(p, conflits, choix) {
 
     <section class="ts-bloc">
       <h3>CALENDRIER</h3>
-      <div class="pj-retro">${pjRetroHtml(p)}</div>
       ${pjCalendrierHtml(p)}
-      <div class="pj-etapes">${pjEtapesDatees(p).concat((p.etapes || []).filter(e => !pjEtapeDates(e))).map(e => pjEtapeHtml(e)).join('') || '<p class="field-hint">Aucune étape. Ajoute la prépa, le tournage, la post-prod… avec leurs dates.</p>'}</div>
-      <div class="ts-add-row">${PJ_ETAPES.map(t => `<button type="button" class="btn-upload" onclick="pjAjouterEtape('${t[0]}')">+ ${t[1].toUpperCase()}</button>`).join('')}</div>
+      ${pjEtapesBlocHtml(p)}
+      ${pjRetroBlocHtml(p)}
     </section>
 
     <section class="ts-bloc">
@@ -580,13 +649,16 @@ function pjCalendrierHtml(p) {
   const nbJours = new Date(y, m, 0).getDate();
   const nbCases = Math.ceil((decal + nbJours) / 7) * 7;
   const auj = pjAujourdhui();
+  const ordre = e => ['', 'video', 'photo'].indexOf(pjPisteDe(e));
+  const pistes = PJ_PISTES.filter(x => et.some(e => pjPisteDe(e) === x[0]));
   const cases = Array.from({ length: nbCases }, (_, i) => {
     const d = pjPlusJours(debut, i);
     const dedans = d.slice(0, 7) === pjMois;
-    const ici = et.filter(e => { const x = pjEtapeDates(e); return d >= x.du && d <= x.au; });
+    const ici = et.filter(e => { const x = pjEtapeDates(e); return d >= x.du && d <= x.au; })
+      .sort((a, b) => ordre(a) - ordre(b));
     return `<div class="pj-jour${dedans ? '' : ' hors'}${d === auj ? ' auj' : ''}">
       <span class="pj-jour-num">${pjDate(d).getDate()}</span>
-      ${ici.map(e => `<span class="pj-chip" style="--c:${pjEtapeType(e.type)[2]}" title="${esc(pjEtapeNom(e))}">${esc(pjEtapeNom(e))}</span>`).join('')}
+      ${ici.map(e => pjChipHtml(e)).join('')}
     </div>`;
   }).join('');
   return `<div class="pj-cal-nav">
@@ -597,7 +669,42 @@ function pjCalendrierHtml(p) {
     <div class="pj-cal">
       ${['lun', 'mar', 'mer', 'jeu', 'ven', 'sam', 'dim'].map(j => `<div class="pj-cal-jsem">${j}</div>`).join('')}
       ${cases}
-    </div>`;
+    </div>
+    ${pistes.length ? `<div class="pj-legende pj-cal-legende">${pistes.map(x => `<span class="pj-chip" data-piste="${x[0]}" style="--p:${x[2]}">${x[1]}</span>`).join('')}<span class="pj-muted">· sans couleur : commun · le trait à gauche donne le type d'étape</span></div>` : ''}`;
+}
+
+// Une étape dans le calendrier : la couleur de sa piste (vidéo, photo), le trait de son type
+function pjChipHtml(e) {
+  const pi = pjPisteInfo(pjPisteDe(e));
+  const titre = pjEtapeNom(e) + (pi ? ' · ' + pi[1] : '') + ' · ' + pjEtapeType(e.type)[1];
+  return pi
+    ? `<span class="pj-chip" data-piste="${pi[0]}" style="--c:${pjEtapeType(e.type)[2]};--p:${pi[2]}" title="${esc(titre)}">${esc(pjEtapeNom(e))}</span>`
+    : `<span class="pj-chip" style="--c:${pjEtapeType(e.type)[2]}" title="${esc(titre)}">${esc(pjEtapeNom(e))}</span>`;
+}
+
+// La liste des étapes à modifier, repliée une fois qu'il y en a (le calendrier suffit pour lire)
+function pjEtapesBlocHtml(p) {
+  const toutes = pjEtapesDatees(p).concat((p.etapes || []).filter(e => !pjEtapeDates(e)));
+  const ouvert = pjEtapesOuvert || !toutes.length;
+  const groupes = [['', 'COMMUN']].concat(PJ_PISTES.map(x => [x[0], x[1].toUpperCase()]))
+    .map(([k, lab]) => [lab, toutes.filter(e => pjPisteDe(e) === k)]).filter(g => g[1].length);
+  const avecTitres = groupes.length > 1 || (groupes[0] && groupes[0][0] !== 'COMMUN');
+  return `<details class="pj-sous-bloc"${ouvert ? ' open' : ''} ontoggle="if(this.open!==${ouvert})pjEtapesOuvert=this.open">
+    <summary><span class="pj-sous-titre">ÉTAPES</span> <small class="pj-muted">${toutes.length ? `${toutes.length} · modifier les dates, ajouter une étape` : 'aucune pour le moment'}</small></summary>
+    <div class="pj-etapes">${groupes.map(([lab, l]) => (avecTitres ? `<div class="pj-etapes-groupe">${lab}</div>` : '') + l.map(e => pjEtapeHtml(e)).join('')).join('') || '<p class="field-hint">Aucune étape. Importe le rétroplanning ci-dessous, ou ajoute la prépa, le tournage, la post-prod… avec leurs dates.</p>'}</div>
+    <div class="ts-add-row">${PJ_ETAPES.map(t => `<button type="button" class="btn-upload" onclick="pjAjouterEtape('${t[0]}')">+ ${t[1].toUpperCase()}</button>`).join('')}</div>
+  </details>`;
+}
+
+// L'import du rétroplanning, replié tant qu'on ne s'en sert pas
+function pjRetroBlocHtml(p) {
+  const r = pjRetro && pjRetro.pid === p.id ? pjRetro : null;
+  const ouvert = pjRetroOuvert || !!r;
+  const dernier = p.retro && p.retro.fichier ? `dernier import : « ${esc(p.retro.fichier)} »${p.retro.date ? ' le ' + esc(pjDateCourte(p.retro.date)) : ''}` : 'Excel, PDF ou capture, lu automatiquement';
+  return `<details class="pj-sous-bloc pj-retro"${ouvert ? ' open' : ''} ontoggle="if(this.open!==${ouvert})pjRetroOuvert=this.open">
+    <summary><span class="pj-sous-titre">IMPORTER UN RÉTROPLANNING</span> <small class="pj-muted">${r && r.enCours ? 'lecture en cours…' : dernier}</small></summary>
+    ${pjRetroHtml(p)}
+  </details>`;
 }
 
 // Ce qui vient du tableau PROJETS WIDEN (lecture seule) et les liens
@@ -648,11 +755,23 @@ function pjOptionVersEquipe(i) {
   const p = pjCur();
   const o = p && (p.options || [])[i];
   if (!o) return;
+  if (!Array.isArray(p.equipe)) p.equipe = [];
+  const a = pjOptionVersAffectation(o);
+  p.equipe.push(a);
+  pjMettreSurPostProd(p, a);
+  pjChange(true);
+}
+function pjOptionVersAffectation(o) {
   const a = pjOptionPersonne(o);
   const dates = pjOptionDates(o).map(d => d.date).sort();
-  if (!Array.isArray(p.equipe)) p.equipe = [];
-  p.equipe.push({ id: uid(), ref: a.ref, nom: a.nom, role: o.role || '', etapes: [], du: dates[0] || '', au: dates[dates.length - 1] || '' });
-  pjChange(true);
+  return { id: uid(), ref: a.ref, nom: a.nom, role: o.role || '', etapes: [], du: dates[0] || '', au: dates[dates.length - 1] || '' };
+}
+
+// Rôle tapé ou changé : la personne va d'office sur la post-prod qui lui revient
+function pjRoleChange(id) {
+  const p = pjCur();
+  const a = pjAffectation(id);
+  if (p && a && pjMettreSurPostProd(p, a)) pjChange(true);
 }
 
 // ── Import du rétroplanning ──────────────────────────────────────────────────
@@ -666,34 +785,79 @@ const PJ_XLSX_URL = 'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.ful
 
 function pjRetroHtml(p) {
   const r = pjRetro && pjRetro.pid === p.id ? pjRetro : null;
+  const occupe = r && r.enCours;
   if (r && r.etapes && r.etapes.length) {
     const n = r.etapes.filter(e => e.choisi).length;
+    const pp = pjRetroPostProd(p, r);
+    const nomsEtapes = idx => idx.map(i => r.etapes[i].nom || pjEtapeType(r.etapes[i].type)[1]).join(', ');
     return `<div class="pj-retro-apercu">
-      <div class="pj-retro-titre">RÉTROPLANNING${r.fichier ? ` « ${esc(r.fichier)} »` : ''} · ${r.etapes.length} ${r.etapes.length > 1 ? 'étapes trouvées' : 'étape trouvée'}, à vérifier</div>
-      ${r.etapes.map((e, i) => `<div class="pj-retro-ligne${e.choisi ? '' : ' off'}">
+      <div class="pj-retro-titre">${r.fichier ? `« ${esc(r.fichier)} » · ` : ''}${r.etapes.length} ${r.etapes.length > 1 ? 'étapes trouvées' : 'étape trouvée'}, à vérifier</div>
+      <div class="pj-retro-tout"><span class="pj-muted">Tout ce rétroplanning est :</span>
+        ${PJ_PISTES.map(x => `<button type="button" class="btn-edit-inline" onclick="pjRetroPisteTout('${x[0]}')">${x[1].toUpperCase()}</button>`).join('')}
+        <button type="button" class="btn-edit-inline" onclick="pjRetroPisteTout('')">COMMUN</button></div>
+      ${r.etapes.map((e, i) => { const pi = pjPisteInfo(e.piste); return `<div class="pj-retro-ligne${e.choisi ? '' : ' off'}"${pi ? ` data-piste="${pi[0]}" style="--p:${pi[2]}"` : ''}>
         <input type="checkbox" ${e.choisi ? 'checked' : ''} onchange="pjRetro.etapes[${i}].choisi=this.checked;pjRedessiner()">
-        <select onchange="pjRetro.etapes[${i}].type=this.value">${PJ_ETAPES.map(t => `<option value="${t[0]}"${e.type === t[0] ? ' selected' : ''}>${t[1]}</option>`).join('')}</select>
-        <input type="text" value="${esc(e.nom)}" oninput="pjRetro.etapes[${i}].nom=this.value">
+        <select onchange="pjRetro.etapes[${i}].piste=this.value;pjRedessiner()">${[['', 'Commun']].concat(PJ_PISTES.map(x => [x[0], x[1]])).map(([k, l]) => `<option value="${k}"${e.piste === k ? ' selected' : ''}>${l}</option>`).join('')}</select>
+        <select onchange="pjRetro.etapes[${i}].type=this.value;pjRedessiner()">${PJ_ETAPES.map(t => `<option value="${t[0]}"${e.type === t[0] ? ' selected' : ''}>${t[1]}</option>`).join('')}</select>
+        <input type="text" value="${esc(e.nom)}" oninput="pjRetro.etapes[${i}].nom=this.value" onchange="pjRedessiner()">
         <input type="date" value="${esc(e.du)}" onchange="pjRetro.etapes[${i}].du=this.value">
         <input type="date" value="${esc(e.au)}" onchange="pjRetro.etapes[${i}].au=this.value">
-      </div>`).join('')}
+      </div>`; }).join('')}
       ${r.msg ? `<p class="field-hint">${esc(r.msg)}</p>` : ''}
+      ${pp.length ? `<div class="pj-retro-pp">
+        <div class="pj-retro-titre">POST-PROD · l'équipe mise d'office sur sa partie</div>
+        ${pp.map(x => `<label class="pj-retro-pp-ligne${x.choisi ? '' : ' off'}"><input type="checkbox" ${x.choisi ? 'checked' : ''} onchange="pjRetro.pp['${x.cle}']=this.checked;pjRedessiner()">
+          <span><b>${esc(x.nom)}</b> <span class="pj-muted">${esc(x.role)}${x.option ? ' · options team' : ''}</span> → ${esc(nomsEtapes(x.idx))}</span></label>`).join('')}
+      </div>` : ''}
       <div class="ts-add-row">
         <button type="button" class="btn-cancel" onclick="pjRetro=null;pjRedessiner()">ANNULER</button>
         <button type="button" class="btn-save" onclick="pjRetroAjouter()"${n ? '' : ' disabled'}>AJOUTER AU CALENDRIER (${n})</button>
       </div>
     </div>`;
   }
-  const dernier = p.retro && p.retro.fichier ? `Dernier import : « ${esc(p.retro.fichier)} »${p.retro.date ? ' le ' + esc(pjDateCourte(p.retro.date)) : ''}.` : '';
   return `<div class="pj-retro-import">
-      <label class="btn-upload${r && r.enCours ? ' attente' : ''}">IMPORTER UN RÉTROPLANNING<input type="file" hidden accept=".xlsx,.xlsm,.xls,.csv,.ods,application/pdf,image/*" onchange="pjRetroFichier(this)"${r && r.enCours ? ' disabled' : ''}></label>
-      <span class="field-hint">Excel, PDF ou capture : les étapes et leurs dates sont lues, tu vérifies, puis elles vont dans le calendrier. ${dernier}</span>
+      <label class="btn-upload${occupe ? ' attente' : ''}">${occupe ? 'LECTURE…' : 'CHOISIR LE FICHIER'}<input type="file" hidden accept=".xlsx,.xlsm,.xls,.csv,.ods,application/pdf,image/*" onchange="pjRetroFichier(this)"${occupe ? ' disabled' : ''}></label>
+      <span class="field-hint">Excel, PDF ou capture. Les étapes, leurs dates et leur partie (vidéo ou photo) sont lues ; tu vérifies, puis elles vont dans le calendrier, avec l'équipe sur sa post-prod. Un rétroplanning photo et un vidéo peuvent s'importer l'un après l'autre.</span>
     </div>
     <details class="pj-retro-colle"><summary>ou colle le contenu du rétroplanning</summary>
       <textarea id="pj-retro-texte" rows="4" placeholder="Copie les lignes du tableau (Excel, Google Sheets) ou le texte d'un e-mail…"></textarea>
-      <div class="ts-add-row"><button type="button" class="btn-upload" onclick="pjRetroTexte()"${r && r.enCours ? ' disabled' : ''}>LIRE</button></div>
+      <div class="ts-add-row"><button type="button" class="btn-upload" onclick="pjRetroTexte()"${occupe ? ' disabled' : ''}>LIRE</button></div>
     </details>
     ${r && r.msg ? `<p class="field-hint pj-retro-msg">${esc(r.msg)}</p>` : ''}`;
+}
+
+function pjRetroPisteTout(k) {
+  if (!pjRetro || !pjRetro.etapes) return;
+  pjRetro.etapes.forEach(e => { e.piste = k; });
+  pjRedessiner();
+}
+
+// Qui va sur quelle post-prod du rétroplanning importé : l'équipe du projet,
+// et les personnes de l'OPTIONS TEAM (pas encore dans l'équipe) dont le rôle
+// est de post-prod. Chacune peut être décochée.
+function pjRetroPostProd(p, r) {
+  const etapes = r.etapes.map((e, i) => ({ ...e, i })).filter(e => e.choisi && e.du);
+  const out = [];
+  const vus = new Set();
+  (p.equipe || []).forEach(a => {
+    const nom = pjNomPersonne(a);
+    if (!nom) return;
+    vus.add(pjCle(a));
+    const idx = pjEtapesPourRole(a.role, etapes).map(e => e.i);
+    if (idx.length) out.push({ cle: 'e' + a.id, nom, role: a.role, idx, aId: a.id });
+  });
+  (p.options || []).forEach((o, oi) => {
+    const a = pjOptionPersonne(o);
+    if (!o.nom || vus.has(pjCle(a))) return;
+    // Une option relâchée partout (N/A, release, pas retenu…) n'est pas proposée
+    if ((o.dispos || []).length && !pjOptionDates(o).length) return;
+    const idx = pjEtapesPourRole(o.role, etapes).map(e => e.i);
+    vus.add(pjCle(a));
+    if (idx.length) out.push({ cle: 'o' + oi, nom: pjNomPersonne(a), role: o.role, idx, oi, option: true });
+  });
+  r.pp = r.pp || {};
+  out.forEach(x => { x.choisi = x.cle in r.pp ? r.pp[x.cle] : true; });
+  return out;
 }
 
 async function pjRetroFichier(input) {
@@ -734,8 +898,11 @@ async function pjRetroLire(p, fichier, lire) {
   pjRedessiner();
   try {
     const r = await lire();
+    // Sans partie indiquée : d'après le nom de l'étape, sinon celui du fichier (« Retro photo.xlsx »)
+    const pisteFichier = pjDevinerPiste(String(fichier || '').replace(/\.[a-z0-9]+$/i, ''));
     const etapes = (r.etapes || []).filter(e => e.du).map(e => ({
       nom: e.nom || '', type: PJ_ETAPES.some(t => t[0] === e.type) ? e.type : pjDevinerType(e.nom),
+      piste: PJ_PISTES.some(x => x[0] === e.piste) ? e.piste : pjDevinerPiste(e.nom) || pisteFichier,
       du: e.du, au: e.au && e.au >= e.du ? e.au : e.du, choisi: true,
     }));
     pjRetro = { pid: p.id, fichier, etapes, msg: r.remarque || (etapes.length ? '' : 'Aucune étape datée trouvée dans ce rétroplanning.') };
@@ -749,7 +916,7 @@ async function pjRetroServeur(p, corps) {
   if (typeof SERVER_URL === 'undefined' || !SERVER_URL) throw new Error('Serveur non configuré : ce format ne peut pas être lu.');
   const sp = pjSpan(p);
   const projet = [pjTitre(p), p.datesTexte, sp ? pjPeriodeTexte(sp.du, sp.au) : ''].filter(Boolean).join(' · ');
-  const res = await fetch(SERVER_URL + '/retro', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...corps, projet }) });
+  const res = await fetch(SERVER_URL + '/retro', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...corps, projet, fichier: (pjRetro && pjRetro.fichier) || '' }) });
   const data = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(data.error || 'Le serveur n\'a pas pu lire ce rétroplanning.');
   return data;
@@ -808,7 +975,9 @@ function pjRetroTableur(feuilles) {
         const au = cAu >= 0 ? pjCaseDate(row[cAu]) : '';
         if (!nom) continue;
         if (!du) { if (nom === nom.toUpperCase()) section = nom; continue; }
-        out.push({ nom: section ? `${nom} (${section.toLowerCase()})` : nom, du, au: au || du });
+        // Section VIDÉO / PHOTO : c'est la partie de l'étape ; une autre section reste dans le nom
+        const piste = section ? pjDevinerPiste(section) : '';
+        out.push({ nom: section && !piste ? `${nom} (${section.toLowerCase()})` : nom, du, au: au || du, piste });
       }
       if (out.length) return out;
     }
@@ -829,22 +998,49 @@ function pjDevinerType(nom) {
 
 function pjRetroAjouter() {
   const p = pjCur();
-  if (!p || !pjRetro || !pjRetro.etapes) return;
+  const r = pjRetro;
+  if (!p || !r || !r.etapes) return;
   if (!Array.isArray(p.etapes)) p.etapes = [];
-  const deja = new Set(p.etapes.map(e => pjNorm(e.nom || pjEtapeType(e.type)[1]) + '|' + e.du + '|' + (e.au || e.du)));
-  const ajout = pjRetro.etapes.filter(e => e.choisi && e.du && !deja.has(pjNorm(e.nom) + '|' + e.du + '|' + (e.au || e.du)));
-  ajout.forEach(e => p.etapes.push({ id: uid(), type: e.type, nom: e.nom, du: e.du, au: e.au && e.au >= e.du ? e.au : e.du }));
-  p.retro = { fichier: pjRetro.fichier || 'texte collé', date: pjAujourdhui() };
+  if (!Array.isArray(p.equipe)) p.equipe = [];
+  const pp = pjRetroPostProd(p, r).filter(x => x.choisi);
+  // Une étape déjà là (même nom, même partie, mêmes dates) n'est pas ajoutée deux fois
+  const cleEt = (nom, piste, du, au) => pjNorm(nom) + '|' + (piste || '') + '|' + du + '|' + (au || du);
+  const deja = new Map(p.etapes.map(e => [cleEt(pjEtapeNom(e), pjPisteDe(e), e.du, e.au), e.id]));
+  const ids = {};   // indice dans l'aperçu → id de l'étape du projet
+  const ajout = [];
+  r.etapes.forEach((e, i) => {
+    if (!e.choisi || !e.du) return;
+    const au = e.au && e.au >= e.du ? e.au : e.du;
+    const cle = cleEt(e.nom || pjEtapeType(e.type)[1], e.piste, e.du, au);
+    if (deja.has(cle)) { ids[i] = deja.get(cle); return; }
+    const et = { id: uid(), type: e.type, nom: e.nom, piste: e.piste || '', du: e.du, au };
+    p.etapes.push(et); ajout.push(et); deja.set(cle, et.id); ids[i] = et.id;
+  });
+  // L'équipe sur sa post-prod ; les personnes de l'OPTIONS TEAM entrent dans l'équipe
+  pp.forEach(x => {
+    const etIds = x.idx.map(i => ids[i]).filter(Boolean);
+    if (!etIds.length) return;
+    if (x.aId != null) { const a = p.equipe.find(y => y.id === x.aId); if (a) pjMettreSurPostProd(p, a, etIds); return; }
+    const o = (p.options || [])[x.oi];
+    if (!o) return;
+    const a = pjOptionVersAffectation(o);
+    a.etapes = etIds.slice();
+    p.equipe.push(a);
+  });
+  p.retro = { fichier: r.fichier || 'texte collé', date: pjAujourdhui() };
   const premier = ajout.map(e => e.du).sort()[0];
   if (premier) pjMois = premier.slice(0, 7);
   pjRetro = null;
+  pjRetroOuvert = false;
   pjChange(true);
 }
 
 function pjEtapeHtml(e) {
   const o = { l: 'etapes', i: e.id };
-  return `<div class="pj-etape" style="--c:${pjEtapeType(e.type)[2]}">
+  const pi = pjPisteInfo(pjPisteDe(e));
+  return `<div class="pj-etape" style="--c:${pjEtapeType(e.type)[2]}${pi ? ';--p:' + pi[2] : ''}"${pi ? ` data-piste="${pi[0]}"` : ''}>
     ${pjField('TYPE', 'type', e.type, { ...o, select: PJ_ETAPES.map(t => [t[0], t[1]]) })}
+    ${pjField('PARTIE', 'piste', pjPisteDe(e), { ...o, select: [['', 'Commun']].concat(PJ_PISTES.map(x => [x[0], x[1]])) })}
     ${pjField('NOM', 'nom', e.nom, { ...o, ph: pjEtapeType(e.type)[1], change: true })}
     ${pjField('DU', 'du', e.du, { ...o, type: 'date' })}
     ${pjField('AU', 'au', e.au, { ...o, type: 'date' })}
@@ -862,19 +1058,33 @@ function pjAffectationHtml(p, a) {
     <div class="pj-aff-ligne">
       <div class="field pj-aff-qui"><label>PERSONNE${t ? ` · <a href="#" onclick="event.preventDefault();openDetail('talent', ${t.id})">fiche</a>` : ''}</label>
         <input list="pj-gens" data-k="qui" data-l="equipe" data-i="${a.id}" value="${esc(label)}" placeholder="Nom, ou choisis dans la bible" onchange="pjChoisirPersonne(${a.id}, this.value)"></div>
-      ${pjField('RÔLE', 'role', a.role, { l: 'equipe', i: a.id, ph: 'ex : chef op, mannequin…' })}
+      ${pjField('RÔLE', 'role', a.role, { l: 'equipe', i: a.id, ph: 'ex : chef op, monteur, photographe…', onchange: `pjRoleChange(${a.id})` })}
       <button type="button" class="ts-x" title="Retirer" onclick="pjRetirer('equipe', ${a.id})">✕</button>
     </div>
+    <details class="pj-aff-quand-bloc"${pjAffOuvert.has(a.id) ? ' open' : ''} ontoggle="pjAffToggle(${a.id}, this.open)">
+    <summary><span class="pj-muted">Sur :</span> ${pjAffResume(p, a)}</summary>
     <div class="pj-aff-quand">
-      <span class="pj-muted">Sur :</span>
-      ${libres ? '' : `<label class="cat-check"><input type="checkbox" ${(a.etapes || []).length ? '' : 'checked'} onchange="pjToutLeProjet(${a.id})"><span>tout le projet</span></label>
-      ${et.map(e => `<label class="cat-check"><input type="checkbox" ${(a.etapes || []).includes(e.id) ? 'checked' : ''} onchange="pjCocherEtape(${a.id}, ${e.id}, this.checked)"><span>${esc(pjEtapeNom(e))} <small>${esc(pjPeriodeTexte(e.du, pjEtapeDates(e).au))}</small></span></label>`).join('')}`}
       ${libres ? `${pjField('DU', 'du', a.du, { l: 'equipe', i: a.id, type: 'date', cls: 'pj-mini' })}${pjField('AU', 'au', a.au, { l: 'equipe', i: a.id, type: 'date', cls: 'pj-mini' })}
-        <button type="button" class="btn-edit-inline" onclick="pjDatesLibres(${a.id}, false)">SUIVRE LES ÉTAPES</button>`
-        : `<button type="button" class="btn-edit-inline" onclick="pjDatesLibres(${a.id}, true)">AUTRES DATES</button>`}
+        <button type="button" class="btn-edit-inline" onclick="pjDatesLibres(${a.id}, false)">SUIVRE LES ÉTAPES</button>
+        ${et.length ? '<span class="pj-muted">et :</span>' : ''}`
+        : `<label class="cat-check"><input type="checkbox" ${(a.etapes || []).length ? '' : 'checked'} onchange="pjToutLeProjet(${a.id})"><span>tout le projet</span></label>`}
+      ${et.map(e => { const pi = pjPisteInfo(pjPisteDe(e)); return `<label class="cat-check"><input type="checkbox" ${(a.etapes || []).includes(e.id) ? 'checked' : ''} onchange="pjCocherEtape(${a.id}, ${e.id}, this.checked)"><span>${pi ? `<i class="pj-piste-pt" style="--p:${pi[2]}" title="${pi[1]}"></i>` : ''}${esc(pjEtapeNom(e))} <small>${esc(pjPeriodeTexte(e.du, pjEtapeDates(e).au))}</small></span></label>`; }).join('')}
+      ${libres ? '' : `<button type="button" class="btn-edit-inline" onclick="pjDatesLibres(${a.id}, true)">AUTRES DATES</button>`}
     </div>
+    </details>
     ${conflits.map(c => { const b = pjAutre(c, p); return `<div class="pj-aff-conflit">⚠ Déjà sur <a href="#" onclick="event.preventDefault();pjGo('projet', ${b.p.id})">${esc(pjTitre(b.p))}</a> (${esc(b.per.label)}) : ${esc(pjPeriodeTexte(c.du, c.au))}</div>`; }).join('')}
   </div>`;
+}
+
+// Les étapes d'une personne, repliées : un résumé, et les cases quand on déplie
+let pjAffOuvert = new Set();
+function pjAffToggle(id, open) { if (open) pjAffOuvert.add(id); else pjAffOuvert.delete(id); }
+function pjAffResume(p, a) {
+  const et = pjEtapesDatees(p).filter(e => (a.etapes || []).includes(e.id));
+  const morceaux = (a.du ? [pjPeriodeTexte(a.du, a.au && a.au >= a.du ? a.au : a.du)] : [])
+    .concat(et.map(e => { const pi = pjPisteInfo(pjPisteDe(e)); return (pi ? `<i class="pj-piste-pt" style="--p:${pi[2]}"></i>` : '') + esc(pjEtapeNom(e)); }));
+  return (morceaux.length ? morceaux.map(m => `<span class="pj-aff-res">${m}</span>`).join('') : '<span class="pj-aff-res">tout le projet</span>')
+    + ' <span class="pj-muted pj-aff-modif">modifier</span>';
 }
 
 function pjAffectation(id) { const p = pjCur(); return p && (p.equipe || []).find(a => a.id === id); }
@@ -917,6 +1127,7 @@ function pjAjouterEtape(type) {
   if (!p) return;
   if (!Array.isArray(p.etapes)) p.etapes = [];
   p.etapes.push({ id: uid(), type, nom: '', du: '', au: '' });
+  pjEtapesOuvert = true;
   pjChange(true);
   const champs = document.querySelectorAll('.pj-etape [data-k="du"]');
   const dernier = [...champs].find(c => !c.value);
