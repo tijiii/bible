@@ -73,6 +73,7 @@ async function initRemoteSync() {
   buildTabs();
   render();
   startPolling();
+  if (typeof tdAccueil === 'function') tdAccueil();   // qui est sur cet appareil, et ses rappels
 }
 
 // ── POLLING (récupère les changements des autres membres) ───────────────────
@@ -91,12 +92,13 @@ async function pullRemoteDb() {
       // à la feuille en cours ni redessiner l'écran
       const tsOuverte = document.querySelector('.ts-editor') ? tsCur() : null;
       // Pareil pour un projet en cours de modification (onglet Suivi production)
-      const pjOuvert = !tsOuverte && typeof pjEnEdition === 'function' && pjEnEdition() ? pjCur() : null;
+      const pjGarde = !tsOuverte && typeof pjEnEdition === 'function' && pjEnEdition();
+      const pjOuvert = pjGarde ? pjAGarder() : null;
       db = remote;
       lastRemoteJson = remoteJson;
       try { localStorage.setItem(STORAGE_KEY, remoteJson); } catch (e) {}
       if (tsOuverte) tsReprendre(tsOuverte);
-      else if (pjOuvert) pjReprendre(pjOuvert);
+      else if (pjGarde) { if (pjOuvert) pjReprendre(pjOuvert); }
       else { buildTabs(); render(); }
     }
     setSyncStatus('ok');

@@ -17,6 +17,8 @@ let pjRetro = null;          // import de rétroplanning en cours : { pid, fichi
 let pjOptionsOuvert = false; // bloc OPTIONS TEAM déplié (fermé par défaut, il est long)
 let pjRetroOuvert = false;   // bloc d'import du rétroplanning déplié
 let pjEtapesOuvert = false;  // liste des étapes (à modifier) dépliée
+let pjEquipeOuvert = false;  // bloc ÉQUIPE déplié
+let pjModifie = null;        // dernier projet modifié (la synchro le garde tant qu'il n'est pas envoyé)
 let pjEnDessin = false;      // la page est en train d'être remplacée (le champ quitté envoie « change »)
 
 const PJ_STATUTS = [
@@ -247,7 +249,7 @@ function pjMien(c, p) { return c.x.p.id === p.id ? c.x : c.y; }
 function pjGo(vue, id) {
   if (vue === 'ts' && pjVue !== 'ts') pjTsDepuis = pjVue === 'projet' && pjCur() ? pjId : null;
   pjVue = vue;
-  if (id !== undefined && id !== pjId) { pjId = id; pjMois = ''; pjOptionsOuvert = false; pjRetroOuvert = false; pjEtapesOuvert = false; pjAffOuvert = new Set(); if (pjRetro && !pjRetro.enCours) pjRetro = null; }
+  if (id !== undefined && id !== pjId) { pjId = id; pjMois = ''; pjOptionsOuvert = false; pjRetroOuvert = false; pjEtapesOuvert = false; pjEquipeOuvert = false; tdFaitesOuvert = false; pjAffOuvert = new Set(); if (pjRetro && !pjRetro.enCours) pjRetro = null; }
   buildTabs();
   render();
   window.scrollTo(0, 0);
@@ -320,10 +322,10 @@ function pjAlertesHtml(conflits, p) {
 function renderPjListe(main) {
   const list = pjFiltres();
   const conflits = pjConflits();
-  const modes = [['liste', 'LISTE'], ['planning', 'PLANNING'], ['personnes', 'PERSONNES'], ['travel', 'TRAVEL SHEETS']];
+  const modes = [['liste', 'LISTE'], ['planning', 'PLANNING'], ['personnes', 'PERSONNES'], ['taches', 'TÂCHES'], ['travel', 'TRAVEL SHEETS']];
   main.innerHTML = `<div class="toolbar">
       <div class="search-wrap"><input id="pj-q" placeholder="Projet, client, personne..." value="${esc(pjQ)}" oninput="pjQ=this.value;pjRedessinerListe()"></div>
-      <select class="filter-sel"${pjMode === 'travel' ? ' style="display:none"' : ''} onchange="pjFStatut=this.value;pjRedessinerListe()">
+      <select class="filter-sel"${pjMode === 'travel' || pjMode === 'taches' ? ' style="display:none"' : ''} onchange="pjFStatut=this.value;pjRedessinerListe()">
         <option value=""${pjFStatut === '' ? ' selected' : ''}>En cours</option>
         <option value="tous"${pjFStatut === 'tous' ? ' selected' : ''}>Tous les projets</option>
         ${PJ_STATUTS.map(s => `<option value="${s[0]}"${pjFStatut === s[0] ? ' selected' : ''}>${esc(s[1])}</option>`).join('')}
@@ -332,7 +334,8 @@ function renderPjListe(main) {
       <div class="spacer"></div>
       ${pjMode === 'travel' ? '<button class="btn-add" onclick="tsNouvelle()">+ NOUVELLE TRAVEL SHEET</button>' : '<button class="btn-add" onclick="pjNouveau()">+ NOUVEAU PROJET</button>'}
     </div>
-    ${pjAlertesHtml(conflits)}
+    ${tdBandeauHtml()}
+    ${pjMode === 'taches' ? '' : pjAlertesHtml(conflits)}
     <div id="pj-liste-corps">${pjCorpsListe(list)}</div>`;
 }
 
@@ -350,6 +353,7 @@ function pjSetMode(m) {
 
 function pjCorpsListe(list) {
   if (pjMode === 'travel') return pjTsListeHtml();
+  if (pjMode === 'taches') return tdVueHtml();
   if (!list.length) return `<div class="empty">${pjList().length ? 'AUCUN PROJET ICI' : 'AUCUN PROJET POUR LE MOMENT'}</div>`;
   if (pjMode === 'planning') return pjPlanningHtml(list);
   if (pjMode === 'personnes') return pjPersonnesHtml(list);
@@ -509,20 +513,22 @@ let pjSaveTimer = null;
 
 // Une modification en cours sur ce projet : la synchro ne doit pas l'écraser
 function pjEnEdition() {
-  if (!document.querySelector('.pj-page')) return false;
   const f = document.activeElement;
-  return !!pjSaveTimer || !!(f && f.closest && f.closest('.pj-page') && /^(INPUT|TEXTAREA|SELECT)$/.test(f.tagName));
+  return !!pjSaveTimer || !!(f && f.closest && f.closest('.pj-page, .td-vue') && /^(INPUT|TEXTAREA|SELECT)$/.test(f.tagName));
 }
+// Le projet à garder pendant la synchro : celui ouvert, sinon le dernier modifié
+function pjAGarder() { return pjCur() || (pjModifie != null ? pjById(pjModifie) : null); }
 function pjReprendre(p) {
   const list = pjList();
   const i = list.findIndex(x => x.id === p.id);
   if (i >= 0) list[i] = p; else list.push(p);
 }
 
-function pjChange(redessiner) {
-  const p = pjCur();
+function pjChange(redessiner, projet) {
+  const p = projet || pjCur();
   if (!p) return;
   p.maj = Date.now();
+  pjModifie = p.id;
   clearTimeout(pjSaveTimer);
   pjSaveTimer = setTimeout(() => { pjSaveTimer = null; saveDb(); }, 700);
   if (redessiner) pjRedessiner();
@@ -610,12 +616,9 @@ function pjPageHtml(p, conflits, choix) {
       ${pjRetroBlocHtml(p)}
     </section>
 
-    <section class="ts-bloc">
-      <h3>ÉQUIPE</h3>
-      <datalist id="pj-gens">${choix.map(c => `<option value="${esc(c.label)}"></option>`).join('')}</datalist>
-      <div class="pj-equipe">${(p.equipe || []).map(a => pjAffectationHtml(p, a)).join('') || '<p class="field-hint">Personne pour le moment. Les talents et techniciens de la bible sont proposés quand tu tapes un nom ; tu peux aussi écrire n\'importe quel nom.</p>'}</div>
-      <div class="ts-add-row"><button type="button" class="btn-upload" onclick="pjAjouterPersonne()">+ PERSONNE</button></div>
-    </section>
+    ${pjEquipeHtml(p, choix)}
+
+    ${tdProjetHtml(p)}
 
     ${pjOptionsHtml(p)}
 
@@ -632,6 +635,20 @@ function pjPageHtml(p, conflits, choix) {
       <button type="button" class="btn-save" onclick="pjGo('liste')">TERMINÉ</button>
     </div>
   </div>`;
+}
+
+// L'équipe, repliable (fermée dès qu'il y a du monde : le résumé donne les noms)
+function pjEquipeHtml(p, choix) {
+  const eq = (p.equipe || []);
+  const noms = eq.map(a => pjNomPersonne(a)).filter(Boolean);
+  const ouvert = pjEquipeOuvert || !eq.length;
+  const nbConflits = pjConflitsDe(p).filter(c => !pjMien(c, p).a.opt).length;
+  return `<details class="ts-bloc pj-repli pj-equipe-bloc"${ouvert ? ' open' : ''} ontoggle="if(this.open!==${ouvert})pjEquipeOuvert=this.open">
+    <summary><h3>ÉQUIPE <small class="pj-muted">${noms.length ? `· ${noms.length} ${noms.length > 1 ? 'personnes' : 'personne'} · ${esc(noms.slice(0, 4).join(', '))}${noms.length > 4 ? '…' : ''}` : ''}</small>${nbConflits ? ` <span class="pj-warn">⚠ ${nbConflits}</span>` : ''}</h3></summary>
+    <datalist id="pj-gens">${choix.map(c => `<option value="${esc(c.label)}"></option>`).join('')}</datalist>
+    <div class="pj-equipe">${eq.map(a => pjAffectationHtml(p, a)).join('') || '<p class="field-hint">Personne pour le moment. Les talents et techniciens de la bible sont proposés quand tu tapes un nom ; tu peux aussi écrire n\'importe quel nom.</p>'}</div>
+    <div class="ts-add-row"><button type="button" class="btn-upload" onclick="pjAjouterPersonne()">+ PERSONNE</button></div>
+  </details>`;
 }
 
 // Calendrier du mois : chaque jour montre les étapes qui le couvrent
@@ -1144,6 +1161,7 @@ function pjAjouterPersonne() {
   if (!p) return;
   if (!Array.isArray(p.equipe)) p.equipe = [];
   p.equipe.push({ id: uid(), ref: null, nom: '', role: '', etapes: [], du: '', au: '' });
+  pjEquipeOuvert = true;
   pjChange(true);
   const champs = document.querySelectorAll('.pj-aff-qui input');
   if (champs.length) champs[champs.length - 1].focus();
