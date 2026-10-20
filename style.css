@@ -697,7 +697,7 @@ body.doc-vue-ouvert > *:not(#doc-vue) { display:none !important; }
 .pj-jour-num { font-size:12.5px; color:var(--muted); }
 .pj-jour.auj .pj-jour-num { color:#fff; background:var(--red); align-self:flex-start; padding:0 5px; }
 .pj-etapes { margin-top:14px; }
-.pj-etape { display:grid; grid-template-columns:130px minmax(0,1fr) 150px 150px 24px; gap:10px; align-items:end; padding:8px 0 8px 10px; border-left:3px solid var(--c); margin-bottom:6px; }
+.pj-etape { display:grid; grid-template-columns:120px 105px minmax(0,1fr) 145px 145px 24px; gap:10px; align-items:end; padding:8px 0 8px 10px; border-left:3px solid var(--c); margin-bottom:6px; }
 .pj-etape .ts-x { margin-bottom:6px; }
 .pj-aff { border-top:1px solid var(--border); padding:12px 0; }
 .pj-aff:first-child { border-top:none; padding-top:2px; }
@@ -728,6 +728,7 @@ body.doc-vue-ouvert > *:not(#doc-vue) { display:none !important; }
   .pj-jour .pj-chip { font-size:10px; padding:0 2px; }
   .pj-etape { grid-template-columns:1fr 1fr; padding-right:30px; position:relative; }
   .pj-etape .ts-x { position:absolute; top:8px; right:0; }
+  .pj-etape > .field:nth-child(3) { grid-column:1 / -1; }
   .pj-aff-quand .pj-mini input { width:auto; }
 }
 .pj-code { font-size:12.5px; color:var(--muted); letter-spacing:.03em; margin-right:2px; }
@@ -771,8 +772,39 @@ body.doc-vue-ouvert > *:not(#doc-vue) { display:none !important; }
 .pj-retro-msg { color:var(--text); }
 .pj-retro-apercu { border:1px solid var(--border2); background:var(--bg3); padding:12px 14px; }
 .pj-retro-titre { font-size:13px; letter-spacing:.04em; margin-bottom:8px; }
-.pj-retro-ligne { display:grid; grid-template-columns:20px 120px minmax(0,1fr) 145px 145px; gap:8px; align-items:center; padding:3px 0; }
+.pj-retro-ligne { display:grid; grid-template-columns:20px 95px 115px minmax(0,1fr) 140px 140px; gap:8px; align-items:center; padding:3px 0; }
 .pj-retro-ligne.off { opacity:.45; }
 .pj-retro-ligne input[type=text], .pj-retro-ligne input[type=date], .pj-retro-ligne select { background:#fff; border:1px solid var(--border); padding:5px 7px; font-family:var(--serif); font-size:14px; outline:none; width:100%; color:var(--text); }
 .pj-retro-apercu .btn-save:disabled { opacity:.4; cursor:default; }
-@media (max-width:640px) { .pj-retro-ligne { grid-template-columns:20px 1fr 1fr; } .pj-retro-ligne input[type=text] { grid-column:2 / span 2; grid-row:1; } .pj-retro-ligne select { grid-column:2 / span 2; } .pj-retro-ligne input[type=date] { grid-column:auto; } }
+@media (max-width:640px) { .pj-retro-ligne { grid-template-columns:20px 1fr 1fr; padding:6px 0 6px 6px; } .pj-retro-ligne input[type=text] { grid-column:2 / span 2; grid-row:1; } .pj-retro-ligne select:nth-of-type(1), .pj-retro-ligne input[type=date]:nth-of-type(3) { grid-column:2; } .pj-retro-ligne select:nth-of-type(2), .pj-retro-ligne input[type=date]:nth-of-type(4) { grid-column:3; } }
+
+/* Photo / vidéo : la couleur de la partie, le trait à gauche pour le type d'étape */
+.pj-chip[data-piste] { background:var(--p); box-shadow:inset 3px 0 0 var(--c, transparent); padding-left:7px; }
+.pj-plan-barre[data-piste] { box-shadow:inset 0 -4px 0 var(--p); }
+.pj-cal-legende { display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin-top:8px; font-size:12px; }
+.pj-cal-legende .pj-chip { padding:0 8px; box-shadow:none; }
+.pj-etape[data-piste] { background:linear-gradient(90deg, color-mix(in srgb, var(--p) 9%, transparent), transparent 60%); }
+.pj-etapes-groupe { font-size:12px; letter-spacing:.06em; color:var(--muted); margin:12px 0 6px; }
+.pj-etapes-groupe:first-child { margin-top:4px; }
+.pj-retro-ligne[data-piste] { box-shadow:inset 3px 0 0 var(--p); padding-left:6px; }
+.pj-retro-tout { display:flex; gap:6px; align-items:center; flex-wrap:wrap; font-size:13px; margin-bottom:8px; }
+.pj-retro-pp { margin-top:12px; padding-top:10px; border-top:1px solid var(--border); }
+.pj-retro-pp-ligne { display:flex; gap:8px; align-items:baseline; font-size:14px; padding:3px 0; cursor:pointer; }
+.pj-retro-pp-ligne.off { opacity:.45; }
+.pj-piste-pt { display:inline-block; width:8px; height:8px; border-radius:50%; background:var(--p); margin-right:5px; vertical-align:1px; }
+
+/* Blocs repliables du calendrier (étapes, import) */
+.pj-sous-bloc { margin-top:14px; border-top:1px solid var(--border); padding-top:10px; }
+.pj-sous-bloc > summary { list-style:none; cursor:pointer; font-size:13px; display:flex; gap:8px; align-items:baseline; flex-wrap:wrap; }
+.pj-sous-bloc > summary::-webkit-details-marker { display:none; }
+.pj-sous-bloc > summary::before { content:'›'; display:inline-block; width:12px; transition:transform .15s; }
+.pj-sous-bloc[open] > summary::before { transform:rotate(90deg); }
+.pj-sous-bloc[open] > summary { margin-bottom:10px; }
+.pj-sous-titre { letter-spacing:.06em; }
+.pj-sous-bloc.pj-retro { margin-bottom:0; }
+.pj-aff-quand-bloc > summary { list-style:none; cursor:pointer; font-size:14px; display:flex; gap:6px; flex-wrap:wrap; align-items:baseline; margin-top:6px; }
+.pj-aff-quand-bloc > summary::-webkit-details-marker { display:none; }
+.pj-aff-res { background:var(--bg3); padding:1px 8px; font-size:13px; }
+.pj-aff-modif { font-size:12px; text-decoration:underline; }
+.pj-aff-quand-bloc[open] .pj-aff-modif { display:none; }
+.pj-aff-quand-bloc .pj-aff-quand { margin-top:8px; }
