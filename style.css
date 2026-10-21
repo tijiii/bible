@@ -899,3 +899,47 @@ body.doc-vue-ouvert > *:not(#doc-vue) { display:none !important; }
 .td-mdp-champs input { background:#fff; border:1px solid var(--border); padding:8px 10px; font-family:var(--serif); font-size:15px; outline:none; }
 .td-mdp-msg { color:var(--red); min-height:1em; }
 .td-protege { display:flex; justify-content:space-between; align-items:center; gap:8px; padding:8px 0; border-bottom:1px solid var(--border); }
+
+/* Grand calendrier : vues MOIS / GLOBAL / POST-PROD, en frise */
+.pj-cal-bloc > h3 { display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
+.pj-cal-vues { display:inline-flex; gap:4px; margin-left:auto; flex-wrap:wrap; font-weight:normal; letter-spacing:normal; }
+.pj-cal-vues .btn-edit-inline.on { background:#111; color:#fff; border-color:#111; }
+.pj-cal-plein { position:fixed; inset:0; z-index:55; margin:0; overflow:auto; background:var(--bg, #fff); padding:18px 24px 40px; max-width:none; }
+.pj-frise-filtres { display:flex; gap:6px; flex-wrap:wrap; align-items:center; margin:0 0 12px; }
+.pj-frise-filtres .filter-sel { max-width:200px; font-size:12px; padding:5px 6px; }
+.pj-frise-cat { font-family:var(--serif); font-size:12.5px; padding:4px 10px; border:1px solid var(--border2); background:#fff; color:var(--text); cursor:pointer; }
+.pj-frise-cat.on { background:#111; color:#fff; border-color:#111; }
+.pj-frise { --pj-frise-lab:230px; --pj-frise-j:16px; overflow-x:auto; border:1px solid var(--border); }
+.pj-frise-postprod { --pj-frise-j:34px; }
+.pj-cal-plein .pj-frise { --pj-frise-lab:260px; }
+.pj-frise-ligne { display:grid; min-width:max-content; border-bottom:1px solid var(--border); position:relative; }
+.pj-frise-ligne:last-child { border-bottom:none; }
+.pj-frise-lab { grid-column:1; grid-row:1; position:sticky; left:0; z-index:2; background:#fff; padding:7px 10px 7px 12px; border-right:1px solid var(--border2); border-left:3px solid var(--c, transparent); display:flex; flex-direction:column; gap:2px; min-width:0; }
+.pj-frise-nom { color:inherit; text-decoration:none; font-size:14px; display:flex; align-items:center; gap:5px; }
+.pj-frise-nom:hover { text-decoration:underline; }
+.pj-frise-lab small { font-size:11.5px; }
+.pj-frise-gens { display:flex; flex-wrap:wrap; gap:3px 8px; font-size:12px; }
+.pj-frise-gens a { color:var(--text); text-decoration:none; border-bottom:1px dotted var(--border2); }
+.pj-frise-gens a:hover { border-bottom-color:var(--text); }
+.pj-frise-j { border-left:1px solid #0000000a; min-height:100%; }
+.pj-frise-j.we { background:#00000008; }
+.pj-frise-j.m1 { border-left-color:#0000002e; }
+.pj-frise-j.auj { background:#b3261e14; box-shadow:inset 2px 0 0 #b3261e88; }
+.pj-frise-barre { align-self:center; margin:6px 1px; height:24px; position:relative; background:var(--p); border-left:4px solid var(--c); z-index:1; min-width:0; overflow:hidden; }
+/* Le texte ne compte pas dans la largeur des colonnes (sinon une étape d'un jour élargit son jour) */
+.pj-frise-barre > span { position:absolute; inset:0 4px 0 6px; color:#fff; font-size:12px; line-height:24px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.pj-frise-mois span, .pj-frise-jours span { font-size:11.5px; color:var(--muted); padding:3px 2px; text-align:center; }
+.pj-frise-mois span:not(.pj-frise-lab) { text-align:left; padding-left:6px; border-left:1px solid #0000002e; text-transform:capitalize; }
+.pj-frise-jours span { display:flex; flex-direction:column; align-items:center; line-height:1.15; }
+.pj-frise-jours small { font-size:10px; opacity:.7; }
+.pj-frise-mois, .pj-frise-jours { background:var(--bg3); }
+.pj-frise-mois .pj-frise-lab, .pj-frise-jours .pj-frise-lab { background:var(--bg3); }
+.pj-retro-gens { grid-column:1 / -1; display:flex; flex-wrap:wrap; gap:6px; padding:2px 0 4px 26px; }
+.pj-retro-pers { display:inline-flex; align-items:center; gap:4px; font-size:12.5px; padding:2px 8px 2px 4px; border:1px solid var(--border2); background:#fff; cursor:pointer; }
+.pj-retro-pers small { color:var(--muted); }
+.pj-retro-pers.off { opacity:.5; text-decoration:line-through; }
+@media (max-width: 700px) {
+  .pj-frise, .pj-cal-plein .pj-frise { --pj-frise-lab:140px; }
+  .pj-cal-plein { padding:12px; }
+  .pj-cal-vues { margin-left:0; }
+}

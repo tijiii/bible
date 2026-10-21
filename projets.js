@@ -101,6 +101,27 @@ function pjEtapeDates(e) {
   if (!e || !e.du) return null;
   return { du: e.du, au: e.au && e.au >= e.du ? e.au : e.du };
 }
+
+// La catégorie d'une étape, pour filtrer le grand calendrier : son type, et
+// pour la post-prod, ce que dit son nom (edits V1, V2…, feedbacks, étalonnage…)
+const PJ_CATS = [
+  ['prepa', 'Prépa'], ['reperage', 'Repérage'], ['casting', 'Casting'], ['tournage', 'Tournage'],
+  ['edit', 'Edits'], ['feedback', 'Feedbacks'], ['etalonnage', 'Étalonnage'], ['sound', 'Sound design'], ['mix', 'Mix'],
+  ['retouche', 'Retouches'], ['postprod', 'Post-prod'], ['livraison', 'Livraison'], ['autre', 'Autre'],
+];
+const PJ_CATS_POST = ['edit', 'feedback', 'etalonnage', 'sound', 'mix', 'retouche', 'postprod', 'livraison'];
+const PJ_RE_EDIT = /\bv ?\d|edit|montage|offline|online|version|conform|\bcut\b|derush|selection|select/;
+function pjEtapeCat(e) {
+  if (e.type !== 'postprod') return PJ_CATS.some(c => c[0] === e.type) ? e.type : 'autre';
+  const n = pjNorm(pjEtapeNom(e));
+  if (/feedback|retour|valid|comment/.test(n)) return 'feedback';
+  if (/etalo|grading|colou?r/.test(n)) return 'etalonnage';
+  if (/\bmix/.test(n)) return 'mix';
+  if (/sound|\bson\b|\bsd\b|musique|music|audio/.test(n)) return 'sound';
+  if (/retouch/.test(n)) return 'retouche';
+  if (PJ_RE_EDIT.test(n)) return 'edit';
+  return 'postprod';
+}
 function pjEtapesDatees(p) {
   return (p.etapes || []).filter(e => pjEtapeDates(e)).sort((a, b) => a.du.localeCompare(b.du));
 }
@@ -155,12 +176,12 @@ function pjPeriodes(p, a) {
 // [rôle, partie, étapes qui lui reviennent, ne fait que la post-prod]
 const PJ_ROLES_POSTPROD = [
   [/retouch/, 'photo', /retouch/, true],
-  [/photograph|photographe|^photo$/, 'photo', null, false],
+  [/photograph|photographe|^photo$/, 'photo', 'edit', false],
   [/colori|etalonn|grading/, 'video', /etalo|grading|colou?r/, true],
   [/sound|\bson\b|mixeu|mixage|\bmix\b|musique|music|compos|audio/, 'video', /\bson\b|sound|mix|musique|music|audio/, true],
-  [/monteu|monteuse|editor|\bmontage\b|\bedit\b/, 'video', /montage|\bedit|\bv\d|feedback|retour|conform|offline|online/, true],
+  [/monteu|monteuse|editor|\bmontage\b|\bedit\b/, 'video', 'edit', true],
   [/post ?-?prod/, null, null, true],
-  [/\breal\b|\breals\b|realisat|director/, 'video', null, false],
+  [/\breal\b|\breals\b|realisat|director/, 'video', 'edit', false],
 ];
 function pjRolePostProd(role) {
   const r = pjNorm(role);
@@ -185,14 +206,22 @@ function pjEtapesParDefaut(p, a) {
   return l.length ? l : et;
 }
 
-// Parmi des étapes, celles de post-prod qui reviennent à ce rôle
+// Parmi des étapes, celles de post-prod qui reviennent à ce rôle. Le réal, le
+// monteur et le photographe ne prennent que les edits de leur partie (montage,
+// V1, V2…) : pas les feedbacks, l'étalonnage, le son ni le mix.
 function pjEtapesPourRole(role, etapes) {
   const pp = pjRolePostProd(role);
   if (!pp) return [];
   const siennes = etapes.filter(e => e.type === 'postprod' && (!pp.piste || (pp.piste === 'photo' ? pjPisteDe(e) === 'photo' : pjPisteDe(e) !== 'photo')));
+  if (pp.motif === 'edit') {
+    const edits = siennes.filter(e => ['edit', 'postprod'].includes(pjEtapeCat(e)));
+    return edits.length ? edits : siennes.filter(e => !['feedback', 'etalonnage', 'sound', 'mix'].includes(pjEtapeCat(e)));
+  }
   const precises = pp.motif ? siennes.filter(e => pp.motif.test(pjNorm(pjEtapeNom(e)))) : [];
   return precises.length ? precises : siennes;
 }
+// Le monteur de Widen, proposé d'office sur les edits vidéo de chaque rétroplanning
+const PJ_MONTEUR = { nom: 'Jonas Rouyer', role: 'Monteur' };
 // Ajoute à une personne de l'équipe les étapes de post-prod de son rôle.
 // Si elle était sur « tout le projet » : le monteur, le coloriste… ne gardent
 // que leur post-prod ; le réal et le photographe gardent aussi le reste de leur
@@ -626,9 +655,9 @@ function pjPageHtml(p, conflits, choix) {
       ${pjInfosTableauHtml(p)}
     </section>
 
-    <section class="ts-bloc">
-      <h3>CALENDRIER</h3>
-      ${pjCalendrierHtml(p)}
+    <section class="ts-bloc pj-cal-bloc${pjBF(p).calPlein ? ' pj-cal-plein' : ''}">
+      <h3>CALENDRIER ${pjCalVuesHtml(p)}</h3>
+      ${pjBF(p).calVue ? pjFriseHtml(p, pjBF(p).calVue) : pjCalendrierHtml(p)}
       ${pjEtapesBlocHtml(p)}
       ${pjRetroBlocHtml(p)}
     </section>
@@ -716,6 +745,85 @@ function pjCalendrierHtml(p) {
     ${pistes.length ? `<div class="pj-legende pj-cal-legende">${pistes.map(x => `<span class="pj-chip" data-piste="${x[0]}" style="--p:${x[2]}">${x[1]}</span>`).join('')}<span class="pj-muted">· sans couleur : commun · le trait à gauche donne le type d'étape</span></div>` : ''}`;
 }
 
+// ── Grand calendrier : les étapes en frise, une ligne par étape avec ses
+// personnes. GLOBAL montre tout le projet ; POST-PROD zoome sur la post-prod.
+// Filtres : partie, personne (les mêmes que la liste des étapes) et catégories.
+function pjCalVuesHtml(p) {
+  const f = pjBF(p);
+  const v = f.calVue || '';
+  const bouton = (k, lab) => `<button type="button" class="btn-edit-inline${v === k ? ' on' : ''}" onclick="pjBFRegler('calVue', '${k}')">${lab}</button>`;
+  return `<span class="pj-cal-vues">${bouton('', 'MOIS')}${bouton('global', 'GLOBAL')}${bouton('postprod', 'POST-PROD')}
+    <button type="button" class="btn-edit-inline${f.calPlein ? ' on' : ''}" title="${f.calPlein ? 'Revenir à la page' : 'Agrandir le calendrier'}" onclick="pjBFRegler('calPlein', ${f.calPlein ? 'false' : 'true'})">${f.calPlein ? '✕ FERMER' : '⤢ PLEIN ÉCRAN'}</button></span>`;
+}
+function pjCalCats(p) { const c = pjBF(p).calCats; return c ? c.split(',') : []; }
+function pjCalCatBasculer(k) {
+  const p = pjCur();
+  if (!p) return;
+  const l = pjCalCats(p);
+  pjBF(p).calCats = (l.includes(k) ? l.filter(x => x !== k) : l.concat(k)).join(',');
+  pjRedessiner();
+}
+function pjFriseHtml(p, mode) {
+  const f = pjEtF(p);
+  const toutes = pjEtapesDatees(p).filter(e => mode !== 'postprod' || PJ_CATS_POST.includes(pjEtapeCat(e)));
+  const cats = pjCalCats(p);
+  const presentes = PJ_CATS.filter(c => toutes.some(e => pjEtapeCat(e) === c[0]));
+  // Le filtre de type de la liste des étapes ne s'applique pas ici : les catégories le remplacent
+  const et = toutes.filter(e => (!f.piste || pjPisteDe(e) === (f.piste === 'commun' ? '' : f.piste))
+    && (!f.qui || !(p.equipe || []).some(a => String(a.id) === f.qui) || pjSurEtape(p, (p.equipe || []).find(a => String(a.id) === f.qui), e))
+    && (!cats.length || cats.includes(pjEtapeCat(e))));
+  const pistes = PJ_PISTES.filter(x => toutes.some(e => pjPisteDe(e) === x[0]));
+  const gens = (p.equipe || []).filter(a => pjNomPersonne(a));
+  const filtres = `<div class="pj-frise-filtres">
+    ${pistes.length ? pjBFSel('etPiste', f.piste, [['', 'VIDÉO ET PHOTO'], ['commun', 'COMMUN']].concat(pistes.map(x => [x[0], 'UNIQUEMENT ' + x[1].toUpperCase()])), 'Partie') : ''}
+    ${gens.length ? pjBFSel('etQui', f.qui, [['', 'TOUT LE MONDE']].concat(gens.map(a => [String(a.id), pjNomPersonne(a).toUpperCase()])), 'Personne') : ''}
+    ${presentes.length > 1 ? presentes.map(c => `<button type="button" class="pj-frise-cat${cats.includes(c[0]) ? ' on' : ''}" onclick="pjCalCatBasculer('${c[0]}')">${c[1]}</button>`).join('') : ''}
+    ${f.piste || f.qui || cats.length ? `<button type="button" class="export-lien" onclick="pjBFEffacer('etPiste,etQui,calCats')">tout afficher</button>` : ''}
+  </div>`;
+  if (!et.length) return filtres + `<p class="field-hint">${toutes.length ? 'Aucune étape avec ces filtres.' : mode === 'postprod' ? 'Pas encore d\'étape de post-prod datée.' : 'Pas encore d\'étape datée.'}</p>`;
+  const du = pjPlusJours(et.reduce((m, e) => e.du < m ? e.du : m, et[0].du), -1);
+  const au = pjPlusJours(et.reduce((m, e) => { const x = pjEtapeDates(e).au; return x > m ? x : m; }, pjEtapeDates(et[0]).au), 1);
+  const n = pjJours(du, au) + 1;
+  const jours = Array.from({ length: n }, (_, i) => pjPlusJours(du, i));
+  const auj = pjAujourdhui();
+  const jcls = d => { const w = pjDate(d).getDay(); return (w === 0 || w === 6 ? ' we' : '') + (d === auj ? ' auj' : '') + (pjDate(d).getDate() === 1 ? ' m1' : ''); };
+  // Les mois au-dessus des jours
+  const mois = [];
+  jours.forEach((d, i) => { const k = d.slice(0, 7); if (!mois.length || mois[mois.length - 1].k !== k) mois.push({ k, i, n: 1 }); else mois[mois.length - 1].n++; });
+  const cols = `grid-template-columns:var(--pj-frise-lab) repeat(${n}, minmax(var(--pj-frise-j), 1fr))`;
+  const tri = et.slice().sort((a, b) => a.du.localeCompare(b.du) || ['', 'video', 'photo'].indexOf(pjPisteDe(a)) - ['', 'video', 'photo'].indexOf(pjPisteDe(b)));
+  const ligne = e => {
+    const x = pjEtapeDates(e);
+    const debut = pjJours(du, x.du) + 2, fin = pjJours(du, x.au) + 3;
+    const pi = pjPisteInfo(pjPisteDe(e));
+    const qui = gens.filter(a => pjSurEtape(p, a, e));
+    const cat = (PJ_CATS.find(c => c[0] === pjEtapeCat(e)) || [, ''])[1];
+    return `<div class="pj-frise-ligne" style="${cols}">
+      <div class="pj-frise-lab" style="--c:${pjEtapeType(e.type)[2]}">
+        <a href="#" class="pj-frise-nom" onclick="event.preventDefault();pjVoirEtape(${e.id})">${pi ? `<i class="pj-piste-pt" style="--p:${pi[2]}" title="${pi[1]}"></i>` : ''}${esc(pjEtapeNom(e))}</a>
+        <small class="pj-muted">${esc(cat)} · ${esc(pjPeriodeTexte(x.du, x.au))}</small>
+        ${qui.length ? `<span class="pj-frise-gens">${qui.map(a => `<a href="#" onclick="event.preventDefault();pjVoirPersonne(${a.id})" title="${esc(a.role || '')}">${esc(pjNomPersonne(a))}</a>`).join('')}</span>` : ''}
+      </div>
+      ${jours.map((d, i) => `<span class="pj-frise-j${jcls(d)}" style="grid-column:${i + 2};grid-row:1"></span>`).join('')}
+      <span class="pj-frise-barre" style="grid-column:${debut} / ${fin};grid-row:1;--c:${pjEtapeType(e.type)[2]};--p:${pi ? pi[2] : '#555'}" title="${esc(pjEtapeNom(e) + ' · ' + pjPeriodeTexte(x.du, x.au) + (qui.length ? ' · ' + qui.map(pjNomPersonne).join(', ') : ''))}"><span>${esc(pjEtapeNom(e))}</span></span>
+    </div>`;
+  };
+  return filtres + `<div class="pj-frise pj-frise-${mode}">
+    <div class="pj-frise-ligne pj-frise-mois" style="${cols}"><span class="pj-frise-lab"></span>${mois.map(m => `<span style="grid-column:${m.i + 2} / span ${m.n}">${PJ_MOIS[Number(m.k.slice(5)) - 1]} ${m.k.slice(0, 4)}</span>`).join('')}</div>
+    <div class="pj-frise-ligne pj-frise-jours" style="${cols}"><span class="pj-frise-lab"></span>${jours.map((d, i) => `<span class="pj-frise-j${jcls(d)}" style="grid-column:${i + 2}">${mode === 'postprod' ? `<small>${'dlmmjvs'[pjDate(d).getDay()]}</small>` : ''}${pjDate(d).getDate()}</span>`).join('')}</div>
+    ${tri.map(ligne).join('')}
+  </div>`;
+}
+// Ouvre une étape dans la liste des étapes pour la modifier
+function pjVoirEtape(eid) {
+  const p = pjCur();
+  if (p) pjBF(p).calPlein = false;
+  pjEtapesOuvert = true;
+  pjRedessiner();
+  const el = document.getElementById('pj-et-' + eid);
+  if (el) { el.scrollIntoView({ behavior: 'smooth', block: 'center' }); el.classList.add('pj-flash'); setTimeout(() => el.classList.remove('pj-flash'), 1600); }
+}
+
 // Une étape dans le calendrier : la couleur de sa piste (vidéo, photo), le trait de son type
 function pjChipHtml(e) {
   const pi = pjPisteInfo(pjPisteDe(e));
@@ -799,6 +907,8 @@ function pjRetirerDeEtape(aid, eid) {
 
 // Ouvre la personne dans l'ÉQUIPE pour la modifier (rôle, étapes, dates)
 function pjVoirPersonne(aid) {
+  const p = pjCur();
+  if (p) pjBF(p).calPlein = false;
   pjEquipeOuvert = true;
   pjAffOuvert.add(aid);
   pjRedessiner();
@@ -912,7 +1022,6 @@ function pjRetroHtml(p) {
   if (r && r.etapes && r.etapes.length) {
     const n = r.etapes.filter(e => e.choisi).length;
     const pp = pjRetroPostProd(p, r);
-    const nomsEtapes = idx => idx.map(i => r.etapes[i].nom || pjEtapeType(r.etapes[i].type)[1]).join(', ');
     return `<div class="pj-retro-apercu">
       <div class="pj-retro-titre">${r.fichier ? `« ${esc(r.fichier)} » · ` : ''}${r.etapes.length} ${r.etapes.length > 1 ? 'étapes trouvées' : 'étape trouvée'}, à vérifier</div>
       <div class="pj-retro-tout"><span class="pj-muted">Tout ce rétroplanning est :</span>
@@ -925,13 +1034,10 @@ function pjRetroHtml(p) {
         <input type="text" value="${esc(e.nom)}" oninput="pjRetro.etapes[${i}].nom=this.value" onchange="pjRedessiner()">
         <input type="date" value="${esc(e.du)}" onchange="pjRetro.etapes[${i}].du=this.value">
         <input type="date" value="${esc(e.au)}" onchange="pjRetro.etapes[${i}].au=this.value">
+        ${(() => { const ici = pp.filter(x => x.idx.includes(i)); return ici.length ? `<div class="pj-retro-gens">${ici.map(x => { const on = x.coches.includes(i); return `<label class="pj-retro-pers${on ? '' : ' off'}" title="${esc(x.role || '')}${x.option ? ' · options team' : ''}${x.nouveau ? ' · ajouté à l\'équipe' : ''}"><input type="checkbox" ${on ? 'checked' : ''} onchange="pjRetroCocher('${x.cle}', ${i}, this.checked)">${esc(x.nom)} <small>${esc(x.role || '')}</small></label>`; }).join('')}</div>` : ''; })()}
       </div>`; }).join('')}
       ${r.msg ? `<p class="field-hint">${esc(r.msg)}</p>` : ''}
-      ${pp.length ? `<div class="pj-retro-pp">
-        <div class="pj-retro-titre">POST-PROD · l'équipe mise d'office sur sa partie</div>
-        ${pp.map(x => `<label class="pj-retro-pp-ligne${x.choisi ? '' : ' off'}"><input type="checkbox" ${x.choisi ? 'checked' : ''} onchange="pjRetro.pp['${x.cle}']=this.checked;pjRedessiner()">
-          <span><b>${esc(x.nom)}</b> <span class="pj-muted">${esc(x.role)}${x.option ? ' · options team' : ''}</span> → ${esc(nomsEtapes(x.idx))}</span></label>`).join('')}
-      </div>` : ''}
+      ${pp.length ? `<p class="field-hint pj-retro-pp-aide">Sous chaque étape de post-prod, les personnes proposées d'office : le photographe sur les edits photo, le réal et le monteur sur les edits vidéo, le coloriste sur l'étalonnage, le sound designer sur le son. Décoche ce qui ne va pas.</p>` : ''}
       <div class="ts-add-row">
         <button type="button" class="btn-cancel" onclick="pjRetro=null;pjRedessiner()">ANNULER</button>
         <button type="button" class="btn-save" onclick="pjRetroAjouter()"${n ? '' : ' disabled'}>AJOUTER AU CALENDRIER (${n})</button>
@@ -955,9 +1061,11 @@ function pjRetroPisteTout(k) {
   pjRedessiner();
 }
 
-// Qui va sur quelle post-prod du rétroplanning importé : l'équipe du projet,
-// et les personnes de l'OPTIONS TEAM (pas encore dans l'équipe) dont le rôle
-// est de post-prod. Chacune peut être décochée.
+// Qui va sur quelle post-prod du rétroplanning importé, proposé de façon
+// logique : le photographe sur les edits photo, le réal et le monteur (Jonas,
+// d'office) sur les edits vidéo, le coloriste sur l'étalonnage, le sound designer
+// sur le son… Ce sont l'équipe du projet, les personnes de l'OPTIONS TEAM (pas
+// encore dans l'équipe) et Jonas. Chaque nom se coche ou se décoche étape par étape.
 function pjRetroPostProd(p, r) {
   const etapes = r.etapes.map((e, i) => ({ ...e, i })).filter(e => e.choisi && e.du);
   const out = [];
@@ -965,23 +1073,32 @@ function pjRetroPostProd(p, r) {
   (p.equipe || []).forEach(a => {
     const nom = pjNomPersonne(a);
     if (!nom) return;
-    vus.add(pjCle(a));
+    vus.add(pjNorm(nom));
     const idx = pjEtapesPourRole(a.role, etapes).map(e => e.i);
     if (idx.length) out.push({ cle: 'e' + a.id, nom, role: a.role, idx, aId: a.id });
   });
   (p.options || []).forEach((o, oi) => {
     const a = pjOptionPersonne(o);
-    if (!o.nom || vus.has(pjCle(a))) return;
+    const nom = pjNomPersonne(a);
+    if (!o.nom || vus.has(pjNorm(nom))) return;
     // Une option relâchée partout (N/A, release, pas retenu…) n'est pas proposée
     if ((o.dispos || []).length && !pjOptionDates(o).length) return;
     const idx = pjEtapesPourRole(o.role, etapes).map(e => e.i);
-    vus.add(pjCle(a));
-    if (idx.length) out.push({ cle: 'o' + oi, nom: pjNomPersonne(a), role: o.role, idx, oi, option: true });
+    vus.add(pjNorm(nom));
+    if (idx.length) out.push({ cle: 'o' + oi, nom, role: o.role, idx, oi, option: true });
   });
+  if (!vus.has(pjNorm(PJ_MONTEUR.nom))) {
+    const idx = pjEtapesPourRole(PJ_MONTEUR.role, etapes).map(e => e.i);
+    if (idx.length) out.push({ cle: 'm', nom: PJ_MONTEUR.nom, role: PJ_MONTEUR.role, idx, nouveau: true });
+  }
   r.pp = r.pp || {};
-  out.forEach(x => { x.choisi = x.cle in r.pp ? r.pp[x.cle] : true; });
+  out.forEach(x => {
+    x.coches = x.idx.filter(i => { const k = x.cle + ':' + i; return k in r.pp ? r.pp[k] : true; });
+    x.choisi = x.coches.length > 0;
+  });
   return out;
 }
+function pjRetroCocher(cle, i, on) { if (!pjRetro) return; pjRetro.pp = pjRetro.pp || {}; pjRetro.pp[cle + ':' + i] = on; pjRedessiner(); }
 
 async function pjRetroFichier(input) {
   const f = input.files && input.files[0];
@@ -1146,9 +1263,10 @@ function pjRetroAjouter() {
   });
   // L'équipe sur sa post-prod ; les personnes de l'OPTIONS TEAM entrent dans l'équipe
   pp.forEach(x => {
-    const etIds = x.idx.map(i => ids[i]).filter(Boolean);
+    const etIds = x.coches.map(i => ids[i]).filter(Boolean);
     if (!etIds.length) return;
     if (x.aId != null) { const a = p.equipe.find(y => y.id === x.aId); if (a) pjMettreSurPostProd(p, a, etIds); return; }
+    if (x.nouveau) { p.equipe.push({ id: uid(), ref: null, nom: x.nom, role: x.role, etapes: etIds.slice(), du: '', au: '' }); return; }
     const o = (p.options || [])[x.oi];
     if (!o) return;
     const a = pjOptionVersAffectation(o);
@@ -1166,7 +1284,7 @@ function pjRetroAjouter() {
 function pjEtapeHtml(e) {
   const o = { l: 'etapes', i: e.id };
   const pi = pjPisteInfo(pjPisteDe(e));
-  return `<div class="pj-etape" style="--c:${pjEtapeType(e.type)[2]}${pi ? ';--p:' + pi[2] : ''}"${pi ? ` data-piste="${pi[0]}"` : ''}>
+  return `<div class="pj-etape" id="pj-et-${e.id}" style="--c:${pjEtapeType(e.type)[2]}${pi ? ';--p:' + pi[2] : ''}"${pi ? ` data-piste="${pi[0]}"` : ''}>
     ${pjField('TYPE', 'type', e.type, { ...o, select: PJ_ETAPES.map(t => [t[0], t[1]]) })}
     ${pjField('PARTIE', 'piste', pjPisteDe(e), { ...o, select: [['', 'Commun']].concat(PJ_PISTES.map(x => [x[0], x[1]])) })}
     ${pjField('NOM', 'nom', e.nom, { ...o, ph: pjEtapeType(e.type)[1], change: true })}
