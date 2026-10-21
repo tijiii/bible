@@ -18,7 +18,7 @@ let pjOptionsOuvert = false; // bloc OPTIONS TEAM déplié (fermé par défaut, 
 let pjRetroOuvert = false;   // bloc d'import du rétroplanning déplié
 let pjEtapesOuvert = false;  // liste des étapes (à modifier) dépliée
 let pjEquipeOuvert = false;  // bloc ÉQUIPE déplié
-let pjEtFiltre = { pid: null, type: '', piste: '', qui: '' };  // filtres du calendrier et des étapes (pour un projet)
+let pjBlocFiltres = {};      // filtres et tris des blocs d'un projet (étapes, to-do, équipe, options), par projet
 let pjModifie = null;        // dernier projet modifié (la synchro le garde tant qu'il n'est pas envoyé)
 let pjEnDessin = false;      // la page est en train d'être remplacée (le champ quitté envoie « change »)
 
@@ -624,7 +624,6 @@ function pjPageHtml(p, conflits, choix) {
 
     <section class="ts-bloc">
       <h3>CALENDRIER</h3>
-      ${pjEtFiltresHtml(p)}
       ${pjCalendrierHtml(p)}
       ${pjEtapesBlocHtml(p)}
       ${pjRetroBlocHtml(p)}
@@ -654,13 +653,22 @@ function pjPageHtml(p, conflits, choix) {
 // L'équipe, repliable (fermée dès qu'il y a du monde : le résumé donne les noms)
 function pjEquipeHtml(p, choix) {
   const eq = (p.equipe || []);
+  const f = pjBF(p);
+  const pistes = PJ_PISTES.filter(x => eq.some(a => pjRolePiste(a.role) === x[0]));
+  let vus = eq;
+  if (f.eqPiste) vus = vus.filter(a => (f.eqPiste === 'commun' ? !pjRolePiste(a.role) : pjRolePiste(a.role) === f.eqPiste));
+  if (f.eqTri === 'nom') vus = vus.slice().sort((a, b) => pjNomPersonne(a).localeCompare(pjNomPersonne(b), 'fr'));
+  else if (f.eqTri === 'role') vus = vus.slice().sort((a, b) => (a.role || '~').localeCompare(b.role || '~', 'fr') || pjNomPersonne(a).localeCompare(pjNomPersonne(b), 'fr'));
+  else if (f.eqTri === 'partie') vus = vus.slice().sort((a, b) => ['video', 'photo', ''].indexOf(pjRolePiste(a.role)) - ['video', 'photo', ''].indexOf(pjRolePiste(b.role)));
+  const barre = eq.length > 1 ? pjBFBarre(`${pistes.length ? pjBFSel('eqPiste', f.eqPiste, [['', 'VIDÉO ET PHOTO'], ['commun', 'SANS PARTIE']].concat(pistes.map(x => [x[0], 'UNIQUEMENT ' + x[1].toUpperCase()])), 'Partie') : ''}
+    ${pjBFSel('eqTri', f.eqTri, [['', 'ORDRE D\'AJOUT'], ['nom', 'PAR NOM'], ['role', 'PAR RÔLE'], ['partie', 'PAR PARTIE']], 'Ordre')}`, f.eqPiste ? 'eqPiste' : '') : '';
   const noms = eq.map(a => pjNomPersonne(a)).filter(Boolean);
   const ouvert = pjEquipeOuvert || !eq.length;
   const nbConflits = pjConflitsDe(p).filter(c => !pjMien(c, p).a.opt).length;
   return `<details class="ts-bloc pj-repli pj-equipe-bloc"${ouvert ? ' open' : ''} ontoggle="if(this.open!==${ouvert})pjEquipeOuvert=this.open">
-    <summary><h3>ÉQUIPE <small class="pj-muted">${noms.length ? `· ${noms.length} ${noms.length > 1 ? 'personnes' : 'personne'} · ${esc(noms.slice(0, 4).join(', '))}${noms.length > 4 ? '…' : ''}` : ''}</small>${nbConflits ? ` <span class="pj-warn">⚠ ${nbConflits}</span>` : ''}</h3></summary>
+    <summary><h3>ÉQUIPE <small class="pj-muted">${noms.length ? `· ${noms.length} ${noms.length > 1 ? 'personnes' : 'personne'}${barre ? '' : ` · ${esc(noms.slice(0, 4).join(', '))}${noms.length > 4 ? '…' : ''}`}` : ''}</small>${nbConflits ? ` <span class="pj-warn">⚠ ${nbConflits}</span>` : ''}${barre}</h3></summary>
     <datalist id="pj-gens">${choix.map(c => `<option value="${esc(c.label)}"></option>`).join('')}</datalist>
-    <div class="pj-equipe">${eq.map(a => pjAffectationHtml(p, a)).join('') || '<p class="field-hint">Personne pour le moment. Les talents et techniciens de la bible sont proposés quand tu tapes un nom ; tu peux aussi écrire n\'importe quel nom.</p>'}</div>
+    <div class="pj-equipe">${vus.map(a => pjAffectationHtml(p, a)).join('') || (eq.length ? '<p class="field-hint">Personne avec ce filtre.</p>' : '') || '<p class="field-hint">Personne pour le moment. Les talents et techniciens de la bible sont proposés quand tu tapes un nom ; tu peux aussi écrire n\'importe quel nom.</p>'}</div>
     <div class="ts-add-row"><button type="button" class="btn-upload" onclick="pjAjouterPersonne()">+ PERSONNE</button></div>
   </details>`;
 }
@@ -723,22 +731,32 @@ function pjEtapesBlocHtml(p) {
     .map(([k, lab]) => [lab, toutes.filter(e => pjPisteDe(e) === k)]).filter(g => g[1].length);
   const avecTitres = groupes.length > 1 || (groupes[0] && groupes[0][0] !== 'COMMUN');
   return `<details class="pj-sous-bloc"${ouvert ? ' open' : ''} ontoggle="if(this.open!==${ouvert})pjEtapesOuvert=this.open">
-    <summary><span class="pj-sous-titre">ÉTAPES</span> <small class="pj-muted">${tout.length ? `${filtre ? toutes.length + ' sur ' + tout.length : tout.length} · modifier les dates, ajouter une étape` : 'aucune pour le moment'}</small></summary>
+    <summary><span class="pj-sous-titre">ÉTAPES</span> <small class="pj-muted">${tout.length ? `${filtre ? toutes.length + ' sur ' + tout.length : tout.length}${pjEtFiltresHtml(p) ? '' : ' · modifier les dates, ajouter une étape'}` : 'aucune pour le moment'}</small>${pjEtFiltresHtml(p)}</summary>
     <datalist id="pj-gens-etapes">${pjEtapesChoixHtml(p)}</datalist>
     <div class="pj-etapes">${groupes.map(([lab, l]) => (avecTitres ? `<div class="pj-etapes-groupe">${lab}</div>` : '') + l.map(e => pjEtapeHtml(e)).join('')).join('') || (filtre ? '<p class="field-hint">Aucune étape avec ces filtres.</p>' : '') || '<p class="field-hint">Aucune étape. Importe le rétroplanning ci-dessous, ou ajoute la prépa, le tournage, la post-prod… avec leurs dates.</p>'}</div>
     <div class="ts-add-row">${PJ_ETAPES.map(t => `<button type="button" class="btn-upload" onclick="pjAjouterEtape('${t[0]}')">+ ${t[1].toUpperCase()}</button>`).join('')}</div>
   </details>`;
 }
 
-// ── Filtres du calendrier et des étapes : type, partie (vidéo, photo), personne
-function pjEtF(p) { return pjEtFiltre.pid === p.id ? pjEtFiltre : { type: '', piste: '', qui: '' }; }
-function pjEtFiltrer(k, v) {
+// ── Filtres et tris des blocs d'un projet ────────────────────────────────────
+// Rangés par projet (pjBlocFiltres[id]) ; les menus se placent dans le titre
+// du bloc, sans le plier ni le déplier quand on clique dessus.
+function pjBF(p) { return (pjBlocFiltres[p.id] = pjBlocFiltres[p.id] || {}); }
+function pjBFRegler(k, v) {
   const p = pjCur();
   if (!p) return;
-  if (pjEtFiltre.pid !== p.id) pjEtFiltre = { pid: p.id, type: '', piste: '', qui: '' };
-  pjEtFiltre[k] = v;
+  pjBF(p)[k] = v;
   pjRedessiner();
 }
+function pjBFEffacer(ks) { const p = pjCur(); if (!p) return; ks.split(',').forEach(k => delete pjBF(p)[k]); pjRedessiner(); }
+function pjBFSel(k, v, opts, titre) {
+  return `<select class="filter-sel" title="${esc(titre || '')}" onchange="pjBFRegler('${k}', this.value)">${opts.map(([val, lab]) => `<option value="${esc(val)}"${(v || '') === val ? ' selected' : ''}>${esc(lab)}</option>`).join('')}</select>`;
+}
+function pjBFBarre(contenu, effacer) {
+  return contenu.trim() ? `<span class="pj-bloc-tri" onclick="event.preventDefault();event.stopPropagation()">${contenu}${effacer ? `<button type="button" class="export-lien" onclick="pjBFEffacer('${effacer}')">tout afficher</button>` : ''}</span>` : '';
+}
+function pjEtF(p) { const f = pjBF(p); return { type: f.etType || '', piste: f.etPiste || '', qui: f.etQui || '' }; }
+
 // Une personne est sur une étape : cochée, ou sur tout le projet (de sa partie)
 function pjSurEtape(p, a, e) {
   if ((a.etapes || []).includes(e.id)) return true;
@@ -758,14 +776,10 @@ function pjEtFiltresHtml(p) {
   const types = PJ_ETAPES.filter(t => et.some(e => e.type === t[0]));
   const pistes = PJ_PISTES.filter(x => et.some(e => pjPisteDe(e) === x[0]));
   const gens = (p.equipe || []).filter(a => pjNomPersonne(a));
-  const sel = (k, v, opts) => `<select class="filter-sel" onchange="pjEtFiltrer('${k}', this.value)">${opts.map(([val, lab]) => `<option value="${esc(val)}"${v === val ? ' selected' : ''}>${esc(lab)}</option>`).join('')}</select>`;
   const actif = f.type || f.piste || f.qui;
-  return `<div class="pj-et-filtres">
-    ${types.length > 1 ? sel('type', f.type, [['', 'TOUTES LES ÉTAPES']].concat(types.map(t => [t[0], t[1].toUpperCase()]))) : ''}
-    ${pistes.length ? sel('piste', f.piste, [['', 'VIDÉO ET PHOTO'], ['commun', 'COMMUN']].concat(pistes.map(x => [x[0], 'UNIQUEMENT ' + x[1].toUpperCase()]))) : ''}
-    ${gens.length ? sel('qui', f.qui, [['', 'TOUT LE MONDE']].concat(gens.map(a => [String(a.id), pjNomPersonne(a).toUpperCase()]))) : ''}
-    ${actif ? `<button type="button" class="export-lien" onclick="pjEtFiltre={pid:null,type:'',piste:'',qui:''};pjRedessiner()">tout afficher</button>` : ''}
-  </div>`;
+  return pjBFBarre(`${gens.length ? pjBFSel('etQui', f.qui, [['', 'TOUT LE MONDE']].concat(gens.map(a => [String(a.id), pjNomPersonne(a).toUpperCase()])), 'Personne') : ''}
+    ${pistes.length ? pjBFSel('etPiste', f.piste, [['', 'VIDÉO ET PHOTO'], ['commun', 'COMMUN']].concat(pistes.map(x => [x[0], 'UNIQUEMENT ' + x[1].toUpperCase()])), 'Partie') : ''}
+    ${types.length > 1 ? pjBFSel('etType', f.type, [['', 'TOUTES LES ÉTAPES']].concat(types.map(t => [t[0], t[1].toUpperCase()])), 'Type') : ''}`, actif ? 'etQui,etPiste,etType' : '');
 }
 
 // Retire quelqu'un d'une étape. S'il était sur tout le projet, il garde
@@ -827,9 +841,14 @@ function pjOptionsHtml(p) {
   const conflits = pjConflits();
   const equipe = new Set((p.equipe || []).filter(a => pjNomPersonne(a)).map(pjCle));
   const nbConflits = conflits.filter(c => [c.x, c.y].some(q => q.p.id === p.id && q.a.opt)).length;
+  const tri = pjBF(p).opTri || '';
+  const ordre = options.map((o, i) => [o, i]);
+  if (tri === 'nom') ordre.sort((a, b) => String(a[0].nom || '').localeCompare(String(b[0].nom || ''), 'fr'));
+  else if (tri === 'role') ordre.sort((a, b) => String(a[0].role || '~').localeCompare(String(b[0].role || '~'), 'fr') || String(a[0].nom || '').localeCompare(String(b[0].nom || ''), 'fr'));
+  const barre = options.length > 1 ? pjBFBarre(pjBFSel('opTri', tri, [['', 'ORDRE DE LA FICHE'], ['nom', 'PAR NOM'], ['role', 'PAR RÔLE']], 'Ordre')) : '';
   return `<details class="ts-bloc pj-options-bloc"${pjOptionsOuvert ? ' open' : ''} ontoggle="pjOptionsOuvert=this.open">
-    <summary><h3>OPTIONS TEAM <small class="pj-muted">· fiche de suivi · ${options.length} ${options.length > 1 ? 'personnes' : 'personne'}</small>${nbConflits ? ` <span class="pj-warn">⚠ ${nbConflits}</span>` : ''}</h3></summary>
-    <div class="pj-options">${options.map((o, i) => {
+    <summary><h3>OPTIONS TEAM <small class="pj-muted">· fiche de suivi · ${options.length} ${options.length > 1 ? 'personnes' : 'personne'}</small>${nbConflits ? ` <span class="pj-warn">⚠ ${nbConflits}</span>` : ''}${barre}</h3></summary>
+    <div class="pj-options">${ordre.map(([o, i]) => {
       const a = pjOptionPersonne(o);
       const t = pjTalent(a.ref);
       const cle = pjCle(a);
