@@ -18,6 +18,7 @@ let pjOptionsOuvert = false; // bloc OPTIONS TEAM déplié (fermé par défaut, 
 let pjRetroOuvert = false;   // bloc d'import du rétroplanning déplié
 let pjEtapesOuvert = false;  // liste des étapes (à modifier) dépliée
 let pjEquipeOuvert = false;  // bloc ÉQUIPE déplié
+let pjEtFiltre = { pid: null, type: '', piste: '', qui: '' };  // filtres du calendrier et des étapes (pour un projet)
 let pjModifie = null;        // dernier projet modifié (la synchro le garde tant qu'il n'est pas envoyé)
 let pjEnDessin = false;      // la page est en train d'être remplacée (le champ quitté envoie « change »)
 
@@ -132,11 +133,11 @@ function pjChoixGens() {
 
 // Les périodes où une personne est prise sur un projet :
 // ses dates libres si on en a mis, plus les étapes cochées ;
-// sans dates libres ni étape cochée, toutes les étapes (tout le projet).
+// sans dates libres ni étape cochée, tout le projet (voir pjEtapesParDefaut).
 function pjPeriodes(p, a) {
   const et = pjEtapesDatees(p);
   const coches = et.filter(e => (a.etapes || []).includes(e.id));
-  const out = coches.length || a.du ? coches : et;
+  const out = coches.length || a.du ? coches : pjEtapesParDefaut(p, a);
   return (a.du ? [{ du: a.du, au: a.au && a.au >= a.du ? a.au : a.du, label: 'dates choisies' }] : [])
     .concat(out.map(e => ({ ...pjEtapeDates(e), label: pjEtapeNom(e) })));
 }
@@ -168,6 +169,18 @@ function pjRolePostProd(role) {
   }
   return null;
 }
+// « Tout le projet » : toutes les étapes, sauf celles de l'autre partie quand
+// le rôle en a une (le réal n'est pas sur la partie photo, le photographe pas
+// sur la vidéo)
+function pjSurToutLeProjet(a) { return !(a.etapes || []).length && !a.du; }
+function pjRolePiste(role) { const pp = pjRolePostProd(role); return (pp && pp.piste) || ''; }
+function pjEtapesParDefaut(p, a) {
+  const et = pjEtapesDatees(p);
+  const pi = pjRolePiste(a.role);
+  const l = pi ? et.filter(e => [pi, ''].includes(pjPisteDe(e))) : et;
+  return l.length ? l : et;
+}
+
 // Parmi des étapes, celles de post-prod qui reviennent à ce rôle
 function pjEtapesPourRole(role, etapes) {
   const pp = pjRolePostProd(role);
@@ -611,6 +624,7 @@ function pjPageHtml(p, conflits, choix) {
 
     <section class="ts-bloc">
       <h3>CALENDRIER</h3>
+      ${pjEtFiltresHtml(p)}
       ${pjCalendrierHtml(p)}
       ${pjEtapesBlocHtml(p)}
       ${pjRetroBlocHtml(p)}
@@ -671,7 +685,7 @@ function pjCalendrierHtml(p) {
   const cases = Array.from({ length: nbCases }, (_, i) => {
     const d = pjPlusJours(debut, i);
     const dedans = d.slice(0, 7) === pjMois;
-    const ici = et.filter(e => { const x = pjEtapeDates(e); return d >= x.du && d <= x.au; })
+    const ici = et.filter(e => { const x = pjEtapeDates(e); return d >= x.du && d <= x.au && pjEtapeVisible(p, e); })
       .sort((a, b) => ordre(a) - ordre(b));
     return `<div class="pj-jour${dedans ? '' : ' hors'}${d === auj ? ' auj' : ''}">
       <span class="pj-jour-num">${pjDate(d).getDate()}</span>
@@ -701,17 +715,77 @@ function pjChipHtml(e) {
 
 // La liste des étapes à modifier, repliée une fois qu'il y en a (le calendrier suffit pour lire)
 function pjEtapesBlocHtml(p) {
-  const toutes = pjEtapesDatees(p).concat((p.etapes || []).filter(e => !pjEtapeDates(e)));
-  const ouvert = pjEtapesOuvert || !toutes.length;
+  const tout = pjEtapesDatees(p).concat((p.etapes || []).filter(e => !pjEtapeDates(e)));
+  const toutes = tout.filter(e => pjEtapeVisible(p, e));
+  const filtre = toutes.length !== tout.length;
+  const ouvert = pjEtapesOuvert || !tout.length;
   const groupes = [['', 'COMMUN']].concat(PJ_PISTES.map(x => [x[0], x[1].toUpperCase()]))
     .map(([k, lab]) => [lab, toutes.filter(e => pjPisteDe(e) === k)]).filter(g => g[1].length);
   const avecTitres = groupes.length > 1 || (groupes[0] && groupes[0][0] !== 'COMMUN');
   return `<details class="pj-sous-bloc"${ouvert ? ' open' : ''} ontoggle="if(this.open!==${ouvert})pjEtapesOuvert=this.open">
-    <summary><span class="pj-sous-titre">ÉTAPES</span> <small class="pj-muted">${toutes.length ? `${toutes.length} · modifier les dates, ajouter une étape` : 'aucune pour le moment'}</small></summary>
+    <summary><span class="pj-sous-titre">ÉTAPES</span> <small class="pj-muted">${tout.length ? `${filtre ? toutes.length + ' sur ' + tout.length : tout.length} · modifier les dates, ajouter une étape` : 'aucune pour le moment'}</small></summary>
     <datalist id="pj-gens-etapes">${pjEtapesChoixHtml(p)}</datalist>
-    <div class="pj-etapes">${groupes.map(([lab, l]) => (avecTitres ? `<div class="pj-etapes-groupe">${lab}</div>` : '') + l.map(e => pjEtapeHtml(e)).join('')).join('') || '<p class="field-hint">Aucune étape. Importe le rétroplanning ci-dessous, ou ajoute la prépa, le tournage, la post-prod… avec leurs dates.</p>'}</div>
+    <div class="pj-etapes">${groupes.map(([lab, l]) => (avecTitres ? `<div class="pj-etapes-groupe">${lab}</div>` : '') + l.map(e => pjEtapeHtml(e)).join('')).join('') || (filtre ? '<p class="field-hint">Aucune étape avec ces filtres.</p>' : '') || '<p class="field-hint">Aucune étape. Importe le rétroplanning ci-dessous, ou ajoute la prépa, le tournage, la post-prod… avec leurs dates.</p>'}</div>
     <div class="ts-add-row">${PJ_ETAPES.map(t => `<button type="button" class="btn-upload" onclick="pjAjouterEtape('${t[0]}')">+ ${t[1].toUpperCase()}</button>`).join('')}</div>
   </details>`;
+}
+
+// ── Filtres du calendrier et des étapes : type, partie (vidéo, photo), personne
+function pjEtF(p) { return pjEtFiltre.pid === p.id ? pjEtFiltre : { type: '', piste: '', qui: '' }; }
+function pjEtFiltrer(k, v) {
+  const p = pjCur();
+  if (!p) return;
+  if (pjEtFiltre.pid !== p.id) pjEtFiltre = { pid: p.id, type: '', piste: '', qui: '' };
+  pjEtFiltre[k] = v;
+  pjRedessiner();
+}
+// Une personne est sur une étape : cochée, ou sur tout le projet (de sa partie)
+function pjSurEtape(p, a, e) {
+  if ((a.etapes || []).includes(e.id)) return true;
+  return pjSurToutLeProjet(a) && !!pjEtapeDates(e) && pjEtapesParDefaut(p, a).some(x => x.id === e.id);
+}
+function pjEtapeVisible(p, e) {
+  const f = pjEtF(p);
+  if (f.type && e.type !== f.type) return false;
+  if (f.piste && pjPisteDe(e) !== (f.piste === 'commun' ? '' : f.piste)) return false;
+  if (f.qui) { const a = (p.equipe || []).find(x => String(x.id) === f.qui); if (a && !pjSurEtape(p, a, e)) return false; }
+  return true;
+}
+function pjEtFiltresHtml(p) {
+  const et = p.etapes || [];
+  if (et.length < 2) return '';
+  const f = pjEtF(p);
+  const types = PJ_ETAPES.filter(t => et.some(e => e.type === t[0]));
+  const pistes = PJ_PISTES.filter(x => et.some(e => pjPisteDe(e) === x[0]));
+  const gens = (p.equipe || []).filter(a => pjNomPersonne(a));
+  const sel = (k, v, opts) => `<select class="filter-sel" onchange="pjEtFiltrer('${k}', this.value)">${opts.map(([val, lab]) => `<option value="${esc(val)}"${v === val ? ' selected' : ''}>${esc(lab)}</option>`).join('')}</select>`;
+  const actif = f.type || f.piste || f.qui;
+  return `<div class="pj-et-filtres">
+    ${types.length > 1 ? sel('type', f.type, [['', 'TOUTES LES ÉTAPES']].concat(types.map(t => [t[0], t[1].toUpperCase()]))) : ''}
+    ${pistes.length ? sel('piste', f.piste, [['', 'VIDÉO ET PHOTO'], ['commun', 'COMMUN']].concat(pistes.map(x => [x[0], 'UNIQUEMENT ' + x[1].toUpperCase()]))) : ''}
+    ${gens.length ? sel('qui', f.qui, [['', 'TOUT LE MONDE']].concat(gens.map(a => [String(a.id), pjNomPersonne(a).toUpperCase()]))) : ''}
+    ${actif ? `<button type="button" class="export-lien" onclick="pjEtFiltre={pid:null,type:'',piste:'',qui:''};pjRedessiner()">tout afficher</button>` : ''}
+  </div>`;
+}
+
+// Retire quelqu'un d'une étape. S'il était sur tout le projet, il garde
+// toutes les autres étapes (cochées une à une) ; il reste dans l'équipe.
+function pjRetirerDeEtape(aid, eid) {
+  const p = pjCur();
+  const a = pjAffectation(aid);
+  if (!p || !a) return;
+  if (pjSurToutLeProjet(a)) a.etapes = pjEtapesParDefaut(p, a).map(x => x.id);
+  a.etapes = (a.etapes || []).filter(x => x !== eid);
+  pjChange(true);
+}
+
+// Ouvre la personne dans l'ÉQUIPE pour la modifier (rôle, étapes, dates)
+function pjVoirPersonne(aid) {
+  pjEquipeOuvert = true;
+  pjAffOuvert.add(aid);
+  pjRedessiner();
+  const el = document.getElementById('pj-aff-' + aid);
+  if (el) { el.scrollIntoView({ behavior: 'smooth', block: 'center' }); el.classList.add('pj-flash'); setTimeout(() => el.classList.remove('pj-flash'), 1600); }
 }
 
 // Les noms proposés sur une étape : l'équipe du projet d'abord, puis la bible
@@ -1086,10 +1160,11 @@ function pjEtapeGensHtml(e) {
   const p = pjCur();
   const eq = (p && p.equipe || []).filter(a => pjNomPersonne(a));
   const sur = eq.filter(a => (a.etapes || []).includes(e.id));
-  const toutLeProjet = pjEtapeDates(e) ? eq.filter(a => !(a.etapes || []).length && !a.du) : [];
+  const toutLeProjet = pjEtapeDates(e) ? eq.filter(a => pjSurToutLeProjet(a) && pjEtapesParDefaut(p, a).some(x => x.id === e.id)) : [];
+  const chip = (a, tout) => `<span class="pj-etape-pers${tout ? ' pj-tout' : ''}"${tout ? ' title="Sur tout le projet"' : ''}><a href="#" title="Modifier (rôle, étapes, dates)" onclick="event.preventDefault();pjVoirPersonne(${a.id})">${esc(pjNomPersonne(a))}${a.role ? ` <small>${esc(a.role)}</small>` : ''}</a><button type="button" title="Retirer de l'étape" onclick="pjRetirerDeEtape(${a.id}, ${e.id})">✕</button></span>`;
   return `<div class="pj-etape-gens">
-    ${sur.map(a => `<span class="pj-etape-pers">${esc(pjNomPersonne(a))}${a.role ? ` <small>${esc(a.role)}</small>` : ''}<button type="button" title="Retirer de l'étape" onclick="pjCocherEtape(${a.id}, ${e.id}, false)">✕</button></span>`).join('')}
-    ${toutLeProjet.map(a => `<span class="pj-etape-pers pj-muted" title="Sur tout le projet">${esc(pjNomPersonne(a))}${a.role ? ` <small>${esc(a.role)}</small>` : ''}</span>`).join('')}
+    ${sur.map(a => chip(a, false)).join('')}
+    ${toutLeProjet.map(a => chip(a, true)).join('')}
     <input class="pj-etape-ajout" list="pj-gens-etapes" placeholder="+ personne sur cette étape" onchange="pjEtapeAjouterPersonne(${e.id}, this.value)" onkeydown="if(event.key==='Enter')this.blur()">
   </div>`;
 }
@@ -1107,8 +1182,11 @@ function pjEtapeAjouterPersonne(eid, v) {
   const cle = pjCle(nouveau);
   const a = p.equipe.find(x => pjNomPersonne(x) && pjCle(x) === cle);
   if (a) {
-    // Déjà sur tout le projet : il est déjà sur l'étape, on ne réduit pas ses dates
-    if (!(a.etapes || []).length && !a.du) { pjRedessiner(); return; }
+    // Sur tout le projet : on garde ses étapes et on ajoute celle-ci
+    if (pjSurToutLeProjet(a)) {
+      if (pjEtapesParDefaut(p, a).some(x => x.id === eid)) { pjRedessiner(); return; }
+      a.etapes = pjEtapesParDefaut(p, a).map(x => x.id);
+    }
     a.etapes = (a.etapes || []).filter(x => x !== eid).concat(eid);
   } else {
     const t = pjTalent(nouveau.ref);
@@ -1124,7 +1202,7 @@ function pjAffectationHtml(p, a) {
   const et = pjEtapesDatees(p);
   const conflits = pjNomPersonne(a) ? pjConflitsDe(p, a) : [];
   const libres = !!a.du;
-  return `<div class="pj-aff${conflits.length ? ' conflit' : ''}">
+  return `<div class="pj-aff${conflits.length ? ' conflit' : ''}" id="pj-aff-${a.id}">
     <div class="pj-aff-ligne">
       <div class="field pj-aff-qui"><label>PERSONNE${t ? ` · <a href="#" onclick="event.preventDefault();openDetail('talent', ${t.id})">fiche</a>` : ''}</label>
         <input list="pj-gens" data-k="qui" data-l="equipe" data-i="${a.id}" value="${esc(label)}" placeholder="Nom, ou choisis dans la bible" onchange="pjChoisirPersonne(${a.id}, this.value)"></div>
@@ -1137,7 +1215,7 @@ function pjAffectationHtml(p, a) {
       ${libres ? `${pjField('DU', 'du', a.du, { l: 'equipe', i: a.id, type: 'date', cls: 'pj-mini' })}${pjField('AU', 'au', a.au, { l: 'equipe', i: a.id, type: 'date', cls: 'pj-mini' })}
         <button type="button" class="btn-edit-inline" onclick="pjDatesLibres(${a.id}, false)">SUIVRE LES ÉTAPES</button>
         ${et.length ? '<span class="pj-muted">et :</span>' : ''}`
-        : `<label class="cat-check"><input type="checkbox" ${(a.etapes || []).length ? '' : 'checked'} onchange="pjToutLeProjet(${a.id})"><span>tout le projet</span></label>`}
+        : `<label class="cat-check"><input type="checkbox" ${(a.etapes || []).length ? '' : 'checked'} onchange="pjToutLeProjet(${a.id})"><span>${pjToutLeProjetTexte(p, a)}</span></label>`}
       ${et.map(e => { const pi = pjPisteInfo(pjPisteDe(e)); return `<label class="cat-check"><input type="checkbox" ${(a.etapes || []).includes(e.id) ? 'checked' : ''} onchange="pjCocherEtape(${a.id}, ${e.id}, this.checked)"><span>${pi ? `<i class="pj-piste-pt" style="--p:${pi[2]}" title="${pi[1]}"></i>` : ''}${esc(pjEtapeNom(e))} <small>${esc(pjPeriodeTexte(e.du, pjEtapeDates(e).au))}</small></span></label>`; }).join('')}
       ${libres ? '' : `<button type="button" class="btn-edit-inline" onclick="pjDatesLibres(${a.id}, true)">AUTRES DATES</button>`}
     </div>
@@ -1153,8 +1231,15 @@ function pjAffResume(p, a) {
   const et = pjEtapesDatees(p).filter(e => (a.etapes || []).includes(e.id));
   const morceaux = (a.du ? [pjPeriodeTexte(a.du, a.au && a.au >= a.du ? a.au : a.du)] : [])
     .concat(et.map(e => { const pi = pjPisteInfo(pjPisteDe(e)); return (pi ? `<i class="pj-piste-pt" style="--p:${pi[2]}"></i>` : '') + esc(pjEtapeNom(e)); }));
-  return (morceaux.length ? morceaux.map(m => `<span class="pj-aff-res">${m}</span>`).join('') : '<span class="pj-aff-res">tout le projet</span>')
+  return (morceaux.length ? morceaux.map(m => `<span class="pj-aff-res">${m}</span>`).join('') : `<span class="pj-aff-res">${pjToutLeProjetTexte(p, a)}</span>`)
     + ' <span class="pj-muted pj-aff-modif">modifier</span>';
+}
+
+// « tout le projet », ou « tout le projet sauf la partie photo » quand le rôle n'y est pas
+function pjToutLeProjetTexte(p, a) {
+  const pi = pjRolePiste(a.role);
+  const autres = PJ_PISTES.filter(x => x[0] !== pi && pjEtapesDatees(p).some(e => pjPisteDe(e) === x[0]));
+  return pi && autres.length && pjEtapesParDefaut(p, a).length < pjEtapesDatees(p).length ? `tout le projet, sauf ${autres.map(x => x[1].toLowerCase()).join(' et ')}` : 'tout le projet';
 }
 
 function pjAffectation(id) { const p = pjCur(); return p && (p.equipe || []).find(a => a.id === id); }

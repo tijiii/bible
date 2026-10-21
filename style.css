@@ -705,7 +705,16 @@ body.doc-vue-ouvert > *:not(#doc-vue) { display:none !important; }
 .pj-etape-gens { grid-column:1 / -1; display:flex; flex-wrap:wrap; gap:6px; align-items:center; margin-top:-2px; }
 .pj-etape-pers { display:inline-flex; align-items:center; gap:4px; font-size:13px; padding:2px 4px 2px 8px; border:1px solid var(--border2); background:#fff; }
 .pj-etape-pers small { color:var(--muted); font-size:11.5px; }
-.pj-etape-pers.pj-muted { padding-right:8px; border-style:dashed; }
+.pj-etape-pers.pj-tout { border-style:dashed; }
+.pj-etape-pers.pj-tout a { color:var(--muted); }
+.pj-etape-pers a { color:inherit; text-decoration:none; }
+.pj-etape-pers a:hover { text-decoration:underline; }
+.pj-flash { animation:pjFlash 1.6s ease-out; }
+@keyframes pjFlash { from { background:#fff4d6; } to { background:transparent; } }
+.pj-et-filtres { display:flex; gap:6px; flex-wrap:wrap; align-items:center; margin:0 0 10px; }
+.pj-et-filtres .filter-sel { max-width:220px; }
+.pj-taches h3 { display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
+.td-p-qui { margin-left:auto; font-size:12px; }
 .pj-etape-pers button { background:none; border:none; cursor:pointer; color:var(--muted); font-size:11px; padding:0 3px; }
 .pj-etape-pers button:hover { color:var(--red); }
 .pj-etape-ajout { background:transparent; border:none; border-bottom:1px dashed var(--border2); padding:3px 2px; font-family:var(--serif); font-size:13px; outline:none; min-width:190px; color:var(--text); }
