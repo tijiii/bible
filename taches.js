@@ -290,7 +290,10 @@ function tdProjetHtml(p) {
   const quiF = f.tdQui || '', stF = f.tdStatut || '', tri = f.tdTri || '';
   let l = quiF ? toutes.filter(t => (quiF === '~' ? !t.qui : pjNorm(t.qui) === quiF)) : toutes;
   if (stF && stF !== 'toutes') l = l.filter(t => tdStatut(t) === stF);
-  const gens = [...new Map(toutes.filter(t => t.qui).map(t => [pjNorm(t.qui), t.qui])).entries()].sort((a, b) => a[1].localeCompare(b[1], 'fr'));
+  // Les personnes du filtre : celles qui ont une tâche, puis l'équipe du projet et Widen
+  const gensMap = new Map(toutes.filter(t => t.qui).map(t => [pjNorm(t.qui), t.qui]));
+  tdNoms(p).forEach(n => { if (!gensMap.has(pjNorm(n))) gensMap.set(pjNorm(n), n); });
+  const gens = [...gensMap.entries()].sort((a, b) => a[1].localeCompare(b[1], 'fr'));
   if (toutes.some(t => !t.qui)) gens.push(['~', 'Personne']);
   const parPersonne = (a, b) => (a.qui ? '0' + pjNorm(a.qui) : '1').localeCompare(b.qui ? '0' + pjNorm(b.qui) : '1', 'fr') || tdTriUrgence(a, b);
   const ordre = { urgence: tdTriUrgence, date: tdTri, personne: parPersonne }[tri] || tdTriStatut;
@@ -299,7 +302,7 @@ function tdProjetHtml(p) {
   const ouvertes = (apart ? l.filter(t => !t.fait) : l).slice().sort(ordre);
   const faites = apart ? l.filter(t => t.fait).sort(ordre) : [];
   const nbOuvertes = toutes.filter(t => !t.fait).length;
-  const barre = toutes.length > 1 ? pjBFBarre(`${gens.length > 1 || quiF ? pjBFSel('tdQui', quiF, [['', 'TOUT LE MONDE']].concat(gens.map(([k, n]) => [k, n.toUpperCase()])), 'Personne') : ''}
+  const barre = toutes.length ? pjBFBarre(`${pjBFSel('tdQui', quiF, [['', 'TOUT LE MONDE']].concat(gens.map(([k, n]) => [k, n.toUpperCase()])), 'Personne')}
     ${pjBFSel('tdStatut', stF, [['', 'À FAIRE + EN COURS'], ['afaire', 'À FAIRE'], ['encours', 'EN COURS'], ['fait', 'TERMINÉES'], ['toutes', 'TOUTES']], 'Statut')}
     ${pjBFSel('tdTri', tri, TD_P_TRIS, 'Ordre')}`, quiF || stF ? 'tdQui,tdStatut' : '') : '';
   return `<section class="ts-bloc pj-taches">
@@ -346,7 +349,7 @@ function tdAjouter() {
   if (!p) return;
   // Filtrée sur une personne : la nouvelle tâche est pour elle (sinon elle disparaîtrait)
   const f = pjBF(p).tdQui && pjBF(p).tdQui !== '~' ? pjBF(p).tdQui : '';
-  const qui = f ? (tdTaches(p).find(t => pjNorm(t.qui) === f) || {}).qui || '' : '';
+  const qui = f ? (tdTaches(p).find(t => pjNorm(t.qui) === f) || {}).qui || tdNoms(p).find(n => pjNorm(n) === f) || '' : '';
   // Filtrée sur « en cours » : la tâche naît en cours ; sur « terminées » : on remontre les ouvertes
   const st = pjBF(p).tdStatut === 'encours' ? 'encours' : 'afaire';
   if (pjBF(p).tdStatut === 'fait') delete pjBF(p).tdStatut;
