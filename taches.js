@@ -282,12 +282,18 @@ function tdNoms(p) {
 }
 
 // ── Dans un projet : la to-do ────────────────────────────────────────────────
+let tdProjetQui = { pid: null, qui: '' };   // to-do d'un projet : filtre par personne
 function tdProjetHtml(p) {
-  const l = tdTaches(p);
+  const toutes = tdTaches(p);
+  const quiF = tdProjetQui.pid === p.id ? tdProjetQui.qui : '';
+  const l = quiF ? toutes.filter(t => (quiF === '~' ? !t.qui : pjNorm(t.qui) === quiF)) : toutes;
+  const gens = [...new Map(toutes.filter(t => t.qui).map(t => [pjNorm(t.qui), t.qui])).entries()].sort((a, b) => a[1].localeCompare(b[1], 'fr'));
+  if (toutes.some(t => !t.qui)) gens.push(['~', 'Personne']);
   const ouvertes = l.filter(t => !t.fait).sort(tdTriStatut);
   const faites = l.filter(t => t.fait);
   return `<section class="ts-bloc pj-taches">
-    <h3>TO-DO <small class="pj-muted">${ouvertes.length ? `· ${ouvertes.length} à faire` : ''}</small></h3>
+    <h3>TO-DO <small class="pj-muted">${ouvertes.length ? `· ${ouvertes.length} à faire` : ''}</small>
+      ${gens.length > 1 || quiF ? `<select class="filter-sel td-p-qui" title="Filtrer par personne" onchange="tdProjetQui={pid:${p.id},qui:this.value};pjRedessiner()"><option value="">TOUT LE MONDE</option>${gens.map(([k, n]) => `<option value="${esc(k)}"${quiF === k ? ' selected' : ''}>${esc(n.toUpperCase())}</option>`).join('')}</select>` : ''}</h3>
     <datalist id="td-noms">${tdNoms(p).map(n => `<option value="${esc(n)}"></option>`).join('')}</datalist>
     <div class="td-liste">${ouvertes.map(t => tdLigneHtml(t)).join('') || '<p class="field-hint">Rien à faire pour le moment. Ajoute une tâche, attribue-la à quelqu\'un : elle apparaîtra chez lui. La date est facultative : sans date, choisis un rappel tous les jours ou tous les 2 jours.</p>'}</div>
     <div class="ts-add-row"><button type="button" class="btn-upload" onclick="tdAjouter()">+ TÂCHE</button></div>
@@ -328,7 +334,10 @@ function tdMetaHtml(t) {
 function tdAjouter() {
   const p = pjCur();
   if (!p) return;
-  tdTaches(p).push({ id: uid(), texte: '', qui: '', echeance: '', rappel: 'j2', urgence: '2', statut: 'afaire', fait: false, par: tdMoi(), le: pjAujourdhui() });
+  // Filtrée sur une personne : la nouvelle tâche est pour elle (sinon elle disparaîtrait)
+  const f = tdProjetQui.pid === p.id && tdProjetQui.qui !== '~' ? tdProjetQui.qui : '';
+  const qui = f ? (tdTaches(p).find(t => pjNorm(t.qui) === f) || {}).qui || '' : '';
+  tdTaches(p).push({ id: uid(), texte: '', qui, echeance: '', rappel: 'j2', urgence: '2', statut: 'afaire', fait: false, par: tdMoi(), le: pjAujourdhui() });
   pjChange(true);
   const champs = document.querySelectorAll('.pj-taches .td-texte input');
   if (champs.length) champs[champs.length - 1].focus();
