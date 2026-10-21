@@ -5,16 +5,34 @@
 // gardé dans le navigateur) : le site lui montre ses tâches et ses rappels.
 // ═══════════════════════════════════════════════════════════════════════════
 
+// Rappel : avant l'échéance (nombre de jours), ou récurrent (« j » + tous les n jours),
+// pour une tâche sans date
 const TD_RAPPELS = [
   ['', 'pas de rappel'],
-  ['0', 'le jour même'],
+  ['j1', 'tous les jours'],
+  ['j2', 'tous les 2 jours'],
+  ['j3', 'tous les 3 jours'],
+  ['j7', 'chaque semaine'],
+  ['0', 'le jour J'],
   ['1', 'la veille'],
   ['2', '2 jours avant'],
   ['3', '3 jours avant'],
   ['7', '1 semaine avant'],
 ];
+const TD_STATUTS = [['afaire', 'À faire'], ['encours', 'En cours'], ['fait', 'Terminé']];
+const TD_URGENCES = [['4', 'Urgent'], ['3', 'Haute'], ['2', 'Normale'], ['1', 'Basse']];
+const TD_TRIS = [['date', 'PAR DATE'], ['urgence', 'PAR URGENCE'], ['statut', 'PAR STATUT'], ['personne', 'PAR PERSONNE'], ['projet', 'PAR PROJET']];
+const TD_VUES_STATUT = [['ouvertes', 'À FAIRE + EN COURS'], ['afaire', 'À FAIRE'], ['encours', 'EN COURS'], ['fait', 'TERMINÉES'], ['toutes', 'TOUTES']];
 
-let tdFiltre = 'moi';        // vue TÂCHES : 'moi' | 'tous' | 'faites'
+let tdFiltre = 'moi';        // vue TÂCHES, pour qui : 'moi' | 'tous' | un nom
+// Statut montré et ordre de la vue TÂCHES, gardés sur l'appareil
+let tdVueStatut = 'ouvertes', tdVueTri = 'date';
+try { const v = JSON.parse(localStorage.getItem('tdVue') || '{}') || {}; if (v.statut) tdVueStatut = v.statut; if (v.tri) tdVueTri = v.tri; } catch {}
+function tdVueRegler(k, v) {
+  if (k === 'qui') tdFiltre = v; else if (k === 'statut') tdVueStatut = v; else tdVueTri = v;
+  try { localStorage.setItem('tdVue', JSON.stringify({ statut: tdVueStatut, tri: tdVueTri })); } catch {}
+  pjRedessinerListe();
+}
 let tdFaitesOuvert = false;  // tâches faites d'un projet dépliées
 let tdBandeauFerme = false;  // bandeau « pour toi » fermé pour cette visite
 
@@ -222,24 +240,33 @@ function tdToutes() {
   pjList().forEach(p => (Array.isArray(p.taches) ? p.taches : []).forEach(t => out.push({ t, p })));
   return out;
 }
-// Où en est une tâche : faite, en retard, à rappeler (dans la fenêtre du rappel), à venir
+function tdStatut(t) { return t.fait ? 'fait' : t.statut === 'encours' ? 'encours' : 'afaire'; }
+function tdUrgence(t) { return Number(t.urgence) || 2; }
+function tdRecurrence(t) { const r = String(t.rappel == null ? '' : t.rappel); return r[0] === 'j' ? Number(r.slice(1)) || 1 : 0; }
+// Où en est une tâche : faite, en retard, à rappeler (dans la fenêtre du rappel,
+// ou un jour de son rappel récurrent), à venir, ou sans date
 function tdEtat(t) {
   if (t.fait) return 'fait';
-  if (!t.echeance) return 'libre';
   const auj = pjAujourdhui();
-  if (t.echeance < auj) return 'retard';
-  if (t.rappel !== '' && t.rappel != null && pjPlusJours(t.echeance, -Number(t.rappel)) <= auj) return 'rappel';
-  return 'avenir';
+  if (t.echeance && t.echeance < auj) return 'retard';
+  const n = tdRecurrence(t);
+  if (n) { const d = pjJours(t.le || auj, auj); if (d >= 0 && d % n === 0) return 'rappel'; }
+  else if (t.echeance && t.rappel !== '' && t.rappel != null && pjPlusJours(t.echeance, -Number(t.rappel)) <= auj) return 'rappel';
+  return t.echeance ? 'avenir' : 'libre';
 }
+// Ordre par défaut : l'échéance la plus proche (sans date à la fin), puis la plus urgente
 function tdTri(a, b) {
-  const ea = (a.t || a).echeance || '9999', eb = (b.t || b).echeance || '9999';
-  return ea.localeCompare(eb);
+  const x = a.t || a, y = b.t || b;
+  return (x.echeance || '9999').localeCompare(y.echeance || '9999') || tdUrgence(y) - tdUrgence(x);
 }
-function tdMesTaches() { return tdToutes().filter(x => !x.t.fait && tdEstMoi(x.t.qui)).sort(tdTri); }
+function tdTriUrgence(a, b) { return tdUrgence(b.t || b) - tdUrgence(a.t || a) || tdTri(a, b); }
+const TD_ORDRE_STATUT = { encours: 0, afaire: 1, fait: 2 };
+function tdTriStatut(a, b) { return TD_ORDRE_STATUT[tdStatut(a.t || a)] - TD_ORDRE_STATUT[tdStatut(b.t || b)] || tdTriUrgence(a, b); }
+function tdMesTaches() { return tdToutes().filter(x => !x.t.fait && tdEstMoi(x.t.qui)).sort(tdTriUrgence); }
 function tdUrgentes() { return tdMesTaches().filter(x => ['retard', 'rappel'].includes(tdEtat(x.t))); }
 
 function tdEcheanceTexte(t) {
-  if (!t.echeance) return '';
+  if (!t.echeance) { const n = tdRecurrence(t); return n ? (TD_RAPPELS.find(r => r[0] === 'j' + n) || [, ''])[1] : ''; }
   const auj = pjAujourdhui();
   const n = pjJours(auj, t.echeance);
   const quand = n === 0 ? "aujourd'hui" : n === 1 ? 'demain' : n === -1 ? 'hier' : n < 0 ? `il y a ${-n} jours` : `le ${pjDateCourte(t.echeance)}`;
@@ -257,15 +284,15 @@ function tdNoms(p) {
 // ── Dans un projet : la to-do ────────────────────────────────────────────────
 function tdProjetHtml(p) {
   const l = tdTaches(p);
-  const ouvertes = l.filter(t => !t.fait).sort(tdTri);
+  const ouvertes = l.filter(t => !t.fait).sort(tdTriStatut);
   const faites = l.filter(t => t.fait);
   return `<section class="ts-bloc pj-taches">
     <h3>TO-DO <small class="pj-muted">${ouvertes.length ? `· ${ouvertes.length} à faire` : ''}</small></h3>
     <datalist id="td-noms">${tdNoms(p).map(n => `<option value="${esc(n)}"></option>`).join('')}</datalist>
-    <div class="td-liste">${ouvertes.map(t => tdLigneHtml(t)).join('') || '<p class="field-hint">Rien à faire pour le moment. Ajoute une tâche, attribue-la à quelqu\'un : elle apparaîtra chez lui, avec un rappel avant l\'échéance.</p>'}</div>
+    <div class="td-liste">${ouvertes.map(t => tdLigneHtml(t)).join('') || '<p class="field-hint">Rien à faire pour le moment. Ajoute une tâche, attribue-la à quelqu\'un : elle apparaîtra chez lui. La date est facultative : sans date, choisis un rappel tous les jours ou tous les 2 jours.</p>'}</div>
     <div class="ts-add-row"><button type="button" class="btn-upload" onclick="tdAjouter()">+ TÂCHE</button></div>
     ${faites.length ? `<details class="pj-sous-bloc"${tdFaitesOuvert ? ' open' : ''} ontoggle="if(this.open!==${tdFaitesOuvert})tdFaitesOuvert=this.open">
-      <summary><span class="pj-sous-titre">FAITES</span> <small class="pj-muted">${faites.length}</small></summary>
+      <summary><span class="pj-sous-titre">TERMINÉES</span> <small class="pj-muted">${faites.length}</small></summary>
       <div class="td-liste">${faites.map(t => tdLigneHtml(t)).join('')}</div>
     </details>` : ''}
   </section>`;
@@ -274,12 +301,13 @@ function tdProjetHtml(p) {
 function tdLigneHtml(t) {
   const o = { l: 'taches', i: t.id };
   const etat = tdEtat(t);
-  return `<div class="td-ligne td-${etat}">
-    <input type="checkbox" class="td-coche" ${t.fait ? 'checked' : ''} title="Fait" onchange="tdCocher(${t.id}, this.checked)">
+  return `<div class="td-ligne td-${etat} td-u${tdUrgence(t)}">
+    ${tdStatutSelectHtml(t)}
     ${pjField('', 'texte', t.texte, { ...o, ph: 'Tâche (ex : envoyer la V1 au client)', cls: 'td-texte' })}
     <div class="field td-qui-champ"><label></label><input list="td-noms" data-k="qui" data-l="taches" data-i="${t.id}" value="${esc(t.qui || '')}" placeholder="Pour qui ?" oninput="pjInput(this)" onchange="pjRedessiner()"></div>
-    ${pjField('', 'echeance', t.echeance, { ...o, type: 'date', cls: 'td-date' })}
+    <div class="field td-date"><label></label><input type="date" data-k="echeance" data-l="taches" data-i="${t.id}" value="${esc(t.echeance || '')}" title="Échéance (facultative)" onchange="pjInput(this, true)"></div>
     ${pjField('', 'rappel', t.rappel == null ? '' : String(t.rappel), { ...o, select: TD_RAPPELS, cls: 'td-rappel' })}
+    ${pjField('', 'urgence', String(tdUrgence(t)), { ...o, select: TD_URGENCES, cls: 'td-urgence' })}
     <button type="button" class="ts-x" title="Supprimer la tâche" onclick="pjRetirer('taches', ${t.id})">✕</button>
     <div class="td-meta">${tdMetaHtml(t)}</div>
   </div>`;
@@ -288,9 +316,11 @@ function tdLigneHtml(t) {
 function tdMetaHtml(t) {
   const etat = tdEtat(t);
   const bouts = [];
-  if (t.fait) bouts.push(`fait${t.faitPar ? ' par ' + esc(t.faitPar) : ''}${t.faitLe ? ' le ' + esc(pjDateCourte(t.faitLe)) : ''}`);
+  if (t.fait) bouts.push(`terminé${t.faitPar ? ' par ' + esc(t.faitPar) : ''}${t.faitLe ? ' le ' + esc(pjDateCourte(t.faitLe)) : ''}`);
   else if (etat === 'retard') bouts.push(`<span class="td-alerte">en retard : ${esc(tdEcheanceTexte(t))}</span>`);
-  else if (etat === 'rappel') bouts.push(`<span class="td-alerte">à faire ${esc(tdEcheanceTexte(t))}</span>`);
+  else if (etat === 'rappel') bouts.push(`<span class="td-alerte">${t.echeance ? 'à faire ' + esc(tdEcheanceTexte(t)) : "rappel aujourd'hui"}</span>`);
+  else if (!t.echeance && t.rappel !== '' && t.rappel != null && !tdRecurrence(t)) bouts.push('sans date : ce rappel ne sonnera pas, choisis « tous les jours » ou « tous les 2 jours »');
+  if (tdStatut(t) === 'encours' && t.enCoursPar) bouts.push(`en cours (${esc(t.enCoursPar)})`);
   if (t.par) bouts.push(`ajoutée par ${esc(t.par)}`);
   return bouts.join(' · ');
 }
@@ -298,43 +328,65 @@ function tdMetaHtml(t) {
 function tdAjouter() {
   const p = pjCur();
   if (!p) return;
-  tdTaches(p).push({ id: uid(), texte: '', qui: '', echeance: '', rappel: '1', fait: false, par: tdMoi(), le: pjAujourdhui() });
+  tdTaches(p).push({ id: uid(), texte: '', qui: '', echeance: '', rappel: 'j2', urgence: '2', statut: 'afaire', fait: false, par: tdMoi(), le: pjAujourdhui() });
   pjChange(true);
   const champs = document.querySelectorAll('.pj-taches .td-texte input');
   if (champs.length) champs[champs.length - 1].focus();
 }
 
-function tdCocher(id, on, pid) {
+function tdCocher(id, on, pid) { tdChangerStatut(id, on ? 'fait' : 'afaire', pid); }
+// Le statut d'une tâche ; « fait » reste à jour pour le reste du site
+function tdChangerStatut(id, v, pid) {
   const p = pid != null ? pjById(pid) : pjCur();
   const t = p && tdTaches(p).find(x => x.id === id);
   if (!t) return;
-  t.fait = on;
-  if (on) { t.faitPar = tdMoi(); t.faitLe = pjAujourdhui(); } else { delete t.faitPar; delete t.faitLe; }
+  t.statut = v;
+  t.fait = v === 'fait';
+  if (t.fait) { if (!t.faitLe) { t.faitPar = tdMoi(); t.faitLe = pjAujourdhui(); } } else { delete t.faitPar; delete t.faitLe; }
+  if (v === 'encours') t.enCoursPar = t.enCoursPar || tdMoi(); else delete t.enCoursPar;
   pjChange(true, p);
 }
+function tdStatutSelectHtml(t, pid) {
+  const st = tdStatut(t);
+  return `<select class="td-statut td-st-${st}" title="Statut" onchange="tdChangerStatut(${t.id}, this.value${pid != null ? ', ' + pid : ''})">${TD_STATUTS.map(([v, l]) => `<option value="${v}"${st === v ? ' selected' : ''}>${l}</option>`).join('')}</select>`;
+}
 
-// ── Vue TÂCHES (toutes les tâches, les miennes d'abord) ──────────────────────
+// ── Vue TÂCHES : toutes les tâches, à filtrer (qui, statut) et à trier ─────────
 function tdVueHtml() {
   const moi = tdMoi();
   if (tdFiltre === 'moi' && !moi) tdFiltre = 'tous';
-  let l = tdToutes();
+  let l = tdToutes().filter(x => x.p.statut !== 'annule' || x.t.fait);
   const q = pjNorm(pjQ);
   if (q) l = l.filter(x => pjNorm([x.t.texte, x.t.qui, pjTitre(x.p)].join(' ')).includes(q));
-  if (tdFiltre === 'faites') l = l.filter(x => x.t.fait).sort((a, b) => (b.t.faitLe || '').localeCompare(a.t.faitLe || ''));
-  else {
-    l = l.filter(x => !x.t.fait && x.p.statut !== 'annule');
-    if (tdFiltre === 'moi') l = l.filter(x => tdEstMoi(x.t.qui));
-    l.sort(tdTri);
-  }
-  // Toutes les tâches : regroupées par personne
-  const groupes = tdFiltre === 'tous'
-    ? Object.values(l.reduce((acc, x) => { const k = pjNorm(x.t.qui) || '~'; (acc[k] = acc[k] || { nom: x.t.qui || 'Personne', l: [] }).l.push(x); return acc; }, {}))
-      .sort((a, b) => (a.nom === 'Personne') - (b.nom === 'Personne') || a.nom.localeCompare(b.nom, 'fr'))
-    : [{ nom: '', l }];
+  if (tdFiltre === 'moi') l = l.filter(x => tdEstMoi(x.t.qui));
+  else if (tdFiltre !== 'tous') l = l.filter(x => pjNorm(x.t.qui) === pjNorm(tdFiltre));
+  if (tdVueStatut === 'ouvertes') l = l.filter(x => !x.t.fait);
+  else if (tdVueStatut !== 'toutes') l = l.filter(x => tdStatut(x.t) === tdVueStatut);
+  // L'ordre, et les groupes qui vont avec
+  const tri = tdVueTri;
+  const parDate = (a, b) => tdVueStatut === 'fait' ? (b.t.faitLe || '').localeCompare(a.t.faitLe || '') : tdTri(a, b);
+  const cle = {
+    urgence: x => [String(5 - tdUrgence(x.t)), TD_URGENCES.find(u => u[0] === String(tdUrgence(x.t)))[1]],
+    statut: x => [String(TD_ORDRE_STATUT[tdStatut(x.t)]), TD_STATUTS.find(u => u[0] === tdStatut(x.t))[1]],
+    personne: x => [x.t.qui ? '0' + pjNorm(x.t.qui) : '1', x.t.qui || 'Personne'],
+    projet: x => [pjNorm(pjTitre(x.p)) + '|' + x.p.id, pjTitre(x.p)],
+  }[tri];
+  const dans = tri === 'statut' || tri === 'urgence' ? tdTriUrgence : parDate;
+  l.sort((a, b) => (cle ? cle(a)[0].localeCompare(cle(b)[0], 'fr') : 0) || (tri === 'urgence' ? tdTri(a, b) : dans(a, b)));
+  const groupes = [];
+  l.forEach(x => { const k = cle ? cle(x) : ['', '']; const g = groupes[groupes.length - 1]; if (g && g.k === k[0]) g.l.push(x); else groupes.push({ k: k[0], nom: k[1], l: [x] }); });
+  // Les personnes proposées : l'équipe, puis tous ceux qui ont une tâche
+  const gens = tdNoms();
+  tdToutes().forEach(x => { if (x.t.qui && !gens.some(n => pjNorm(n) === pjNorm(x.t.qui))) gens.push(x.t.qui); });
   const projets = pjList().filter(p => p.statut !== 'annule' && p.statut !== 'livre').sort((a, b) => pjTitre(a).localeCompare(pjTitre(b), 'fr'));
+  const sel = (k, val, opts, titre) => `<select class="filter-sel" title="${titre}" onchange="tdVueRegler('${k}', this.value)">${opts.map(([v, lab]) => `<option value="${esc(v)}"${val === v ? ' selected' : ''}>${esc(lab)}</option>`).join('')}</select>`;
+  const quiOpts = [['moi', moi ? 'MES TÂCHES' : 'MES TÂCHES (dis qui tu es)'], ['tous', 'TOUT LE MONDE']].concat(gens.filter(n => !tdEstMoi(n)).map(n => [n, n.toUpperCase()]));
+  if (!quiOpts.some(o => o[0] === tdFiltre)) quiOpts.push([tdFiltre, tdFiltre.toUpperCase()]);
   return `<div class="td-vue">
     <div class="td-filtres">
-      ${[['moi', moi ? 'MES TÂCHES' : 'MES TÂCHES (dis qui tu es)'], ['tous', 'TOUT LE MONDE'], ['faites', 'FAITES']].map(f => `<button type="button" class="btn-edit-inline${tdFiltre === f[0] ? ' on' : ''}" onclick="${f[0] === 'moi' && !moi ? 'tdOuvrirQui()' : `tdFiltre='${f[0]}';pjRedessinerListe()`}">${f[1]}</button>`).join('')}
+      ${moi ? sel('qui', tdFiltre, quiOpts, 'Pour qui') : `<button type="button" class="btn-edit-inline" onclick="tdOuvrirQui()">MES TÂCHES (dis qui tu es)</button>${sel('qui', tdFiltre, quiOpts.slice(1), 'Pour qui')}`}
+      ${sel('statut', tdVueStatut, TD_VUES_STATUT, 'Statut')}
+      ${sel('tri', tdVueTri, TD_TRIS, 'Trier')}
       <span class="spacer"></span>
       <button type="button" class="export-lien" onclick="tdOuvrirQui()">${moi ? 'tu es ' + esc(moi) + ' · changer' : 'qui es-tu ?'}</button>
     </div>
@@ -343,24 +395,26 @@ function tdVueHtml() {
       <input id="td-n-texte" placeholder="Nouvelle tâche…" onkeydown="if(event.key==='Enter')tdAjouterVue()">
       <select id="td-n-projet"><option value="">Projet…</option>${projets.map(p => `<option value="${p.id}">${esc(pjTitre(p))}</option>`).join('')}</select>
       <input id="td-n-qui" list="td-noms" placeholder="Pour qui ?" value="${esc(moi)}">
-      <input id="td-n-date" type="date" title="Échéance">
-      <select id="td-n-rappel">${TD_RAPPELS.map(r => `<option value="${r[0]}"${r[0] === '1' ? ' selected' : ''}>${r[1]}</option>`).join('')}</select>
+      <input id="td-n-date" type="date" title="Échéance (facultative)">
+      <select id="td-n-rappel" title="Rappel">${TD_RAPPELS.map(r => `<option value="${r[0]}"${r[0] === 'j2' ? ' selected' : ''}>${r[1]}</option>`).join('')}</select>
+      <select id="td-n-urgence" title="Urgence">${TD_URGENCES.map(r => `<option value="${r[0]}"${r[0] === '2' ? ' selected' : ''}>${r[1]}</option>`).join('')}</select>
       <button type="button" class="btn-save" onclick="tdAjouterVue()">AJOUTER</button>
     </div>
     <p class="field-hint td-ajout-msg" id="td-n-msg"></p>
     ${l.length ? groupes.map(g => `${g.nom ? `<div class="td-groupe">${esc(g.nom.toUpperCase())} <small class="pj-muted">${g.l.length}</small></div>` : ''}
-      ${g.l.map(x => tdVueLigneHtml(x)).join('')}`).join('') : `<div class="empty">${tdFiltre === 'moi' ? 'RIEN À FAIRE POUR TOI' : tdFiltre === 'faites' ? 'AUCUNE TÂCHE FAITE' : 'AUCUNE TÂCHE'}</div>`}
+      ${g.l.map(x => tdVueLigneHtml(x)).join('')}`).join('') : `<div class="empty">${tdFiltre === 'moi' && tdVueStatut === 'ouvertes' ? 'RIEN À FAIRE POUR TOI' : 'AUCUNE TÂCHE'}</div>`}
   </div>`;
 }
 
 function tdVueLigneHtml({ t, p }) {
   const etat = tdEtat(t);
-  return `<div class="td-vligne td-${etat}">
-    <input type="checkbox" ${t.fait ? 'checked' : ''} title="Fait" onchange="tdCocher(${t.id}, this.checked, ${p.id})">
-    <span class="td-vtexte">${esc(t.texte || 'Tâche sans titre')}</span>
+  const u = tdUrgence(t);
+  return `<div class="td-vligne td-${etat} td-u${u}">
+    ${tdStatutSelectHtml(t, p.id)}
+    <span class="td-vtexte">${u > 2 ? `<span class="td-u-pastille" title="${TD_URGENCES.find(x => x[0] === String(u))[1]}">${u === 4 ? 'URGENT' : 'HAUTE'}</span> ` : ''}${esc(t.texte || 'Tâche sans titre')}</span>
     <a href="#" class="td-vprojet" onclick="event.preventDefault();pjGo('projet', ${p.id})"><span class="ch-dot" style="background:${esc(pjCouleur(p))}"></span>${esc(pjTitre(p))}</a>
     <span class="td-vqui">${esc(t.qui || '')}</span>
-    <span class="td-vdate">${t.fait ? (t.faitLe ? 'fait le ' + esc(pjDateCourte(t.faitLe)) : 'fait') : etat === 'retard' || etat === 'rappel' ? `<span class="td-alerte">${esc(tdEcheanceTexte(t))}</span>` : esc(tdEcheanceTexte(t))}</span>
+    <span class="td-vdate">${t.fait ? (t.faitLe ? 'terminé le ' + esc(pjDateCourte(t.faitLe)) : 'terminé') : etat === 'retard' || etat === 'rappel' ? `<span class="td-alerte">${esc(tdEcheanceTexte(t))}</span>` : esc(tdEcheanceTexte(t))}</span>
   </div>`;
 }
 
@@ -371,7 +425,7 @@ function tdAjouterVue() {
   const p = pjById(Number(v('td-n-projet')));
   if (!texte) { document.getElementById('td-n-texte').focus(); return; }
   if (!p) { if (msg) msg.textContent = 'Choisis le projet de la tâche.'; return; }
-  tdTaches(p).push({ id: uid(), texte, qui: v('td-n-qui').trim(), echeance: v('td-n-date'), rappel: v('td-n-rappel'), fait: false, par: tdMoi(), le: pjAujourdhui() });
+  tdTaches(p).push({ id: uid(), texte, qui: v('td-n-qui').trim(), echeance: v('td-n-date'), rappel: v('td-n-rappel'), urgence: v('td-n-urgence') || '2', statut: 'afaire', fait: false, par: tdMoi(), le: pjAujourdhui() });
   pjChange(false, p);
   pjRedessinerListe();
   const t = document.getElementById('td-n-texte');
@@ -430,7 +484,7 @@ function tdNotifier() {
   tdUrgentes().forEach(({ t, p }) => {
     if (vus[t.id] === auj) return;
     vus[t.id] = auj;
-    try { new Notification(`${pjTitre(p)} : ${t.texte || 'tâche'}`, { body: tdEtat(t) === 'retard' ? `En retard (${pjDateCourte(t.echeance)})` : `À faire ${tdEcheanceTexte(t)}`, tag: 'tache-' + t.id }); } catch {}
+    try { new Notification(`${pjTitre(p)} : ${t.texte || 'tâche'}`, { body: tdEtat(t) === 'retard' ? `En retard (${pjDateCourte(t.echeance)})` : t.echeance ? `À faire ${tdEcheanceTexte(t)}` : `Rappel ${tdEcheanceTexte(t)}`, tag: 'tache-' + t.id }); } catch {}
   });
   Object.keys(vus).forEach(k => { if (vus[k] < auj) delete vus[k]; });
   try { localStorage.setItem('rappelsVus', JSON.stringify(vus)); } catch {}
