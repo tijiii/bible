@@ -953,3 +953,12 @@ body.doc-vue-ouvert > *:not(#doc-vue) { display:none !important; }
 .pj-etsel-actif { border:1px solid var(--text); background:#fff; position:sticky; top:0; z-index:5; }
 .pj-etsel strong { letter-spacing:.04em; font-weight:600; }
 .pj-etsel select { width:auto; max-width:100%; }
+
+/* Plusieurs personnes de l'équipe à la fois */
+.pj-aff { position:relative; padding-left:28px; }
+.pj-aff-sel { position:absolute; left:4px; top:38px; width:16px; height:16px; margin:0; cursor:pointer; accent-color:var(--text); }
+.pj-aff-choisie { background:color-mix(in srgb, var(--text) 4%, transparent); }
+.pj-eqsel-et { font:inherit; font-size:12.5px; padding:3px 8px; border:1px solid var(--border2); border-left:3px solid var(--c, var(--border2)); background:#fff; cursor:pointer; color:var(--muted); display:inline-flex; align-items:center; gap:5px; }
+.pj-eqsel-et.certains { color:var(--text); border-style:dashed; border-left-style:solid; }
+.pj-eqsel-et.tous { color:var(--text); background:color-mix(in srgb, var(--c, var(--text)) 14%, #fff); border-color:var(--text); border-left-color:var(--c, var(--text)); }
+.pj-eqsel { margin-bottom:6px; }
