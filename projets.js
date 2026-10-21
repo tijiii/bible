@@ -1359,6 +1359,13 @@ function pjEtSelTout(ids) {
   pjRedessiner();
 }
 function pjEtSelVider() { pjEtSel = new Set(); pjRedessiner(); }
+// Un clic ailleurs dans la page (pas sur une étape ni sur la barre) désélectionne tout
+document.addEventListener('click', ev => {
+  const t = ev.target;
+  if (!pjEtSel.size || !(t instanceof Element) || !document.contains(t)) return;
+  if (t.closest('.pj-etape, .pj-etsel, .pj-etapes-groupe')) return;
+  pjEtSelVider();
+});
 function pjEtSelAjouter(v) { const p = pjCur(); if (p) pjEtapesAjouterPersonne(pjEtSelIds(p), v); }
 function pjEtSelRetirer(aid) {
   const p = pjCur();
