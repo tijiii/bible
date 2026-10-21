@@ -295,7 +295,7 @@ function pjMien(c, p) { return c.x.p.id === p.id ? c.x : c.y; }
 function pjGo(vue, id) {
   if (vue === 'ts' && pjVue !== 'ts') pjTsDepuis = pjVue === 'projet' && pjCur() ? pjId : null;
   pjVue = vue;
-  if (id !== undefined && id !== pjId) { pjId = id; pjMois = ''; pjOptionsOuvert = false; pjRetroOuvert = false; pjEtapesOuvert = false; pjEquipeOuvert = false; tdFaitesOuvert = false; pjAffOuvert = new Set(); if (pjRetro && !pjRetro.enCours) pjRetro = null; }
+  if (id !== undefined && id !== pjId) { pjId = id; pjMois = ''; pjOptionsOuvert = false; pjRetroOuvert = false; pjEtapesOuvert = false; pjEtSel = new Set(); pjEquipeOuvert = false; tdFaitesOuvert = false; pjAffOuvert = new Set(); if (pjRetro && !pjRetro.enCours) pjRetro = null; }
   buildTabs();
   render();
   window.scrollTo(0, 0);
@@ -845,7 +845,8 @@ function pjEtapesBlocHtml(p) {
   return `<details class="pj-sous-bloc"${ouvert ? ' open' : ''} ontoggle="if(this.open!==${ouvert})pjEtapesOuvert=this.open">
     <summary><span class="pj-sous-titre">ÉTAPES</span> <small class="pj-muted">${tout.length ? `${filtre ? toutes.length + ' sur ' + tout.length : tout.length}${pjEtFiltresHtml(p) ? '' : ' · modifier les dates, ajouter une étape'}` : 'aucune pour le moment'}</small>${pjEtFiltresHtml(p)}</summary>
     <datalist id="pj-gens-etapes">${pjEtapesChoixHtml(p)}</datalist>
-    <div class="pj-etapes">${groupes.map(([lab, l]) => (avecTitres ? `<div class="pj-etapes-groupe">${lab}</div>` : '') + l.map(e => pjEtapeHtml(e)).join('')).join('') || (filtre ? '<p class="field-hint">Aucune étape avec ces filtres.</p>' : '') || '<p class="field-hint">Aucune étape. Importe le rétroplanning ci-dessous, ou ajoute la prépa, le tournage, la post-prod… avec leurs dates.</p>'}</div>
+    ${pjEtSelBarreHtml(p, toutes)}
+    <div class="pj-etapes">${groupes.map(([lab, l]) => (avecTitres ? `<div class="pj-etapes-groupe">${lab}${toutes.length > l.length && l.length > 1 ? ` <button type="button" class="export-lien" onclick="pjEtSelTout('${l.map(e => e.id).join(',')}')">${l.every(e => pjEtSel.has(e.id)) ? 'désélectionner' : 'sélectionner'} ces étapes</button>` : ''}</div>` : '') + l.map(e => pjEtapeHtml(e)).join('')).join('') || (filtre ? '<p class="field-hint">Aucune étape avec ces filtres.</p>' : '') || '<p class="field-hint">Aucune étape. Importe le rétroplanning ci-dessous, ou ajoute la prépa, le tournage, la post-prod… avec leurs dates.</p>'}</div>
     <div class="ts-add-row">${PJ_ETAPES.map(t => `<button type="button" class="btn-upload" onclick="pjAjouterEtape('${t[0]}')">+ ${t[1].toUpperCase()}</button>`).join('')}</div>
   </details>`;
 }
@@ -895,13 +896,17 @@ function pjEtFiltresHtml(p) {
 }
 
 // Retire quelqu'un d'une étape. S'il était sur tout le projet, il garde
-// toutes les autres étapes (cochées une à une) ; il reste dans l'équipe.
+// toutes les autres étapes (cochées une à une). S'il ne reste sur aucune
+// étape, il sort de l'équipe (sinon il repasserait sur tout le projet).
 function pjRetirerDeEtape(aid, eid) {
   const p = pjCur();
   const a = pjAffectation(aid);
-  if (!p || !a) return;
+  if (p && a) pjRetirerEtapesDe(p, a, [eid]);
+}
+function pjRetirerEtapesDe(p, a, ids) {
   if (pjSurToutLeProjet(a)) a.etapes = pjEtapesParDefaut(p, a).map(x => x.id);
-  a.etapes = (a.etapes || []).filter(x => x !== eid);
+  a.etapes = (a.etapes || []).filter(x => !ids.includes(x));
+  if (!a.etapes.length && !a.du) p.equipe = p.equipe.filter(x => x !== a);
   pjChange(true);
 }
 
@@ -1284,7 +1289,7 @@ function pjRetroAjouter() {
 function pjEtapeHtml(e) {
   const o = { l: 'etapes', i: e.id };
   const pi = pjPisteInfo(pjPisteDe(e));
-  return `<div class="pj-etape" id="pj-et-${e.id}" style="--c:${pjEtapeType(e.type)[2]}${pi ? ';--p:' + pi[2] : ''}"${pi ? ` data-piste="${pi[0]}"` : ''}>
+  return `<div class="pj-etape${pjEtSel.has(e.id) ? ' pj-etape-choisie' : ''}" id="pj-et-${e.id}" style="--c:${pjEtapeType(e.type)[2]}${pi ? ';--p:' + pi[2] : ''}"${pi ? ` data-piste="${pi[0]}"` : ''}>
     ${pjField('TYPE', 'type', e.type, { ...o, select: PJ_ETAPES.map(t => [t[0], t[1]]) })}
     ${pjField('PARTIE', 'piste', pjPisteDe(e), { ...o, select: [['', 'Commun']].concat(PJ_PISTES.map(x => [x[0], x[1]])) })}
     ${pjField('NOM', 'nom', e.nom, { ...o, ph: pjEtapeType(e.type)[1], change: true })}
@@ -1292,6 +1297,7 @@ function pjEtapeHtml(e) {
     ${pjField('AU', 'au', e.au, { ...o, type: 'date' })}
     <button type="button" class="ts-x" title="Retirer" onclick="pjRetirer('etapes', ${e.id})">✕</button>
     ${pjEtapeGensHtml(e)}
+    <input type="checkbox" class="pj-etape-sel" title="Sélectionner pour y mettre quelqu'un avec d'autres étapes"${pjEtSel.has(e.id) ? ' checked' : ''} onchange="pjEtSelBasculer(${e.id}, this.checked)">
   </div>`;
 }
 
@@ -1310,12 +1316,13 @@ function pjEtapeGensHtml(e) {
   </div>`;
 }
 
-// Ajoute quelqu'un à une étape : s'il est déjà dans l'équipe, on coche l'étape ;
-// sinon il entre dans l'équipe, sur cette étape seulement
-function pjEtapeAjouterPersonne(eid, v) {
+// Ajoute quelqu'un à une ou plusieurs étapes : s'il est déjà dans l'équipe, on coche
+// les étapes ; sinon il entre dans l'équipe, sur ces étapes seulement
+function pjEtapeAjouterPersonne(eid, v) { pjEtapesAjouterPersonne([eid], v); }
+function pjEtapesAjouterPersonne(eids, v) {
   const p = pjCur();
   const v2 = String(v || '').trim();
-  if (!p || !v2) return;
+  if (!p || !v2 || !eids.length) return;
   if (!Array.isArray(p.equipe)) p.equipe = [];
   const choix = pjChoixGens();
   const c = choix.find(x => x.label === v2) || choix.find(x => pjNorm(x.label.split(' · ')[0]) === pjNorm(v2));
@@ -1323,18 +1330,55 @@ function pjEtapeAjouterPersonne(eid, v) {
   const cle = pjCle(nouveau);
   const a = p.equipe.find(x => pjNomPersonne(x) && pjCle(x) === cle);
   if (a) {
-    // Sur tout le projet : on garde ses étapes et on ajoute celle-ci
+    // Sur tout le projet : on garde ses étapes et on ajoute celles-ci
     if (pjSurToutLeProjet(a)) {
-      if (pjEtapesParDefaut(p, a).some(x => x.id === eid)) { pjRedessiner(); return; }
-      a.etapes = pjEtapesParDefaut(p, a).map(x => x.id);
+      const defaut = pjEtapesParDefaut(p, a).map(x => x.id);
+      if (eids.every(id => defaut.includes(id))) { pjRedessiner(); return; }
+      a.etapes = defaut;
     }
-    a.etapes = (a.etapes || []).filter(x => x !== eid).concat(eid);
+    a.etapes = (a.etapes || []).filter(x => !eids.includes(x)).concat(eids);
   } else {
     const t = pjTalent(nouveau.ref);
     const cat = t && c ? (c.label.split(' · ')[1] || '') : '';
-    p.equipe.push({ id: uid(), ...nouveau, role: cat, etapes: [eid], du: '', au: '' });
+    p.equipe.push({ id: uid(), ...nouveau, role: cat, etapes: eids.slice(), du: '', au: '' });
   }
   pjChange(true);
+}
+
+// ── Plusieurs étapes à la fois ───────────────────────────────────────────────
+// On coche des étapes, puis on y ajoute (ou en retire) une personne d'un coup
+let pjEtSel = new Set();
+function pjEtSelIds(p) { return (p.etapes || []).filter(e => pjEtSel.has(e.id) && pjEtapeVisible(p, e)).map(e => e.id); }
+function pjEtSelBasculer(eid, oui) { if (oui) pjEtSel.add(eid); else pjEtSel.delete(eid); pjRedessiner(); }
+function pjEtSelTout(ids) {
+  const p = pjCur();
+  if (!p) return;
+  const l = ids ? String(ids).split(',').map(Number) : (p.etapes || []).filter(e => pjEtapeVisible(p, e)).map(e => e.id);
+  const tous = l.every(id => pjEtSel.has(id));
+  l.forEach(id => tous ? pjEtSel.delete(id) : pjEtSel.add(id));
+  pjRedessiner();
+}
+function pjEtSelVider() { pjEtSel = new Set(); pjRedessiner(); }
+function pjEtSelAjouter(v) { const p = pjCur(); if (p) pjEtapesAjouterPersonne(pjEtSelIds(p), v); }
+function pjEtSelRetirer(aid) {
+  const p = pjCur();
+  const a = pjAffectation(Number(aid));
+  if (p && a) pjRetirerEtapesDe(p, a, pjEtSelIds(p));
+}
+function pjEtSelBarreHtml(p, visibles) {
+  if (visibles.length < 2) return '';
+  const ids = pjEtSelIds(p);
+  const tous = visibles.every(e => pjEtSel.has(e.id));
+  const caseTout = `<label class="cat-check"><input type="checkbox"${tous ? ' checked' : ''} onchange="pjEtSelTout()"><span>${tous ? 'TOUT DÉSÉLECTIONNER' : 'TOUT SÉLECTIONNER'}</span></label>`;
+  if (!ids.length) return `<div class="pj-etsel">${caseTout}<span class="pj-muted">ou coche des étapes pour y mettre quelqu'un d'un coup</span></div>`;
+  const et = (p.etapes || []).filter(e => ids.includes(e.id));
+  const presents = (p.equipe || []).filter(a => pjNomPersonne(a) && et.some(e => pjSurEtape(p, a, e)));
+  return `<div class="pj-etsel pj-etsel-actif">${caseTout}
+    <strong>${ids.length} ÉTAPE${ids.length > 1 ? 'S' : ''}</strong>
+    <input class="pj-etape-ajout" list="pj-gens-etapes" placeholder="+ personne sur ces étapes" onchange="pjEtSelAjouter(this.value)" onkeydown="if(event.key==='Enter')this.blur()">
+    ${presents.length ? `<select class="filter-sel" title="Retirer quelqu'un de ces étapes" onchange="if(this.value)pjEtSelRetirer(this.value)"><option value="">RETIRER DE CES ÉTAPES…</option>${presents.map(a => `<option value="${a.id}">${esc(pjNomPersonne(a).toUpperCase())}</option>`).join('')}</select>` : ''}
+    <button type="button" class="export-lien" onclick="pjEtSelVider()">annuler</button>
+  </div>`;
 }
 
 function pjAffectationHtml(p, a) {
