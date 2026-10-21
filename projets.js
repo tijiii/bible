@@ -125,6 +125,10 @@ function pjChoixGens() {
   const cat = t => { const c = (t.cats || []).map(id => catById(id)).find(Boolean); return c ? c.label : ''; };
   (db.talents || []).forEach(t => out.push({ label: pjNomTalent(t) + (cat(t) ? ' · ' + cat(t) : ''), ref: t.id }));
   const vus = new Set(out.map(o => pjNorm(o.label.split(' · ')[0])));
+  // L'équipe Widen (les six qui se connectent), même sans fiche ni contact
+  (typeof TD_EQUIPE !== 'undefined' ? TD_EQUIPE : []).forEach(n => {
+    if (!vus.has(pjNorm(n))) { vus.add(pjNorm(n)); out.push({ label: n + ' · Widen', nom: n }); }
+  });
   ((db.prod && db.prod.contacts) || []).forEach(c => {
     if (c.nom && !vus.has(pjNorm(c.nom))) out.push({ label: c.nom + ' · ' + (c.groupe || 'Contact'), nom: c.nom });
   });
