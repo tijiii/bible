@@ -989,7 +989,7 @@ function renderLieuxList() {
 // ── Lieux rangés par couleur : la couleur dominante de chaque photo de couverture
 // (verdure, mer, roche, neige…) est calculée une fois et gardée sur l'appareil,
 // puis la grille suit l'arc-en-ciel, les photos sans couleur (gris, noir et blanc) à la fin.
-let lieuTeintes = (() => { try { return JSON.parse(localStorage.getItem('lieuxTeintes') || '{}') || {}; } catch { return {}; } })();
+let lieuTeintes = (() => { try { return JSON.parse(localStorage.getItem('lieuxTeintes2') || '{}') || {}; } catch { return {}; } })();
 const lieuTeintesEnCours = new Set();
 let lieuTeintesTimer = null;
 
@@ -999,11 +999,12 @@ function setLieuxTri(v) {
   renderLieuxList();
 }
 
-// Ordre des teintes : rouges, oranges, jaunes, verts, bleus, violets ; puis les neutres
+// Ordre des couleurs : rouges, ocres, jaunes, verts, bleus, violets ; puis les
+// photos sans vraie couleur, de la plus claire (neige) à la plus sombre (nuit)
 function lieuTeinteRang(t) {
-  if (!t || t.illisible) return [3, 0, 0];
-  if (t.gris) return [2, 0, -t.l];
-  return [1, (t.h + 15) % 360, -t.l];    // l'arc-en-ciel commence aux rouges (−15°)
+  if (!t || t.illisible || t.L == null) return [3, 0];
+  if (t.neutre) return [2, -t.L];
+  return [1, (t.h + 360 - 20) % 360];    // le cercle commence aux rouges (vers 20° en Lab)
 }
 
 function lieuxTries(list) {
@@ -1014,81 +1015,68 @@ function lieuxTries(list) {
     if (cover && !lieuTeintes[cover]) lieuCalculerTeinte(cover);
     return [l, lieuTeinteRang(cover && lieuTeintes[cover])];
   }));
-  return list.slice().sort((a, b) => {
-    const x = rang.get(a), y = rang.get(b);
-    // Les teintes voisines (même famille de 30°) restent ensemble, de la plus claire à la plus foncée
-    if (x[0] !== y[0]) return x[0] - y[0];
-    if (x[0] === 1 && Math.floor(x[1] / 30) !== Math.floor(y[1] / 30)) return x[1] - y[1];
-    return x[2] - y[2];
-  });
+  return list.slice().sort((a, b) => { const x = rang.get(a), y = rang.get(b); return x[0] - y[0] || x[1] - y[1]; });
 }
 
+// La photo est relue par fetch puis ouverte depuis un blob local : le canvas
+// n'est jamais « contaminé », même si le navigateur a déjà l'image en cache
+// depuis la grille (chargée sans CORS).
 function lieuCalculerTeinte(url) {
   if (lieuTeintesEnCours.has(url)) return;
   lieuTeintesEnCours.add(url);
-  const img = new Image();
-  img.crossOrigin = 'anonymous';
-  img.onload = () => {
-    let t;
-    try { t = lieuTeinteImage(img); } catch { t = { gris: true, l: .5, hex: '', illisible: true }; }
-    lieuTeinteNotee(url, t);
-  };
-  img.onerror = () => lieuTeinteNotee(url, { gris: true, l: .5, hex: '', illisible: true });
-  img.src = url;
+  fetch(url, { mode: 'cors' })
+    .then(r => { if (!r.ok) throw new Error(r.status); return r.blob(); })
+    .then(blob => new Promise((ok, ko) => {
+      const lien = URL.createObjectURL(blob), img = new Image();
+      img.onload = () => { try { ok(lieuTeinteImage(img)); } catch (e) { ko(e); } finally { URL.revokeObjectURL(lien); } };
+      img.onerror = () => { URL.revokeObjectURL(lien); ko(new Error('image')); };
+      img.src = lien;
+    }))
+    .then(t => lieuTeinteNotee(url, t))
+    .catch(() => lieuTeinteNotee(url, { illisible: true }));
 }
 
 function lieuTeinteNotee(url, t) {
   lieuTeintes[url] = t;
   // Une photo illisible (lien sans autorisation, réseau) sera réessayée à la prochaine visite
   const garder = Object.fromEntries(Object.entries(lieuTeintes).filter(([, x]) => !x.illisible));
-  try { localStorage.setItem('lieuxTeintes', JSON.stringify(garder)); } catch {}
+  try { localStorage.setItem('lieuxTeintes2', JSON.stringify(garder)); localStorage.removeItem('lieuxTeintes'); } catch {}
   // Une seule remise en ordre quand les couleurs arrivent
   clearTimeout(lieuTeintesTimer);
   lieuTeintesTimer = setTimeout(() => { if (curCatId === 'lieux' && !enProjets() && fLieuTri === 'couleur') renderLieuxList(); }, 400);
 }
 
-// La teinte dominante : histogramme des teintes des pixels assez colorés,
-// pondéré par la saturation ; une photo surtout grise est « neutre »
+// La couleur d'ambiance : la moyenne de la photo dans l'espace Lab (proche de
+// l'œil), là où une couleur dominante peut tenir à un détail. Le haut de
+// l'image (souvent le ciel) compte moitié moins.
 function lieuTeinteImage(img) {
-  const N = 40;
+  const N = 32;
   const c = document.createElement('canvas');
   c.width = N; c.height = N;
   const ctx = c.getContext('2d', { willReadFrequently: true });
   ctx.drawImage(img, 0, 0, N, N);
   const d = ctx.getImageData(0, 0, N, N).data;
-  const bins = new Array(24).fill(0), sommes = Array.from({ length: 24 }, () => [0, 0, 0, 0]);
-  let poidsCouleur = 0, lumTotale = 0;
+  const lin = v => { v /= 255; return v <= .04045 ? v / 12.92 : ((v + .055) / 1.055) ** 2.4; };
+  let X = 0, Y = 0, Z = 0, W = 0;
   for (let i = 0; i < d.length; i += 4) {
-    const r = d[i] / 255, g = d[i + 1] / 255, b = d[i + 2] / 255;
-    const max = Math.max(r, g, b), min = Math.min(r, g, b), l = (max + min) / 2;
-    lumTotale += l;
-    const delta = max - min;
-    if (delta < .06 || l < .08 || l > .94) continue;
-    const sat = delta / (1 - Math.abs(2 * l - 1));
-    let h = max === r ? ((g - b) / delta) % 6 : max === g ? (b - r) / delta + 2 : (r - g) / delta + 4;
-    h = (h * 60 + 360) % 360;
-    // Le haut de l'image (souvent le ciel) compte moitié moins
-    const k = Math.floor(h / 15), w = sat * (1 - Math.abs(2 * l - 1)) * ((i / 4) < N * N / 3 ? .5 : 1);
-    bins[k] += w; poidsCouleur += w;
-    sommes[k][0] += d[i] * w; sommes[k][1] += d[i + 1] * w; sommes[k][2] += d[i + 2] * w; sommes[k][3] += l * w;
+    const w = (i / 4) < N * N / 3 ? .5 : 1;
+    const r = lin(d[i]), g = lin(d[i + 1]), b = lin(d[i + 2]);
+    X += w * (.4124 * r + .3576 * g + .1805 * b);
+    Y += w * (.2126 * r + .7152 * g + .0722 * b);
+    Z += w * (.0193 * r + .1192 * g + .9505 * b);
+    W += w;
   }
-  const lMoy = lumTotale / (N * N);
-  if (poidsCouleur / (N * N) < .06) {
-    const v = Math.round(lMoy * 255).toString(16).padStart(2, '0');
-    return { gris: true, l: +lMoy.toFixed(3), hex: '#' + v + v + v };
-  }
-  // La famille dominante : le meilleur groupe de 3 cases voisines (45°)
-  let best = 0, bestW = -1;
-  for (let k = 0; k < 24; k++) { const w = bins[(k + 23) % 24] + bins[k] + bins[(k + 1) % 24]; if (w > bestW) { bestW = w; best = k; } }
-  const ks = [(best + 23) % 24, best, (best + 1) % 24];
-  const W = ks.reduce((a, k) => a + bins[k], 0) || 1;
-  const rgb = [0, 1, 2].map(j => Math.round(ks.reduce((a, k) => a + sommes[k][j], 0) / W));
-  const l = ks.reduce((a, k) => a + sommes[k][3], 0) / W;
-  const [r, g, b] = rgb.map(x => x / 255);
-  const max = Math.max(r, g, b), min = Math.min(r, g, b), delta = max - min || 1e-6;
-  let h = max === r ? ((g - b) / delta) % 6 : max === g ? (b - r) / delta + 2 : (r - g) / delta + 4;
-  h = Math.round((h * 60 + 360) % 360);
-  return { h, l: +l.toFixed(3), hex: '#' + rgb.map(x => x.toString(16).padStart(2, '0')).join('') };
+  const f = t => t > .008856 ? Math.cbrt(t) : 7.787 * t + 16 / 116;
+  const fx = f(X / W / .95047), fy = f(Y / W), fz = f(Z / W / 1.08883);
+  const L = 116 * fy - 16, A = 500 * (fx - fy), B = 200 * (fy - fz);
+  const C = Math.hypot(A, B);
+  const h = (Math.atan2(B, A) * 180 / Math.PI + 360) % 360;
+  // Retour en sRGB pour la couleur affichée
+  const finv = t => t ** 3 > .008856 ? t ** 3 : (t - 16 / 116) / 7.787;
+  const xs = finv(fx) * .95047, ys = finv(fy), zs = finv(fz) * 1.08883;
+  const gam = v => Math.round(255 * Math.min(1, Math.max(0, v <= .0031308 ? 12.92 * v : 1.055 * v ** (1 / 2.4) - .055)));
+  const rgb = [3.2406 * xs - 1.5372 * ys - .4986 * zs, -.9689 * xs + 1.8758 * ys + .0415 * zs, .0557 * xs - .2040 * ys + 1.0570 * zs].map(gam);
+  return { L: +L.toFixed(1), h: Math.round(h), C: +C.toFixed(1), neutre: C < 5, hex: '#' + rgb.map(x => x.toString(16).padStart(2, '0')).join('') };
 }
 
 // ── Recherche dans le monde entier (OpenStreetMap / Nominatim, gratuit, sans clé)
