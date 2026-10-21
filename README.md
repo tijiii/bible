@@ -97,7 +97,7 @@ Dans le formulaire d'un lieu, **+ AJOUTER UN PROJET** : nom, année et lien Drop
 Dans la liste des lieux, le filtre CATÉGORIE propose aussi **★ Déjà tourné ici** et **☆ Jamais tourné**.
 
 ### Ordre des lieux sous la carte
-Par défaut **PAR COULEUR** : la couleur dominante de la photo de couverture de chaque lieu (verdure, mer, roche, sable, neige…) est calculée dans le navigateur et gardée sur l'appareil ; la grille suit l'arc-en-ciel (rouges, ocres, verts, bleus, violets), les photos sans vraie couleur (neige, béton, noir et blanc) à la fin. Aussi **PAR AJOUT** et **PAR NOM**. Les photos collées en lien depuis un site qui ne permet pas de les lire passent à la fin.
+Par défaut **PAR COULEUR** : la couleur d'ambiance de la photo de couverture de chaque lieu (sa moyenne dans l'espace Lab, proche de l'œil) est calculée dans le navigateur et gardée sur l'appareil ; la grille suit le cercle des couleurs (rouges, ocres, verts, bleus, violets), puis les photos sans vraie couleur (neige, béton, nuit), de la plus claire à la plus sombre. Aussi **PAR AJOUT** et **PAR NOM**. Les photos collées en lien depuis un site qui ne permet pas de les lire passent à la fin.
 
 ### Catégories
 
