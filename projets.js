@@ -295,7 +295,7 @@ function pjMien(c, p) { return c.x.p.id === p.id ? c.x : c.y; }
 function pjGo(vue, id) {
   if (vue === 'ts' && pjVue !== 'ts') pjTsDepuis = pjVue === 'projet' && pjCur() ? pjId : null;
   pjVue = vue;
-  if (id !== undefined && id !== pjId) { pjId = id; pjMois = ''; pjOptionsOuvert = false; pjRetroOuvert = false; pjEtapesOuvert = false; pjEtSel = new Set(); pjEquipeOuvert = false; tdFaitesOuvert = false; pjAffOuvert = new Set(); if (pjRetro && !pjRetro.enCours) pjRetro = null; }
+  if (id !== undefined && id !== pjId) { pjId = id; pjMois = ''; pjOptionsOuvert = false; pjRetroOuvert = false; pjEtapesOuvert = false; pjEtSel = new Set(); pjEqSel = new Set(); pjEquipeOuvert = false; tdFaitesOuvert = false; pjAffOuvert = new Set(); if (pjRetro && !pjRetro.enCours) pjRetro = null; }
   buildTabs();
   render();
   window.scrollTo(0, 0);
@@ -701,6 +701,7 @@ function pjEquipeHtml(p, choix) {
   return `<details class="ts-bloc pj-repli pj-equipe-bloc"${ouvert ? ' open' : ''} ontoggle="if(this.open!==${ouvert})pjEquipeOuvert=this.open">
     <summary><h3>ÉQUIPE <small class="pj-muted">${noms.length ? `· ${noms.length} ${noms.length > 1 ? 'personnes' : 'personne'}${barre ? '' : ` · ${esc(noms.slice(0, 4).join(', '))}${noms.length > 4 ? '…' : ''}`}` : ''}</small>${nbConflits ? ` <span class="pj-warn">⚠ ${nbConflits}</span>` : ''}${barre}</h3></summary>
     <datalist id="pj-gens">${choix.map(c => `<option value="${esc(c.label)}"></option>`).join('')}</datalist>
+    ${pjEqSelBarreHtml(p, vus)}
     <div class="pj-equipe">${vus.map(a => pjAffectationHtml(p, a)).join('') || (eq.length ? '<p class="field-hint">Personne avec ce filtre.</p>' : '') || '<p class="field-hint">Personne pour le moment. Les talents et techniciens de la bible sont proposés quand tu tapes un nom ; tu peux aussi écrire n\'importe quel nom.</p>'}</div>
     <div class="ts-add-row"><button type="button" class="btn-upload" onclick="pjAjouterPersonne()">+ PERSONNE</button></div>
   </details>`;
@@ -1362,10 +1363,66 @@ function pjEtSelVider() { pjEtSel = new Set(); pjRedessiner(); }
 // Un clic ailleurs dans la page (pas sur une étape ni sur la barre) désélectionne tout
 document.addEventListener('click', ev => {
   const t = ev.target;
-  if (!pjEtSel.size || !(t instanceof Element) || !document.contains(t)) return;
-  if (t.closest('.pj-etape, .pj-etsel, .pj-etapes-groupe')) return;
-  pjEtSelVider();
+  if (!(t instanceof Element) || !document.contains(t)) return;
+  if (pjEtSel.size && !t.closest('.pj-etape, .pj-etsel, .pj-etapes-groupe')) pjEtSelVider();
+  if (pjEqSel.size && !t.closest('.pj-aff, .pj-eqsel')) pjEqSelVider();
 });
+
+// ── Plusieurs personnes de l'équipe à la fois ────────────────────────────────
+// On coche des personnes, puis on les met (ou les retire) sur des étapes d'un coup
+let pjEqSel = new Set();
+function pjEqSelGens(p) { return (p.equipe || []).filter(a => pjEqSel.has(a.id)); }
+function pjEqSelBasculer(aid, oui) { if (oui) pjEqSel.add(aid); else pjEqSel.delete(aid); pjRedessiner(); }
+function pjEqSelVider() { pjEqSel = new Set(); pjRedessiner(); }
+function pjEqSelTout(ids) {
+  const l = String(ids).split(',').filter(Boolean).map(Number);
+  const tous = l.every(id => pjEqSel.has(id));
+  l.forEach(id => tous ? pjEqSel.delete(id) : pjEqSel.add(id));
+  pjRedessiner();
+}
+// Une étape pour les personnes cochées : si toutes y sont déjà, on les en retire ;
+// sinon on les y met toutes
+function pjEqSelEtape(eid) {
+  const p = pjCur();
+  if (!p) return;
+  const gens = pjEqSelGens(p);
+  const e = (p.etapes || []).find(x => x.id === eid);
+  if (!gens.length || !e) return;
+  const tous = gens.every(a => pjSurEtape(p, a, e));
+  gens.forEach(a => {
+    if (pjSurToutLeProjet(a)) a.etapes = pjEtapesParDefaut(p, a).map(x => x.id);
+    a.etapes = (a.etapes || []).filter(x => x !== eid);
+    if (!tous) a.etapes.push(eid);
+  });
+  pjChange(true);
+}
+// Remet les personnes cochées sur tout le projet
+function pjEqSelToutLeProjet() {
+  const p = pjCur();
+  if (!p) return;
+  pjEqSelGens(p).forEach(a => { a.etapes = []; a.du = ''; a.au = ''; });
+  pjChange(true);
+}
+function pjEqSelBarreHtml(p, vus) {
+  if (vus.length < 2) return '';
+  const ids = vus.map(a => a.id);
+  const tous = ids.every(id => pjEqSel.has(id));
+  const caseTout = `<label class="cat-check"><input type="checkbox"${tous ? ' checked' : ''} onchange="pjEqSelTout('${ids.join(',')}')"><span>${tous ? 'TOUT DÉSÉLECTIONNER' : 'TOUT SÉLECTIONNER'}</span></label>`;
+  const gens = pjEqSelGens(p);
+  if (!gens.length) return `<div class="pj-etsel pj-eqsel">${caseTout}<span class="pj-muted">ou coche des personnes pour les mettre sur les mêmes étapes d'un coup</span></div>`;
+  const et = pjEtapesDatees(p).concat((p.etapes || []).filter(e => !pjEtapeDates(e)));
+  const puce = e => {
+    const n = gens.filter(a => pjSurEtape(p, a, e)).length;
+    const pi = pjPisteInfo(pjPisteDe(e));
+    const etat = n === gens.length ? 'tous' : n ? 'certains' : '';
+    return `<button type="button" class="pj-eqsel-et${etat ? ' ' + etat : ''}" style="--c:${pjEtapeType(e.type)[2]}" title="${etat === 'tous' ? 'Retirer de' : 'Mettre sur'} ${esc(pjEtapeNom(e))}${etat === 'certains' ? ` (${n} sur ${gens.length} y sont déjà)` : ''}" onclick="pjEqSelEtape(${e.id})">${pi ? `<i class="pj-piste-pt" style="--p:${pi[2]}"></i>` : ''}${etat === 'tous' ? '✓ ' : '+ '}${esc(pjEtapeNom(e))}</button>`;
+  };
+  return `<div class="pj-etsel pj-etsel-actif pj-eqsel">${caseTout}
+    <strong>${gens.length} PERSONNE${gens.length > 1 ? 'S' : ''}</strong>
+    ${et.length ? `<span class="pj-muted">sur :</span>${et.map(puce).join('')}<button type="button" class="pj-eqsel-et" onclick="pjEqSelToutLeProjet()">TOUT LE PROJET</button>` : '<span class="pj-muted">Aucune étape pour le moment.</span>'}
+    <button type="button" class="export-lien" onclick="pjEqSelVider()">annuler</button>
+  </div>`;
+}
 function pjEtSelAjouter(v) { const p = pjCur(); if (p) pjEtapesAjouterPersonne(pjEtSelIds(p), v); }
 function pjEtSelRetirer(aid) {
   const p = pjCur();
@@ -1394,7 +1451,8 @@ function pjAffectationHtml(p, a) {
   const et = pjEtapesDatees(p);
   const conflits = pjNomPersonne(a) ? pjConflitsDe(p, a) : [];
   const libres = !!a.du;
-  return `<div class="pj-aff${conflits.length ? ' conflit' : ''}" id="pj-aff-${a.id}">
+  return `<div class="pj-aff${conflits.length ? ' conflit' : ''}${pjEqSel.has(a.id) ? ' pj-aff-choisie' : ''}" id="pj-aff-${a.id}">
+    <input type="checkbox" class="pj-aff-sel" title="Sélectionner pour mettre plusieurs personnes sur les mêmes étapes"${pjEqSel.has(a.id) ? ' checked' : ''} onchange="pjEqSelBasculer(${a.id}, this.checked)">
     <div class="pj-aff-ligne">
       <div class="field pj-aff-qui"><label>PERSONNE${t ? ` · <a href="#" onclick="event.preventDefault();openDetail('talent', ${t.id})">fiche</a>` : ''}</label>
         <input list="pj-gens" data-k="qui" data-l="equipe" data-i="${a.id}" value="${esc(label)}" placeholder="Nom, ou choisis dans la bible" onchange="pjChoisirPersonne(${a.id}, this.value)"></div>
