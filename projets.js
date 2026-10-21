@@ -708,9 +708,18 @@ function pjEtapesBlocHtml(p) {
   const avecTitres = groupes.length > 1 || (groupes[0] && groupes[0][0] !== 'COMMUN');
   return `<details class="pj-sous-bloc"${ouvert ? ' open' : ''} ontoggle="if(this.open!==${ouvert})pjEtapesOuvert=this.open">
     <summary><span class="pj-sous-titre">ÉTAPES</span> <small class="pj-muted">${toutes.length ? `${toutes.length} · modifier les dates, ajouter une étape` : 'aucune pour le moment'}</small></summary>
+    <datalist id="pj-gens-etapes">${pjEtapesChoixHtml(p)}</datalist>
     <div class="pj-etapes">${groupes.map(([lab, l]) => (avecTitres ? `<div class="pj-etapes-groupe">${lab}</div>` : '') + l.map(e => pjEtapeHtml(e)).join('')).join('') || '<p class="field-hint">Aucune étape. Importe le rétroplanning ci-dessous, ou ajoute la prépa, le tournage, la post-prod… avec leurs dates.</p>'}</div>
     <div class="ts-add-row">${PJ_ETAPES.map(t => `<button type="button" class="btn-upload" onclick="pjAjouterEtape('${t[0]}')">+ ${t[1].toUpperCase()}</button>`).join('')}</div>
   </details>`;
+}
+
+// Les noms proposés sur une étape : l'équipe du projet d'abord, puis la bible
+function pjEtapesChoixHtml(p) {
+  const deja = (p.equipe || []).map(a => pjNomPersonne(a)).filter(Boolean);
+  const vus = new Set(deja.map(pjNorm));
+  return deja.map(n => `<option value="${esc(n)}"></option>`).join('')
+    + pjChoixGens().filter(c => !vus.has(pjNorm(c.label.split(' · ')[0]))).map(c => `<option value="${esc(c.label)}"></option>`).join('');
 }
 
 // L'import du rétroplanning, replié tant qu'on ne s'en sert pas
@@ -1067,7 +1076,46 @@ function pjEtapeHtml(e) {
     ${pjField('DU', 'du', e.du, { ...o, type: 'date' })}
     ${pjField('AU', 'au', e.au, { ...o, type: 'date' })}
     <button type="button" class="ts-x" title="Retirer" onclick="pjRetirer('etapes', ${e.id})">✕</button>
+    ${pjEtapeGensHtml(e)}
   </div>`;
+}
+
+// Les personnes d'une étape, à ajouter ou retirer directement depuis l'étape
+// (c'est la même chose que cocher l'étape dans l'équipe)
+function pjEtapeGensHtml(e) {
+  const p = pjCur();
+  const eq = (p && p.equipe || []).filter(a => pjNomPersonne(a));
+  const sur = eq.filter(a => (a.etapes || []).includes(e.id));
+  const toutLeProjet = pjEtapeDates(e) ? eq.filter(a => !(a.etapes || []).length && !a.du) : [];
+  return `<div class="pj-etape-gens">
+    ${sur.map(a => `<span class="pj-etape-pers">${esc(pjNomPersonne(a))}${a.role ? ` <small>${esc(a.role)}</small>` : ''}<button type="button" title="Retirer de l'étape" onclick="pjCocherEtape(${a.id}, ${e.id}, false)">✕</button></span>`).join('')}
+    ${toutLeProjet.map(a => `<span class="pj-etape-pers pj-muted" title="Sur tout le projet">${esc(pjNomPersonne(a))}${a.role ? ` <small>${esc(a.role)}</small>` : ''}</span>`).join('')}
+    <input class="pj-etape-ajout" list="pj-gens-etapes" placeholder="+ personne sur cette étape" onchange="pjEtapeAjouterPersonne(${e.id}, this.value)" onkeydown="if(event.key==='Enter')this.blur()">
+  </div>`;
+}
+
+// Ajoute quelqu'un à une étape : s'il est déjà dans l'équipe, on coche l'étape ;
+// sinon il entre dans l'équipe, sur cette étape seulement
+function pjEtapeAjouterPersonne(eid, v) {
+  const p = pjCur();
+  const v2 = String(v || '').trim();
+  if (!p || !v2) return;
+  if (!Array.isArray(p.equipe)) p.equipe = [];
+  const choix = pjChoixGens();
+  const c = choix.find(x => x.label === v2) || choix.find(x => pjNorm(x.label.split(' · ')[0]) === pjNorm(v2));
+  const nouveau = c && c.ref != null ? { ref: c.ref, nom: '' } : { ref: null, nom: c ? c.nom : v2 };
+  const cle = pjCle(nouveau);
+  const a = p.equipe.find(x => pjNomPersonne(x) && pjCle(x) === cle);
+  if (a) {
+    // Déjà sur tout le projet : il est déjà sur l'étape, on ne réduit pas ses dates
+    if (!(a.etapes || []).length && !a.du) { pjRedessiner(); return; }
+    a.etapes = (a.etapes || []).filter(x => x !== eid).concat(eid);
+  } else {
+    const t = pjTalent(nouveau.ref);
+    const cat = t && c ? (c.label.split(' · ')[1] || '') : '';
+    p.equipe.push({ id: uid(), ...nouveau, role: cat, etapes: [eid], du: '', au: '' });
+  }
+  pjChange(true);
 }
 
 function pjAffectationHtml(p, a) {
