@@ -943,3 +943,13 @@ body.doc-vue-ouvert > *:not(#doc-vue) { display:none !important; }
   .pj-cal-plein { padding:12px; }
   .pj-cal-vues { margin-left:0; }
 }
+
+/* Plusieurs étapes à la fois */
+.pj-etape { position:relative; padding-left:34px; }
+.pj-etape-sel { position:absolute; left:10px; top:32px; width:16px; height:16px; margin:0; cursor:pointer; accent-color:var(--text); }
+.pj-etape-choisie { outline:1px solid var(--text); outline-offset:-1px; }
+.pj-etsel { display:flex; flex-wrap:wrap; align-items:center; gap:8px 14px; margin-top:12px; padding:6px 10px; font-size:13px; }
+.pj-etsel .cat-check { margin:0; }
+.pj-etsel-actif { border:1px solid var(--text); background:#fff; position:sticky; top:0; z-index:5; }
+.pj-etsel strong { letter-spacing:.04em; font-weight:600; }
+.pj-etsel select { width:auto; max-width:100%; }
