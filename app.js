@@ -2064,12 +2064,14 @@ function renderTalentForm(v) {
     <div class="field"><label>ÂGE</label><input id="f-age" type="number" min="16" max="80" value="${esc(String(v.age||''))}"></div>
     <div class="field full">
       <label>SPORT / SPÉCIALITÉ (plusieurs possibles)</label>
+      <input class="cat-search" placeholder="Rechercher…" autocomplete="off" oninput="filterChecks(this)" onkeydown="checkSearchKey(event)">
       <div style="background:var(--bg3);border:1px solid var(--border);padding:12px;max-height:160px;overflow-y:auto">
         ${sportsHtml}
       </div>
     </div>
     <div class="field full">
       <label>PAYS (plusieurs possibles)</label>
+      <input class="cat-search" placeholder="Rechercher…" autocomplete="off" oninput="filterChecks(this)" onkeydown="checkSearchKey(event)">
       <div style="background:var(--bg3);border:1px solid var(--border);padding:12px;max-height:160px;overflow-y:auto">
         ${paysHtml}
       </div>
@@ -2080,6 +2082,7 @@ function renderTalentForm(v) {
     </div>
     <div class="field full">
       <label>AGENCE(S) (plusieurs possibles)</label>
+      <input class="cat-search" placeholder="Rechercher…" autocomplete="off" oninput="filterChecks(this)" onkeydown="checkSearchKey(event)">
       <div style="background:var(--bg3);border:1px solid var(--border);padding:12px;max-height:160px;overflow-y:auto">
         ${agencesHtml}
       </div>
@@ -2190,6 +2193,29 @@ function createCatFromForm() {
   const checked = [...document.querySelectorAll('input[name="cat"]:checked')].map(el => el.value).concat(id);
   document.getElementById('f-cats').innerHTML = talentCatsHtml(checked);
   clearCatSearch();
+}
+
+// Recherche dans une liste de cases (sport, pays, agence) : filtre pendant la frappe
+function filterChecks(input) {
+  const q = sansAccent(input.value.trim());
+  input.nextElementSibling.querySelectorAll('.cat-check').forEach(l => {
+    l.style.display = !q || sansAccent(l.textContent).includes(q) ? '' : 'none';
+  });
+}
+
+// Entrée : coche le résultat s'il n'en reste qu'un (ou si le nom est exact)
+function checkSearchKey(e) {
+  if (e.key !== 'Enter') return;
+  e.preventDefault();
+  const input = e.target;
+  const q = sansAccent(input.value.trim());
+  if (!q) return;
+  const vis = [...input.nextElementSibling.querySelectorAll('.cat-check')].filter(l => l.style.display !== 'none');
+  const pick = vis.find(l => sansAccent(l.textContent.trim()).replace(/^\W+\s*/, '') === q || sansAccent(l.textContent.trim()) === q) || (vis.length === 1 ? vis[0] : null);
+  if (!pick) return;
+  pick.querySelector('input').checked = true;
+  input.value = '';
+  filterChecks(input);
 }
 
 // Rappel des postes cochés au-dessus de la liste (cliquer pour décocher)
@@ -2919,3 +2945,96 @@ async function installApp() {
   installPrompt = null;
   document.getElementById('btn-install').style.display = 'none';
 }
+
+// ── FILTRES AVEC RECHERCHE ───────────────────────────────────────────────────
+// Les menus de filtre un peu longs (sport, pays, agence…) s'ouvrent sur une
+// liste avec un champ de recherche. Le <select> d'origine reste dans la page,
+// caché : on change sa valeur et on déclenche son onchange habituel.
+const FILTRE_RECHERCHE_MIN = 8; // en dessous, le menu classique suffit
+
+function enhanceFilterSel(sel) {
+  sel.dataset.fs = '1';
+  if (sel.options.length < FILTRE_RECHERCHE_MIN || sel.style.display === 'none') return;
+  const btn = document.createElement('button');
+  btn.type = 'button';
+  btn.className = sel.className + ' fs-btn';
+  if (sel.title) btn.title = sel.title;
+  const opt = sel.options[sel.selectedIndex];
+  btn.innerHTML = `<span>${esc(opt ? opt.text : '')}</span>`;
+  if (sel.value) btn.classList.add('fs-actif');
+  btn.onclick = e => { e.stopPropagation(); openFilterPanel(sel, btn); };
+  sel.style.display = 'none';
+  sel.after(btn);
+}
+
+function openFilterPanel(sel, btn) {
+  const deja = document.querySelector('.fs-panel');
+  closeFilterPanel();
+  if (deja && deja._btn === btn) return; // second clic : on referme
+  const panel = document.createElement('div');
+  panel.className = 'fs-panel';
+  panel._btn = btn;
+  let html = '';
+  [...sel.children].forEach(n => {
+    if (n.tagName === 'OPTGROUP') {
+      html += `<div class="fs-grp">${esc(n.label)}</div>`;
+      [...n.children].forEach(o => { html += fsOpt(o, sel); });
+    } else html += fsOpt(n, sel);
+  });
+  panel.innerHTML = `<input class="fs-q" placeholder="Rechercher…" autocomplete="off">
+    <div class="fs-list">${html}<div class="fs-vide" style="display:none">Aucun résultat</div></div>`;
+  document.body.appendChild(panel);
+  const r = btn.getBoundingClientRect();
+  if (window.innerWidth > 640) {
+    panel.style.top = (r.bottom + window.scrollY + 4) + 'px';
+    panel.style.left = Math.max(8, Math.min(r.left + window.scrollX, window.scrollX + window.innerWidth - panel.offsetWidth - 8)) + 'px';
+  } else panel.classList.add('fs-mobile');
+  const q = panel.querySelector('.fs-q');
+  q.oninput = () => {
+    const t = sansAccent(q.value.trim());
+    let nb = 0;
+    panel.querySelectorAll('.fs-opt').forEach(o => {
+      const ok = !t || sansAccent(o.textContent).includes(t);
+      o.style.display = ok ? '' : 'none';
+      if (ok) nb++;
+    });
+    panel.querySelectorAll('.fs-grp').forEach(g => {
+      let s = g.nextElementSibling, vis = false;
+      while (s && s.classList.contains('fs-opt')) { if (s.style.display !== 'none') vis = true; s = s.nextElementSibling; }
+      g.style.display = vis ? '' : 'none';
+    });
+    panel.querySelector('.fs-vide').style.display = nb ? 'none' : '';
+  };
+  q.onkeydown = e => {
+    if (e.key === 'Escape') closeFilterPanel();
+    if (e.key === 'Enter') {
+      const first = [...panel.querySelectorAll('.fs-opt')].find(o => o.style.display !== 'none' && (q.value.trim() ? o.dataset.v !== '' : true));
+      if (first) pickFilter(sel, first.dataset.v);
+    }
+  };
+  panel.onclick = e => {
+    e.stopPropagation();
+    const o = e.target.closest('.fs-opt');
+    if (o) pickFilter(sel, o.dataset.v);
+  };
+  q.focus();
+}
+
+function fsOpt(o, sel) {
+  return `<button type="button" class="fs-opt${o.value === sel.value ? ' sel' : ''}" data-v="${esc(o.value)}">${esc(o.text)}</button>`;
+}
+
+function pickFilter(sel, v) {
+  closeFilterPanel();
+  sel.value = v;
+  sel.dispatchEvent(new Event('change', { bubbles: true }));
+}
+
+function closeFilterPanel() {
+  document.querySelectorAll('.fs-panel').forEach(p => p.remove());
+}
+
+document.addEventListener('click', closeFilterPanel);
+new MutationObserver(() => {
+  document.querySelectorAll('select.filter-sel:not([data-fs])').forEach(enhanceFilterSel);
+}).observe(document.body, { childList: true, subtree: true });
