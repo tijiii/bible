@@ -937,13 +937,30 @@ function renderLieux(main) {
       <button class="btn-add" id="lieu-maps-go" style="background:var(--accent2)" onclick="addLieuFromMapsLink()">AJOUTER</button>
     </div>
   </div>
-  <div id="lieux-map" class="lieux-map"></div>
-  <div class="lieux-map-hint">Fais tourner le globe et zoome pour t'approcher. Clique sur un pin pour ouvrir le lieu, ou n'importe où sur la carte pour en ajouter un. La recherche trouve tes lieux et n'importe quel endroit du monde.${sansGps.length ? ` ${sansGps.length} lieu${sansGps.length > 1 ? 'x' : ''} sans coordonnées GPS ne ${sansGps.length > 1 ? 'sont' : 'est'} pas sur la carte.` : ''}</div>
-  <div id="lieux-list"></div>`;
+  <div class="lieux-split" id="lieux-split">
+    <div class="lieux-globe-col">
+      <div id="lieux-map" class="lieux-map"></div>
+      <div class="lieux-map-hint">Fais tourner le globe et zoome pour t'approcher. Clique sur un pin pour ouvrir le lieu, ou n'importe où sur la carte pour en ajouter un. La recherche trouve tes lieux et n'importe quel endroit du monde.${sansGps.length ? ` ${sansGps.length} lieu${sansGps.length > 1 ? 'x' : ''} sans coordonnées GPS ne ${sansGps.length > 1 ? 'sont' : 'est'} pas sur la carte.` : ''}</div>
+    </div>
+    <div id="lieux-list"></div>
+  </div>`;
+  ajusterLieuxSplit();
   renderLieuxList();
   initLieuxMap(onMap);
   if (searchQ.trim().length >= 3) scheduleWorldSearch();
 }
+
+// Sur ordinateur, le globe reste à gauche et seule la liste défile à droite :
+// le bloc prend toute la hauteur restante de la fenêtre sous la barre de filtres
+const LIEUX_SPLIT_MQ = window.matchMedia('(min-width:900px)');
+function ajusterLieuxSplit() {
+  const el = document.getElementById('lieux-split');
+  if (!el) return;
+  if (!LIEUX_SPLIT_MQ.matches) { el.style.height = ''; return; }
+  const haut = el.getBoundingClientRect().top + window.scrollY;
+  el.style.height = Math.max(480, window.innerHeight - haut) + 'px';
+}
+window.addEventListener('resize', ajusterLieuxSplit);
 
 // Seule la liste est redessinée pendant la frappe : le champ garde le focus et la carte ne bouge pas
 function renderLieuxList() {
