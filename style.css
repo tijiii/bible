@@ -962,3 +962,12 @@ body.doc-vue-ouvert > *:not(#doc-vue) { display:none !important; }
 .pj-eqsel-et.certains { color:var(--text); border-style:dashed; border-left-style:solid; }
 .pj-eqsel-et.tous { color:var(--text); background:color-mix(in srgb, var(--c, var(--text)) 14%, #fff); border-color:var(--text); border-left-color:var(--c, var(--text)); }
 .pj-eqsel { margin-bottom:6px; }
+
+/* ── POSTES DANS LA FICHE PERSONNE ── */
+.cat-search { margin-bottom:8px; }
+.cat-sel { display:flex; flex-wrap:wrap; gap:6px; margin-bottom:8px; }
+.cat-sel:empty { display:none; }
+.cat-chip { background:#fff; border:1px solid #111; color:#111; padding:3px 9px; font-family:var(--serif); font-size:13.5px; cursor:pointer; }
+.cat-new { display:flex; flex-wrap:wrap; align-items:center; gap:8px; margin-bottom:8px; padding:10px 12px; border:1px dashed var(--border); font-family:var(--serif); font-size:14px; }
+.cat-new select { width:auto; }
+.cat-new button { background:#111; border:1px solid #111; color:#fff; padding:6px 12px; font-family:var(--serif); font-size:14px; cursor:pointer; text-transform:lowercase; }

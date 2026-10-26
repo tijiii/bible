@@ -2040,28 +2040,7 @@ function renderTalentForm(v) {
     </label>`;
   }).join('') + `</div>`;
 
-  // Build multi-select checkboxes grouped
-  const families = [
-    { label: 'Modèles',    cats: db.categories.filter(c => c.id.startsWith('modele-')) },
-    { label: 'Athlètes',   cats: db.categories.filter(c => c.id.startsWith('athlete-')) },
-    { label: 'Techniciens',cats: db.categories.filter(c => c.id.startsWith('tech-')) },
-    { label: 'Autres',     cats: db.categories.filter(c => !c.id.startsWith('modele-')&&!c.id.startsWith('athlete-')&&!c.id.startsWith('tech-')) },
-  ].filter(f => f.cats.length > 0);
-
-  let catsHtml = '';
-  families.forEach(fam => {
-    catsHtml += `<div style="margin-bottom:8px">
-      <div style="font-family:var(--serif);font-size:13px;letter-spacing:.01em;text-transform:lowercase;color:var(--muted);margin-bottom:6px">${fam.label.toUpperCase()}</div>
-      <div class="cats-grid">`;
-    fam.cats.forEach(cat => {
-      const checked = selectedCats.includes(cat.id) ? 'checked' : '';
-      catsHtml += `<label class="cat-check">
-        <input type="checkbox" name="cat" value="${esc(cat.id)}" ${checked}>
-        <span style="color:${esc(cat.color)}">${esc(cat.label)}</span>
-      </label>`;
-    });
-    catsHtml += `</div></div>`;
-  });
+  const catsHtml = talentCatsHtml(selectedCats);
 
   document.getElementById('form-body').innerHTML = `
     <div class="field full">
@@ -2072,8 +2051,11 @@ function renderTalentForm(v) {
       </div>
     </div>
     <div class="field full">
-      <label>CATÉGORIES (plusieurs possibles)</label>
-      <div style="background:var(--bg3);border:1px solid var(--border);padding:12px;max-height:180px;overflow-y:auto">
+      <label>CATÉGORIES / POSTES (plusieurs possibles)</label>
+      <input id="f-cat-q" class="cat-search" placeholder="Rechercher ou créer un poste…" autocomplete="off" oninput="filterTalentCats()" onkeydown="catSearchKey(event)">
+      <div id="f-cat-sel" class="cat-sel"></div>
+      <div id="f-cat-new" class="cat-new" style="display:none"></div>
+      <div id="f-cats" style="background:var(--bg3);border:1px solid var(--border);padding:12px;max-height:180px;overflow-y:auto" onchange="renderCatSel()">
         ${catsHtml}
       </div>
     </div>
@@ -2119,6 +2101,112 @@ function renderTalentForm(v) {
     </div>
     ${mensurationsFields(v.mensurations)}
     <div class="field full"><label>NOTES</label><input id="f-notes" value="${esc(v.notes||'')}"></div>`;
+  renderCatSel();
+}
+
+// Cases à cocher des catégories / postes, groupées par famille
+function talentCatsHtml(selectedCats) {
+  const families = [
+    { label: 'Modèles',    cats: db.categories.filter(c => c.id.startsWith('modele-')) },
+    { label: 'Athlètes',   cats: db.categories.filter(c => c.id.startsWith('athlete-')) },
+    { label: 'Techniciens',cats: db.categories.filter(c => c.id.startsWith('tech-')) },
+    { label: 'Autres',     cats: db.categories.filter(c => !c.id.startsWith('modele-')&&!c.id.startsWith('athlete-')&&!c.id.startsWith('tech-')) },
+  ].filter(f => f.cats.length > 0);
+
+  let catsHtml = '';
+  families.forEach(fam => {
+    catsHtml += `<div class="cat-fam" style="margin-bottom:8px">
+      <div style="font-family:var(--serif);font-size:13px;letter-spacing:.01em;text-transform:lowercase;color:var(--muted);margin-bottom:6px">${fam.label.toUpperCase()}</div>
+      <div class="cats-grid">`;
+    fam.cats.forEach(cat => {
+      const checked = selectedCats.includes(cat.id) ? 'checked' : '';
+      catsHtml += `<label class="cat-check">
+        <input type="checkbox" name="cat" value="${esc(cat.id)}" ${checked}>
+        <span style="color:${esc(cat.color)}">${esc(cat.label)}</span>
+      </label>`;
+    });
+    catsHtml += `</div></div>`;
+  });
+  catsHtml += `<div id="f-cats-vide" class="field-hint" style="display:none;margin:0">Aucun poste ne correspond.</div>`;
+  return catsHtml;
+}
+
+// Filtre la liste des postes pendant la frappe et propose de créer le poste s'il n'existe pas
+function filterTalentCats() {
+  const q = sansAccent(document.getElementById('f-cat-q').value.trim());
+  let nb = 0;
+  document.querySelectorAll('#f-cats .cat-fam').forEach(fam => {
+    let vis = 0;
+    fam.querySelectorAll('.cat-check').forEach(l => {
+      const ok = !q || sansAccent(l.textContent).includes(q);
+      l.style.display = ok ? '' : 'none';
+      if (ok) vis++;
+    });
+    fam.style.display = vis ? '' : 'none';
+    nb += vis;
+  });
+  document.getElementById('f-cats-vide').style.display = nb ? 'none' : '';
+  const raw = document.getElementById('f-cat-q').value.trim();
+  const exact = raw && db.categories.some(c => sansAccent(c.label) === q);
+  const box = document.getElementById('f-cat-new');
+  if (!raw || exact) { box.style.display = 'none'; box.innerHTML = ''; return; }
+  const cur = String(curCatId || '');
+  const fam = cur.startsWith('modele') ? 'modele' : cur.startsWith('athlete') ? 'athlete' : 'tech';
+  box.style.display = '';
+  box.innerHTML = `<span>Créer le poste « ${esc(raw)} » dans</span>
+    <select id="f-cat-fam">${TALENT_FAMILIES.map(f => `<option value="${f.key}"${f.key===fam?' selected':''}>${esc(f.label)}</option>`).join('')}</select>
+    <button type="button" onclick="createCatFromForm()">+ CRÉER</button>`;
+}
+
+// Entrée : coche le premier poste trouvé, ou crée le poste s'il n'y en a aucun
+function catSearchKey(e) {
+  if (e.key !== 'Enter') return;
+  e.preventDefault();
+  if (!e.target.value.trim()) return;
+  const q = sansAccent(e.target.value.trim());
+  const vis = [...document.querySelectorAll('#f-cats .cat-check')].filter(l => l.style.display !== 'none');
+  const pick = vis.find(l => sansAccent(l.textContent.trim()) === q) || (vis.length === 1 ? vis[0] : null);
+  if (pick) { pick.querySelector('input').checked = true; clearCatSearch(); }
+  else if (!vis.length) createCatFromForm();
+}
+
+function clearCatSearch() {
+  const q = document.getElementById('f-cat-q');
+  q.value = '';
+  filterTalentCats();
+  renderCatSel();
+  q.focus();
+}
+
+function createCatFromForm() {
+  const label = document.getElementById('f-cat-q').value.trim();
+  if (!label) return;
+  const key = (document.getElementById('f-cat-fam') || {}).value || 'tech';
+  const id = key + '-' + sansAccent(label).replace(/\s+/g,'-').replace(/[^a-z0-9-]/g,'') + '-' + Date.now();
+  const color = (TALENT_FAMILIES.find(f => f.key === key) || {}).color || '#c49a2c';
+  db.categories.push({ id, label, color });
+  saveDb();
+  buildTabs();
+  const checked = [...document.querySelectorAll('input[name="cat"]:checked')].map(el => el.value).concat(id);
+  document.getElementById('f-cats').innerHTML = talentCatsHtml(checked);
+  clearCatSearch();
+}
+
+// Rappel des postes cochés au-dessus de la liste (cliquer pour décocher)
+function renderCatSel() {
+  const box = document.getElementById('f-cat-sel');
+  if (!box) return;
+  const ids = [...document.querySelectorAll('input[name="cat"]:checked')].map(el => el.value);
+  box.innerHTML = ids.map(id => {
+    const c = catById(id);
+    return c ? `<button type="button" class="cat-chip" style="border-color:${esc(c.color)}" onclick="uncheckCat('${esc(id)}')">${esc(c.label)} ✕</button>` : '';
+  }).join('');
+}
+
+function uncheckCat(id) {
+  const el = [...document.querySelectorAll('input[name="cat"]')].find(x => x.value === id);
+  if (el) el.checked = false;
+  renderCatSel();
 }
 
 function renderClubForm(v) {
