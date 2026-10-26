@@ -918,37 +918,41 @@ body.doc-vue-ouvert > *:not(#doc-vue) { display:none !important; }
 .pj-frise-filtres .filter-sel { max-width:200px; font-size:12px; padding:5px 6px; }
 .pj-frise-cat { font-family:var(--serif); font-size:12.5px; padding:4px 10px; border:1px solid var(--border2); background:#fff; color:var(--text); cursor:pointer; }
 .pj-frise-cat.on { background:#111; color:#fff; border-color:#111; }
-.pj-frise { --pj-frise-lab:230px; --pj-frise-j:16px; overflow-x:auto; border:1px solid var(--border); }
-.pj-frise-postprod { --pj-frise-j:34px; }
-.pj-cal-plein .pj-frise { --pj-frise-lab:260px; }
-.pj-frise-ligne { display:grid; min-width:max-content; border-bottom:1px solid var(--border); position:relative; }
-.pj-frise-ligne:last-child { border-bottom:none; }
-.pj-frise-lab { grid-column:1; grid-row:1; position:sticky; left:0; z-index:2; background:#fff; padding:7px 10px 7px 12px; border-right:1px solid var(--border2); border-left:3px solid var(--c, transparent); display:flex; flex-direction:column; gap:2px; min-width:0; }
-.pj-frise-nom { color:inherit; text-decoration:none; font-size:14px; display:flex; align-items:center; gap:5px; }
-.pj-frise-nom:hover { text-decoration:underline; }
-.pj-frise-lab small { font-size:11.5px; }
-.pj-frise-gens { display:flex; flex-wrap:wrap; gap:3px 8px; font-size:12px; }
-.pj-frise-gens a { color:var(--text); text-decoration:none; border-bottom:1px dotted var(--border2); }
-.pj-frise-gens a:hover { border-bottom-color:var(--text); }
-.pj-frise-j { border-left:1px solid #0000000a; min-height:100%; }
-.pj-frise-j.we { background:#00000008; }
-.pj-frise-j.m1 { border-left-color:#0000002e; }
-.pj-frise-j.auj { background:#b3261e14; box-shadow:inset 2px 0 0 #b3261e88; }
-.pj-frise-barre { align-self:center; margin:6px 1px; height:24px; position:relative; background:var(--p); border-left:4px solid var(--c); z-index:1; min-width:0; overflow:hidden; }
-/* Le texte ne compte pas dans la largeur des colonnes (sinon une étape d'un jour élargit son jour) */
-.pj-frise-barre > span { position:absolute; inset:0 4px 0 6px; color:#fff; font-size:12px; line-height:24px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-.pj-frise-mois span, .pj-frise-jours span { font-size:11.5px; color:var(--muted); padding:3px 2px; text-align:center; }
-.pj-frise-mois span:not(.pj-frise-lab) { text-align:left; padding-left:6px; border-left:1px solid #0000002e; text-transform:capitalize; }
-.pj-frise-jours span { display:flex; flex-direction:column; align-items:center; line-height:1.15; }
-.pj-frise-jours small { font-size:10px; opacity:.7; }
-.pj-frise-mois, .pj-frise-jours { background:var(--bg3); }
-.pj-frise-mois .pj-frise-lab, .pj-frise-jours .pj-frise-lab { background:var(--bg3); }
+/* Grand calendrier façon RÉTROPLANNING des fiches de suivi */
+.pj-rp { overflow-x:auto; border:1px solid #1a1a1a; --pj-rp-j:22px; --pj-rp-phase:240px; }
+.pj-rp-postprod { --pj-rp-j:38px; }
+.pj-cal-plein .pj-rp { --pj-rp-phase:280px; }
+.pj-rp table { border-collapse:collapse; font-size:12px; min-width:100%; }
+.pj-rp th, .pj-rp td { border:1px solid #fff; padding:0; height:26px; text-align:center; white-space:nowrap; }
+.pj-rp thead th { background:#1a1a1a; color:#fff; font-weight:400; font-size:11px; letter-spacing:.04em; padding:3px 2px; }
+.pj-rp thead th.we { background:#7f7f7f; }
+.pj-rp thead th.auj { background:#b3261e; }
+.pj-rp-mois th { text-transform:capitalize; text-align:left; padding-left:6px !important; border-left:1px solid #fff; }
+.pj-rp th.pj-rp-phase { position:sticky; left:0; z-index:2; width:var(--pj-rp-phase); min-width:var(--pj-rp-phase); max-width:var(--pj-rp-phase); text-align:left; padding:4px 10px; white-space:normal; }
+.pj-rp .pj-rp-col { width:1%; }
+.pj-rp thead th.pj-rp-col { padding:3px 8px; }
+.pj-rp-j { width:var(--pj-rp-j); min-width:var(--pj-rp-j); background:#fafafa; }
+.pj-rp-j.we { background:#d9d9d9; }
+.pj-rp-j.auj { box-shadow:inset 0 0 0 1px #b3261e; }
+.pj-rp-j.on { background:var(--e); }
+.pj-rp-j.on.we { background:color-mix(in srgb, var(--e) 70%, #8a8a8a); }
+.pj-rp tbody th.pj-rp-phase { background:var(--e, #fff); color:var(--t, inherit); font-weight:500; }
+.pj-rp tbody th.pj-rp-phase a { color:inherit; text-decoration:none; }
+.pj-rp tbody th.pj-rp-phase > a { font-size:12.5px; letter-spacing:.03em; }
+.pj-rp tbody th.pj-rp-phase a:hover { text-decoration:underline; }
+.pj-rp-gens { display:block; font-size:11px; font-weight:400; opacity:.85; margin-top:1px; }
+.pj-rp-d, .pj-rp-n { background:var(--e); color:var(--t); padding:0 8px !important; font-variant-numeric:tabular-nums; }
+.pj-rp-groupe th.pj-rp-phase, .pj-rp-groupe td { background:#a5a5a5 !important; color:#fff; letter-spacing:.08em; font-weight:500; height:22px; }
+.pj-rp-groupe td.we { background:#bfbfbf !important; }
+.pj-chip-rp { background:var(--e); color:var(--t); }
+.pj-chip-rp .pj-piste-pt { margin-right:4px; box-shadow:0 0 0 1px #fff; }
 .pj-retro-gens { grid-column:1 / -1; display:flex; flex-wrap:wrap; gap:6px; padding:2px 0 4px 26px; }
 .pj-retro-pers { display:inline-flex; align-items:center; gap:4px; font-size:12.5px; padding:2px 8px 2px 4px; border:1px solid var(--border2); background:#fff; cursor:pointer; }
 .pj-retro-pers small { color:var(--muted); }
 .pj-retro-pers.off { opacity:.5; text-decoration:line-through; }
 @media (max-width: 700px) {
-  .pj-frise, .pj-cal-plein .pj-frise { --pj-frise-lab:140px; }
+  .pj-rp, .pj-cal-plein .pj-rp { --pj-rp-phase:150px; }
+  .pj-rp .pj-rp-col { display:none; }
   .pj-cal-plein { padding:12px; }
   .pj-cal-vues { margin-left:0; }
 }

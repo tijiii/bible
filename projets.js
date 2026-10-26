@@ -121,6 +121,43 @@ function pjEtapeCat(e) {
   if (PJ_RE_EDIT.test(n)) return 'edit';
   return 'postprod';
 }
+// Une couleur par étape, comme dans le RÉTROPLANNING des fiches de suivi : une
+// teinte par catégorie (et par partie), plus foncée à chaque répétition
+// (V1 puis V2, premier feedback puis le suivant…)
+const PJ_TEINTES = {
+  prepa: ['#fff2cc', '#ffe599', '#f1c232'],
+  reperage: ['#d9ead3', '#b6d7a8', '#93c47d'],
+  casting: ['#fce5cd', '#f9cb9c', '#f6b26b'],
+  tournage: ['#d9d2e9', '#b4a7d6', '#8e7cc3'],
+  edit: ['#c9daf8', '#a4c2f4', '#6d9eeb', '#3c78d8'],
+  feedback: ['#f9cb9c', '#f6b26b', '#e69138', '#b45f06'],
+  etalonnage: ['#6d9eeb', '#3c78d8'],
+  sound: ['#3c78d8', '#1c4587'],
+  mix: ['#1c4587', '#073763'],
+  postprod: ['#d9d2e9', '#b4a7d6', '#8e7cc3'],
+  livraison: ['#1155cc', '#0b3c8c'],
+  autre: ['#efefef', '#d9d9d9', '#b7b7b7'],
+  // côté photo
+  'photo:edit': ['#ead1dc', '#d5a6bd', '#c27ba0', '#a64d79'],
+  'photo:retouche': ['#ead1dc', '#d5a6bd', '#c27ba0', '#a64d79'],
+  'photo:selection': ['#b6d7a8', '#93c47d', '#6aa84f'],
+  'photo:feedback': ['#e6b8af', '#dd7e6b', '#cc4125', '#a61c00'],
+  'photo:livraison': ['#c27ba0', '#741b47'],
+};
+function pjEtapeCouleur(p, e) {
+  const cat = pjEtapeCat(e), piste = pjPisteDe(e);
+  const cle = piste === 'photo' && /selection|select/.test(pjNorm(pjEtapeNom(e))) ? 'photo:selection' : piste === 'photo' && PJ_TEINTES['photo:' + cat] ? 'photo:' + cat : cat;
+  const l = PJ_TEINTES[cle] || PJ_TEINTES.autre;
+  const memes = (p ? pjEtapesDatees(p) : []).filter(x => pjPisteDe(x) === piste && pjEtapeCat(x) === cat && (cle !== 'photo:selection') === !/selection|select/.test(pjNorm(pjEtapeNom(x))));
+  const i = Math.max(0, memes.findIndex(x => x.id === e.id));
+  return l[Math.min(i, l.length - 1)];
+}
+// Texte noir ou blanc selon la teinte
+function pjTexteSur(hex) {
+  const n = parseInt(hex.slice(1), 16), r = n >> 16, g = (n >> 8) & 255, b = n & 255;
+  return (r * 299 + g * 587 + b * 114) / 1000 > 150 ? '#1a1a1a' : '#fff';
+}
+
 function pjEtapesDatees(p) {
   return (p.etapes || []).filter(e => pjEtapeDates(e)).sort((a, b) => a.du.localeCompare(b.du));
 }
@@ -678,7 +715,7 @@ function pjPageHtml(p, conflits, choix) {
 
     <section class="ts-bloc pj-cal-bloc${pjBF(p).calPlein ? ' pj-cal-plein' : ''}">
       <h3>CALENDRIER ${pjCalVuesHtml(p)}</h3>
-      ${pjBF(p).calVue ? pjFriseHtml(p, pjBF(p).calVue) : pjCalendrierHtml(p)}
+      ${pjBF(p).calVue === 'mois' ? pjCalendrierHtml(p) : pjFriseHtml(p, pjBF(p).calVue === 'postprod' ? 'postprod' : 'global')}
       ${pjEtapesBlocHtml(p)}
       ${pjRetroBlocHtml(p)}
     </section>
@@ -742,7 +779,6 @@ function pjCalendrierHtml(p) {
   const nbCases = Math.ceil((decal + nbJours) / 7) * 7;
   const auj = pjAujourdhui();
   const ordre = e => ['', 'video', 'photo'].indexOf(pjPisteDe(e));
-  const pistes = PJ_PISTES.filter(x => et.some(e => pjPisteDe(e) === x[0]));
   const cases = Array.from({ length: nbCases }, (_, i) => {
     const d = pjPlusJours(debut, i);
     const dedans = d.slice(0, 7) === pjMois;
@@ -761,18 +797,17 @@ function pjCalendrierHtml(p) {
     <div class="pj-cal">
       ${['lun', 'mar', 'mer', 'jeu', 'ven', 'sam', 'dim'].map(j => `<div class="pj-cal-jsem">${j}</div>`).join('')}
       ${cases}
-    </div>
-    ${pistes.length ? `<div class="pj-legende pj-cal-legende">${pistes.map(x => `<span class="pj-chip" data-piste="${x[0]}" style="--p:${x[2]}">${x[1]}</span>`).join('')}<span class="pj-muted">· sans couleur : commun · le trait à gauche donne le type d'étape</span></div>` : ''}`;
+    </div>`;
 }
 
-// ── Grand calendrier : les étapes en frise, une ligne par étape avec ses
-// personnes. GLOBAL montre tout le projet ; POST-PROD zoome sur la post-prod.
+// ── Grand calendrier : les étapes en rétroplanning, une ligne par étape avec ses
+// personnes. RÉTROPLANNING montre tout le projet ; POST-PROD zoome sur la post-prod.
 // Filtres : partie, personne (les mêmes que la liste des étapes) et catégories.
 function pjCalVuesHtml(p) {
   const f = pjBF(p);
-  const v = f.calVue || '';
+  const v = f.calVue === 'global' ? '' : f.calVue || '';
   const bouton = (k, lab) => `<button type="button" class="btn-edit-inline${v === k ? ' on' : ''}" onclick="pjBFRegler('calVue', '${k}')">${lab}</button>`;
-  return `<span class="pj-cal-vues">${bouton('', 'MOIS')}${bouton('global', 'GLOBAL')}${bouton('postprod', 'POST-PROD')}
+  return `<span class="pj-cal-vues">${bouton('', 'RÉTROPLANNING')}${bouton('postprod', 'POST-PROD')}${bouton('mois', 'MOIS')}
     <button type="button" class="btn-edit-inline${f.calPlein ? ' on' : ''}" title="${f.calPlein ? 'Revenir à la page' : 'Agrandir le calendrier'}" onclick="pjBFRegler('calPlein', ${f.calPlein ? 'false' : 'true'})">${f.calPlein ? '✕ FERMER' : '⤢ PLEIN ÉCRAN'}</button></span>`;
 }
 function pjCalCats(p) { const c = pjBF(p).calCats; return c ? c.split(',') : []; }
@@ -801,38 +836,42 @@ function pjFriseHtml(p, mode) {
     ${f.piste || f.qui || cats.length ? `<button type="button" class="export-lien" onclick="pjBFEffacer('etPiste,etQui,calCats')">tout afficher</button>` : ''}
   </div>`;
   if (!et.length) return filtres + `<p class="field-hint">${toutes.length ? 'Aucune étape avec ces filtres.' : mode === 'postprod' ? 'Pas encore d\'étape de post-prod datée.' : 'Pas encore d\'étape datée.'}</p>`;
-  const du = pjPlusJours(et.reduce((m, e) => e.du < m ? e.du : m, et[0].du), -1);
-  const au = pjPlusJours(et.reduce((m, e) => { const x = pjEtapeDates(e).au; return x > m ? x : m; }, pjEtapeDates(et[0]).au), 1);
+  // Comme le RÉTROPLANNING des fiches : PHASE · DÉBUT · FIN · JOURS, puis un jour
+  // par colonne ; une couleur par étape, les week-ends en gris, groupé par partie
+  const du = et.reduce((m, e) => e.du < m ? e.du : m, et[0].du);
+  const au = et.reduce((m, e) => { const x = pjEtapeDates(e).au; return x > m ? x : m; }, pjEtapeDates(et[0]).au);
   const n = pjJours(du, au) + 1;
   const jours = Array.from({ length: n }, (_, i) => pjPlusJours(du, i));
   const auj = pjAujourdhui();
-  const jcls = d => { const w = pjDate(d).getDay(); return (w === 0 || w === 6 ? ' we' : '') + (d === auj ? ' auj' : '') + (pjDate(d).getDate() === 1 ? ' m1' : ''); };
-  // Les mois au-dessus des jours
+  const we = d => { const w = pjDate(d).getDay(); return w === 0 || w === 6; };
+  const jcls = d => (we(d) ? ' we' : '') + (d === auj ? ' auj' : '') + (pjDate(d).getDate() === 1 ? ' m1' : '');
   const mois = [];
-  jours.forEach((d, i) => { const k = d.slice(0, 7); if (!mois.length || mois[mois.length - 1].k !== k) mois.push({ k, i, n: 1 }); else mois[mois.length - 1].n++; });
-  const cols = `grid-template-columns:var(--pj-frise-lab) repeat(${n}, minmax(var(--pj-frise-j), 1fr))`;
-  const tri = et.slice().sort((a, b) => a.du.localeCompare(b.du) || ['', 'video', 'photo'].indexOf(pjPisteDe(a)) - ['', 'video', 'photo'].indexOf(pjPisteDe(b)));
+  jours.forEach((d, i) => { const k = d.slice(0, 7); if (!mois.length || mois[mois.length - 1].k !== k) mois.push({ k, n: 1 }); else mois[mois.length - 1].n++; });
+  const jj = d => { const x = pjDate(d); return String(x.getDate()).padStart(2, '0') + '/' + String(x.getMonth() + 1).padStart(2, '0'); };
   const ligne = e => {
     const x = pjEtapeDates(e);
-    const debut = pjJours(du, x.du) + 2, fin = pjJours(du, x.au) + 3;
-    const pi = pjPisteInfo(pjPisteDe(e));
+    const coul = pjEtapeCouleur(p, e), txt = pjTexteSur(coul);
     const qui = gens.filter(a => pjSurEtape(p, a, e));
-    const cat = (PJ_CATS.find(c => c[0] === pjEtapeCat(e)) || [, ''])[1];
-    return `<div class="pj-frise-ligne" style="${cols}">
-      <div class="pj-frise-lab" style="--c:${pjEtapeType(e.type)[2]}">
-        <a href="#" class="pj-frise-nom" onclick="event.preventDefault();pjVoirEtape(${e.id})">${pi ? `<i class="pj-piste-pt" style="--p:${pi[2]}" title="${pi[1]}"></i>` : ''}${esc(pjEtapeNom(e))}</a>
-        <small class="pj-muted">${esc(cat)} · ${esc(pjPeriodeTexte(x.du, x.au))}</small>
-        ${qui.length ? `<span class="pj-frise-gens">${qui.map(a => `<a href="#" onclick="event.preventDefault();pjVoirPersonne(${a.id})" title="${esc(a.role || '')}">${esc(pjNomPersonne(a))}</a>`).join('')}</span>` : ''}
-      </div>
-      ${jours.map((d, i) => `<span class="pj-frise-j${jcls(d)}" style="grid-column:${i + 2};grid-row:1"></span>`).join('')}
-      <span class="pj-frise-barre" style="grid-column:${debut} / ${fin};grid-row:1;--c:${pjEtapeType(e.type)[2]};--p:${pi ? pi[2] : '#555'}" title="${esc(pjEtapeNom(e) + ' · ' + pjPeriodeTexte(x.du, x.au) + (qui.length ? ' · ' + qui.map(pjNomPersonne).join(', ') : ''))}"><span>${esc(pjEtapeNom(e))}</span></span>
-    </div>`;
+    const nb = pjJours(x.du, x.au) + 1;
+    const titre = esc(pjEtapeNom(e) + ' · ' + pjPeriodeTexte(x.du, x.au) + (qui.length ? ' · ' + qui.map(pjNomPersonne).join(', ') : ''));
+    return `<tr style="--e:${coul};--t:${txt}">
+      <th class="pj-rp-phase"><a href="#" onclick="event.preventDefault();pjVoirEtape(${e.id})">${esc(pjEtapeNom(e).toUpperCase())}</a>${qui.length ? `<span class="pj-rp-gens">${qui.map(a => `<a href="#" onclick="event.preventDefault();pjVoirPersonne(${a.id})" title="${esc(a.role || '')}">${esc(pjNomPersonne(a))}</a>`).join(' · ')}</span>` : ''}</th>
+      <td class="pj-rp-d pj-rp-col">${jj(x.du)}</td><td class="pj-rp-d pj-rp-col">${jj(x.au)}</td><td class="pj-rp-n pj-rp-col">${nb}</td>
+      ${jours.map(d => d >= x.du && d <= x.au ? `<td class="pj-rp-j on${jcls(d)}" title="${titre}"></td>` : `<td class="pj-rp-j${jcls(d)}"></td>`).join('')}
+    </tr>`;
   };
-  return filtres + `<div class="pj-frise pj-frise-${mode}">
-    <div class="pj-frise-ligne pj-frise-mois" style="${cols}"><span class="pj-frise-lab"></span>${mois.map(m => `<span style="grid-column:${m.i + 2} / span ${m.n}">${PJ_MOIS[Number(m.k.slice(5)) - 1]} ${m.k.slice(0, 4)}</span>`).join('')}</div>
-    <div class="pj-frise-ligne pj-frise-jours" style="${cols}"><span class="pj-frise-lab"></span>${jours.map((d, i) => `<span class="pj-frise-j${jcls(d)}" style="grid-column:${i + 2}">${mode === 'postprod' ? `<small>${'dlmmjvs'[pjDate(d).getDay()]}</small>` : ''}${pjDate(d).getDate()}</span>`).join('')}</div>
-    ${tri.map(ligne).join('')}
-  </div>`;
+  const tri = (l) => l.slice().sort((a, b) => a.du.localeCompare(b.du) || pjEtapeDates(a).au.localeCompare(pjEtapeDates(b).au));
+  const groupes = [['', 'COMMUN'], ['video', 'VIDÉO'], ['photo', 'PHOTO']].map(([k, lab]) => [lab, tri(et.filter(e => pjPisteDe(e) === k))]).filter(g => g[1].length);
+  const titres = groupes.length > 1 || (groupes[0] && groupes[0][0] !== 'COMMUN');
+  const vide = jours.map(d => `<td class="pj-rp-j${jcls(d)}"></td>`).join('');
+  return filtres + `<div class="pj-rp pj-rp-${mode}"><table>
+    <thead>
+      <tr class="pj-rp-mois"><th class="pj-rp-phase"></th><th class="pj-rp-col" colspan="3"></th>${mois.map(m => `<th colspan="${m.n}">${PJ_MOIS[Number(m.k.slice(5)) - 1]} ${m.k.slice(0, 4)}</th>`).join('')}</tr>
+      <tr class="pj-rp-dates"><th class="pj-rp-phase" rowspan="2">PHASE</th><th class="pj-rp-col" rowspan="2">DÉBUT</th><th class="pj-rp-col" rowspan="2">FIN</th><th class="pj-rp-col" rowspan="2">JOURS</th>${jours.map(d => `<th class="${jcls(d)}">${pjDate(d).getDate()}</th>`).join('')}</tr>
+      <tr class="pj-rp-lettres">${jours.map(d => `<th class="${jcls(d)}">${'DLMMJVS'[pjDate(d).getDay()]}</th>`).join('')}</tr>
+    </thead>
+    <tbody>${groupes.map(([lab, l]) => (titres ? `<tr class="pj-rp-groupe"><th class="pj-rp-phase">${lab}</th><td class="pj-rp-col" colspan="3"></td>${vide}</tr>` : '') + l.map(ligne).join('')).join('')}</tbody>
+  </table></div>`;
 }
 // Ouvre une étape dans la liste des étapes pour la modifier
 function pjVoirEtape(eid) {
@@ -847,10 +886,8 @@ function pjVoirEtape(eid) {
 // Une étape dans le calendrier : la couleur de sa piste (vidéo, photo), le trait de son type
 function pjChipHtml(e) {
   const pi = pjPisteInfo(pjPisteDe(e));
-  const titre = pjEtapeNom(e) + (pi ? ' · ' + pi[1] : '') + ' · ' + pjEtapeType(e.type)[1];
-  return pi
-    ? `<span class="pj-chip" data-piste="${pi[0]}" style="--c:${pjEtapeType(e.type)[2]};--p:${pi[2]}" title="${esc(titre)}">${esc(pjEtapeNom(e))}</span>`
-    : `<span class="pj-chip" style="--c:${pjEtapeType(e.type)[2]}" title="${esc(titre)}">${esc(pjEtapeNom(e))}</span>`;
+  const coul = pjEtapeCouleur(pjCur(), e);
+  return `<span class="pj-chip pj-chip-rp" style="--e:${coul};--t:${pjTexteSur(coul)}" title="${esc(pjEtapeNom(e) + (pi ? ' · ' + pi[1] : '') + ' · ' + pjEtapeType(e.type)[1])}">${pi ? `<i class="pj-piste-pt" style="--p:${pi[2]}"></i>` : ''}${esc(pjEtapeNom(e))}</span>`;
 }
 
 // La liste des étapes à modifier, repliée une fois qu'il y en a (le calendrier suffit pour lire)
