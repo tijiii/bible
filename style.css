@@ -988,3 +988,4 @@ body.doc-vue-ouvert > *:not(#doc-vue) { display:none !important; }
 .fs-opt:hover { background:var(--bg3); }
 .fs-opt.sel { background:var(--bg3); font-weight:600; }
 .fs-vide { font-family:var(--serif); font-size:14px; color:var(--muted); padding:8px; }
+.check-new button { text-transform:none; }

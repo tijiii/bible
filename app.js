@@ -409,15 +409,15 @@ function renderTalents(main) {
       <option value="f"${fSexe==='f'?' selected':''}>FEMME</option>
       <option value="h"${fSexe==='h'?' selected':''}>HOMME</option>
     </select>
-    <select class="filter-sel" onchange="fSport=this.value;renderTalents(document.getElementById('main-content'))">
+    <select class="filter-sel" data-search="1" onchange="fSport=this.value;renderTalents(document.getElementById('main-content'))">
       <option value="">SPORT</option>
       ${sports.map(s=>`<option value="${esc(s)}"${fSport===s?' selected':''}>${esc(s)}</option>`).join('')}
     </select>
-    <select class="filter-sel" onchange="fPays=this.value;renderTalents(document.getElementById('main-content'))">
+    <select class="filter-sel" data-search="1" onchange="fPays=this.value;renderTalents(document.getElementById('main-content'))">
       <option value="">PAYS</option>
       ${pays.map(p=>`<option value="${esc(p)}"${fPays===p?' selected':''}>${FLAGS[p]||''} ${esc(p)}</option>`).join('')}
     </select>
-    <select class="filter-sel" onchange="fAgence=this.value;renderTalents(document.getElementById('main-content'))">
+    <select class="filter-sel" data-search="1" onchange="fAgence=this.value;renderTalents(document.getElementById('main-content'))">
       <option value="">AGENCE</option>
       ${agences.map(a=>`<option value="${esc(a)}"${fAgence===a?' selected':''}>${esc(a)}</option>`).join('')}
     </select>
@@ -500,7 +500,7 @@ function renderClubs(main) {
       <input placeholder="Nom, ville..." value="${esc(q)}"
              oninput="searchQ=this.value;renderClubs(document.getElementById('main-content'))">
     </div>
-    <select class="filter-sel" onchange="fPays=this.value;renderClubs(document.getElementById('main-content'))">
+    <select class="filter-sel" data-search="1" onchange="fPays=this.value;renderClubs(document.getElementById('main-content'))">
       <option value="">PAYS</option>
       ${pays.map(p=>`<option value="${esc(p)}"${fp===p?' selected':''}>${FLAGS[p]||''} ${esc(p)}</option>`).join('')}
     </select>
@@ -912,17 +912,17 @@ function renderLieux(main) {
              oninput="lieuxSearchInput(this.value)" onkeydown="lieuxSearchKey(event)">
       <div class="world-results" id="world-results"></div>
     </div>
-    <select class="filter-sel" onchange="fLieuCat=this.value;renderLieux(document.getElementById('main-content'))">
+    <select class="filter-sel" data-search="1" onchange="fLieuCat=this.value;renderLieux(document.getElementById('main-content'))">
       <option value="">CATÉGORIE</option>
       <option value="${LIEU_DEJA_TOURNE}"${fLieuCat===LIEU_DEJA_TOURNE?' selected':''}>★ Déjà tourné ici (${lieuxList().filter(l=>lieuProjets(l).length).length})</option>
       <option value="${LIEU_JAMAIS_TOURNE}"${fLieuCat===LIEU_JAMAIS_TOURNE?' selected':''}>☆ Jamais tourné (${lieuxList().filter(l=>!lieuProjets(l).length).length})</option>
       ${lieuCategoryList().map(c=>`<option value="${esc(c)}"${fLieuCat===c?' selected':''}>${esc(c)} (${lieuxList().filter(l=>lieuCats(l).includes(c)).length})</option>`).join('')}
     </select>
-    ${sportsUtil.length || fLieuSport ? `<select class="filter-sel" onchange="fLieuSport=this.value;renderLieux(document.getElementById('main-content'))">
+    ${sportsUtil.length || fLieuSport ? `<select class="filter-sel" data-search="1" onchange="fLieuSport=this.value;renderLieux(document.getElementById('main-content'))">
       <option value="">SPORT</option>
       ${sportsUtil.map(x=>`<option value="${esc(x)}"${fLieuSport===x?' selected':''}>${esc(x)} (${lieuxList().filter(l=>lieuSports(l).includes(x)).length})</option>`).join('')}
     </select>` : ''}
-    <select class="filter-sel" onchange="fPays=this.value;renderLieux(document.getElementById('main-content'))">
+    <select class="filter-sel" data-search="1" onchange="fPays=this.value;renderLieux(document.getElementById('main-content'))">
       <option value="">PAYS</option>
       ${paysUtil.length ? `<optgroup label="Avec des lieux">${paysUtil.map(p=>`<option value="${esc(p)}"${fPays===p?' selected':''}>${FLAGS[p]||''} ${esc(p)} (${paysCount[p]})</option>`).join('')}</optgroup>` : ''}
       <optgroup label="Tous les pays">${paysAutres.map(p=>`<option value="${esc(p)}"${fPays===p?' selected':''}>${FLAGS[p]||''} ${esc(p)}</option>`).join('')}</optgroup>
@@ -1510,7 +1510,7 @@ function renderChapitre(main) {
       <input placeholder="Nom, ville, type..." value="${esc(searchQ)}"
              oninput="searchQ=this.value;renderChapitre(document.getElementById('main-content'))">
     </div>
-    <select class="filter-sel" onchange="fPays=this.value;renderChapitre(document.getElementById('main-content'))">
+    <select class="filter-sel" data-search="1" onchange="fPays=this.value;renderChapitre(document.getElementById('main-content'))">
       <option value="">PAYS</option>
       ${pays.map(p=>`<option value="${esc(p)}"${fPays===p?' selected':''}>${FLAGS[p]||''} ${esc(p)}</option>`).join('')}
     </select>
@@ -2024,7 +2024,8 @@ function renderTalentForm(v) {
     </label>`;
   }).join('') + `</div>`;
 
-  const paysHtml = `<div class="cats-grid">` + COUNTRIES.map(c => {
+  const paysListe = [...new Set([...COUNTRIES, ...db.talents.flatMap(talentPays), ...selectedPays])];
+  const paysHtml = `<div class="cats-grid">` + paysListe.map(c => {
     const checked = selectedPays.includes(c) ? 'checked' : '';
     return `<label class="cat-check">
       <input type="checkbox" name="pays-check" value="${esc(c)}" ${checked}>
@@ -2064,14 +2065,16 @@ function renderTalentForm(v) {
     <div class="field"><label>ÂGE</label><input id="f-age" type="number" min="16" max="80" value="${esc(String(v.age||''))}"></div>
     <div class="field full">
       <label>SPORT / SPÉCIALITÉ (plusieurs possibles)</label>
-      <input class="cat-search" placeholder="Rechercher…" autocomplete="off" oninput="filterChecks(this)" onkeydown="checkSearchKey(event)">
+      <input class="cat-search" data-kind="sport" placeholder="Rechercher ou ajouter…" autocomplete="off" oninput="filterChecks(this)" onkeydown="checkSearchKey(event)">
+      <div class="cat-new check-new" style="display:none"></div>
       <div style="background:var(--bg3);border:1px solid var(--border);padding:12px;max-height:160px;overflow-y:auto">
         ${sportsHtml}
       </div>
     </div>
     <div class="field full">
       <label>PAYS (plusieurs possibles)</label>
-      <input class="cat-search" placeholder="Rechercher…" autocomplete="off" oninput="filterChecks(this)" onkeydown="checkSearchKey(event)">
+      <input class="cat-search" data-kind="pays" placeholder="Rechercher ou ajouter…" autocomplete="off" oninput="filterChecks(this)" onkeydown="checkSearchKey(event)">
+      <div class="cat-new check-new" style="display:none"></div>
       <div style="background:var(--bg3);border:1px solid var(--border);padding:12px;max-height:160px;overflow-y:auto">
         ${paysHtml}
       </div>
@@ -2082,7 +2085,8 @@ function renderTalentForm(v) {
     </div>
     <div class="field full">
       <label>AGENCE(S) (plusieurs possibles)</label>
-      <input class="cat-search" placeholder="Rechercher…" autocomplete="off" oninput="filterChecks(this)" onkeydown="checkSearchKey(event)">
+      <input class="cat-search" data-kind="agence" placeholder="Rechercher ou ajouter…" autocomplete="off" oninput="filterChecks(this)" onkeydown="checkSearchKey(event)">
+      <div class="cat-new check-new" style="display:none"></div>
       <div style="background:var(--bg3);border:1px solid var(--border);padding:12px;max-height:160px;overflow-y:auto">
         ${agencesHtml}
       </div>
@@ -2196,26 +2200,84 @@ function createCatFromForm() {
 }
 
 // Recherche dans une liste de cases (sport, pays, agence) : filtre pendant la frappe
-function filterChecks(input) {
-  const q = sansAccent(input.value.trim());
-  input.nextElementSibling.querySelectorAll('.cat-check').forEach(l => {
-    l.style.display = !q || sansAccent(l.textContent).includes(q) ? '' : 'none';
-  });
+// et propose d'ajouter ce qui manque
+const CHECK_KIND = { sport: 'sport-check', pays: 'pays-check', agence: 'agence-check' };
+function checkField(input) {
+  const f = input.closest('.field');
+  return { grid: f.querySelector('.cats-grid'), row: f.querySelector('.check-new') };
 }
 
-// Entrée : coche le résultat s'il n'en reste qu'un (ou si le nom est exact)
+function filterChecks(input) {
+  const { grid, row } = checkField(input);
+  const raw = input.value.trim();
+  const q = sansAccent(raw);
+  let nb = 0;
+  grid.querySelectorAll('.cat-check').forEach(l => {
+    const ok = !q || sansAccent(l.textContent).includes(q);
+    l.style.display = ok ? '' : 'none';
+    if (ok) nb++;
+  });
+  grid.parentElement.style.display = nb ? '' : 'none';
+  const existe = [...grid.querySelectorAll('input')].some(i => sansAccent(i.value) === q);
+  if (!raw || existe) { row.style.display = 'none'; row.innerHTML = ''; return; }
+  const kind = input.dataset.kind;
+  let props = [raw];
+  if (kind === 'pays') {
+    // les pays du monde qui ne sont pas encore dans la liste
+    const deja = new Set([...grid.querySelectorAll('input')].map(i => i.value));
+    const trouves = ALL_COUNTRIES.filter(c => !deja.has(c) && sansAccent(c).includes(q)).slice(0, 6);
+    if (trouves.length) props = trouves;
+  }
+  const quoi = { sport: 'le sport', pays: 'le pays', agence: "l'agence" }[kind];
+  row.style.display = '';
+  row.innerHTML = `<span>Ajouter ${quoi}</span>` + props.map(v =>
+    `<button type="button" data-v="${esc(v)}" onclick="addCheckItem(this.closest('.field').querySelector('.cat-search'), this.dataset.v)">+ ${kind === 'pays' && FLAGS[v] ? FLAGS[v] + ' ' : ''}${esc(v)}</button>`).join('');
+}
+
+// Entrée : coche le résultat s'il n'en reste qu'un (ou si le nom est exact),
+// sinon ajoute ce qui est proposé quand il n'y a qu'une proposition
 function checkSearchKey(e) {
   if (e.key !== 'Enter') return;
   e.preventDefault();
   const input = e.target;
   const q = sansAccent(input.value.trim());
   if (!q) return;
-  const vis = [...input.nextElementSibling.querySelectorAll('.cat-check')].filter(l => l.style.display !== 'none');
-  const pick = vis.find(l => sansAccent(l.textContent.trim()).replace(/^\W+\s*/, '') === q || sansAccent(l.textContent.trim()) === q) || (vis.length === 1 ? vis[0] : null);
-  if (!pick) return;
-  pick.querySelector('input').checked = true;
+  const { grid, row } = checkField(input);
+  const vis = [...grid.querySelectorAll('.cat-check')].filter(l => l.style.display !== 'none');
+  const pick = vis.find(l => sansAccent(l.querySelector('input').value) === q) || (vis.length === 1 ? vis[0] : null);
+  if (pick) {
+    pick.querySelector('input').checked = true;
+    input.value = '';
+    filterChecks(input);
+    return;
+  }
+  const props = row.querySelectorAll('button');
+  if (!vis.length && props.length === 1) addCheckItem(input, props[0].dataset.v);
+}
+
+// Ajoute un sport / une agence à la bible (comme dans Paramètres) ou un pays
+// à la liste, puis le coche
+function addCheckItem(input, nom) {
+  nom = String(nom || '').trim();
+  if (!nom) return;
+  const kind = input.dataset.kind;
+  if (kind === 'sport' && !db.sports.some(x => sansAccent(x) === sansAccent(nom))) { db.sports.push(nom); saveDb(); }
+  if (kind === 'agence' && !db.agences.some(a => sansAccent(a.nom) === sansAccent(nom))) { db.agences.push({ nom, pays: '', ville: '', mail: '', site: '', notes: '', id: uid() }); saveDb(); }
+  const { grid } = checkField(input);
+  let box = [...grid.querySelectorAll('input')].find(i => sansAccent(i.value) === sansAccent(nom));
+  if (!box) {
+    const l = document.createElement('label');
+    l.className = 'cat-check';
+    l.innerHTML = `<input type="checkbox" name="${CHECK_KIND[kind]}" value="${esc(nom)}"><span>${kind === 'pays' && FLAGS[nom] ? FLAGS[nom] + ' ' : ''}${esc(nom)}</span>`;
+    grid.appendChild(l);
+    box = l.querySelector('input');
+  }
+  box.checked = true;
   input.value = '';
   filterChecks(input);
+  const zone = grid.parentElement;
+  zone.scrollTop = box.closest('label').offsetTop - zone.offsetTop - 12;
+  input.focus();
 }
 
 // Rappel des postes cochés au-dessus de la liste (cliquer pour décocher)
@@ -2947,14 +3009,14 @@ async function installApp() {
 }
 
 // ── FILTRES AVEC RECHERCHE ───────────────────────────────────────────────────
-// Les menus de filtre un peu longs (sport, pays, agence…) s'ouvrent sur une
-// liste avec un champ de recherche. Le <select> d'origine reste dans la page,
+// Les menus de filtre sport, pays, agence… (data-search) et tous ceux un peu
+// longs s'ouvrent sur une liste avec un champ de recherche. Le <select> d'origine reste dans la page,
 // caché : on change sa valeur et on déclenche son onchange habituel.
 const FILTRE_RECHERCHE_MIN = 8; // en dessous, le menu classique suffit
 
 function enhanceFilterSel(sel) {
   sel.dataset.fs = '1';
-  if (sel.options.length < FILTRE_RECHERCHE_MIN || sel.style.display === 'none') return;
+  if ((!sel.dataset.search && sel.options.length < FILTRE_RECHERCHE_MIN) || sel.style.display === 'none') return;
   const btn = document.createElement('button');
   btn.type = 'button';
   btn.className = sel.className + ' fs-btn';
