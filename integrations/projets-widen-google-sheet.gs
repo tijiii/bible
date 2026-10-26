@@ -15,9 +15,9 @@
  *  - la liste des personnes de l'onglet OPTIONS TEAM de la fiche (rôle, nom,
  *    téléphone, email, option par date, notes) est recopiée dans le projet.
  *    Les lignes et colonnes masquées (exemples du modèle) sont ignorées.
- *  - l'onglet OPTIONS TEAM reçoit une colonne « Statut » (menu Option /
- *    Confirmé / Relâché) : une ligne confirmée passe en vert, une ligne
- *    relâchée en gris. Le statut est aussi envoyé dans la bible.
+ *  - l'onglet OPTIONS TEAM reçoit une colonne « Statut » (menu À contacter /
+ *    En cours / Confirmé / Relâché) : la ligne passe en bleu, orange, vert ou
+ *    gris. Le statut est aussi envoyé dans la bible.
  * Le calendrier, l'équipe et les notes écrits dans la bible ne sont jamais
  * touchés.
  *
@@ -29,8 +29,8 @@ var BIBLE_STORE_URL = 'https://bible-ajout-rapide.tom-9dd.workers.dev/store';
 var BIBLE_ONGLET_PROJETS = 'PROJETS';
 var BIBLE_ONGLET_OPTIONS = 'OPTIONS TEAM';
 // Colonne « Statut » de l'onglet OPTIONS TEAM : choix du menu et couleur de la ligne
-var BIBLE_STATUTS_OPTION = ['Option', 'Confirmé', 'Relâché'];
-var BIBLE_VERT = '#d9ead3', BIBLE_GRIS = '#efefef', BIBLE_GRIS_TEXTE = '#999999';
+var BIBLE_STATUTS_OPTION = ['À contacter', 'En cours', 'Confirmé', 'Relâché'];
+var BIBLE_BLEU = '#cfe2f3', BIBLE_VERT = '#d9ead3', BIBLE_ORANGE = '#fce5cd', BIBLE_GRIS = '#efefef', BIBLE_GRIS_TEXTE = '#999999';
 
 // Statut du tableau → statut de la bible
 var BIBLE_STATUTS = [
@@ -268,9 +268,9 @@ function bibleCaseStatut(vals, hr) {
 }
 
 // Met en place la colonne « Statut » de l'onglet OPTIONS TEAM d'une fiche et les couleurs de
-// ligne : vert si confirmé, gris si relâché, de la colonne du rôle à la dernière colonne du
+// ligne : bleu à contacter, orange en cours, vert confirmé, gris relâché, de la colonne du rôle à la dernière colonne du
 // tableau. Si la fiche a déjà une colonne STATUT (et son menu), elle est gardée telle quelle ;
-// sinon elle est ajoutée tout à droite avec le menu Option / Confirmé / Relâché.
+// sinon elle est ajoutée tout à droite avec ce menu-là.
 // Rien n'est refait si tout est déjà en place.
 function bibleStatutFiche(ficheId) {
   var ss = SpreadsheetApp.openById(ficheId);
@@ -299,33 +299,41 @@ function bibleStatutFiche(ficheId) {
     sh.setColumnWidth(c + 1, 110);
   }
   var nbLignes = Math.max(sh.getMaxRows() - ligne1 + 1, 1);
-  // Les mots du menu : ceux du menu déjà posé dans la fiche, sinon Option / Confirmé / Relâché
+  // Les mots du menu : ceux du menu déjà posé dans la fiche, sinon À contacter / En cours / Confirmé / Relâché
   var choix = [];
   try {
     var dv = sh.getRange(ligne1, c + 1).getDataValidation();
     if (dv && dv.getCriteriaType() === SpreadsheetApp.DataValidationCriteria.VALUE_IN_LIST) choix = dv.getCriteriaValues()[0] || [];
   } catch (e) {}
-  if (!choix.length) {
-    choix = BIBLE_STATUTS_OPTION;
+  // Un menu déjà là garde ses mots ; il reçoit seulement ceux qui lui manquent
+  var manquants = BIBLE_STATUTS_OPTION.filter(function (m) {
+    return !choix.some(function (x) { return bibleStatutOption(x) === bibleStatutOption(m); });
+  });
+  if (manquants.length) {
+    choix = choix.concat(manquants);
     sh.getRange(ligne1, c + 1, nbLignes, 1).setDataValidation(SpreadsheetApp.newDataValidation()
       .requireValueInList(choix, true).setAllowInvalid(true).build());
   }
   var mot = function (statut) { return choix.filter(function (x) { return bibleStatutOption(x) === statut; })[0]; };
   var lettre = bibleLettreColonne(c + 1);
   var formule = function (m) { return '=$' + lettre + ligne1 + '="' + String(m).replace(/"/g, '""') + '"'; };
-  var mConfirme = mot('confirme') || BIBLE_STATUTS_OPTION[1], mRelache = mot('relache');
   var regles = sh.getConditionalFormatRules();
-  var dejaLa = regles.some(function (rg) {
-    var b = rg.getBooleanCondition();
-    return b && (b.getCriteriaValues() || []).indexOf(formule(mConfirme)) >= 0;
-  });
-  if (dejaLa) return true;
+  var formules = [];
+  regles.forEach(function (rg) { var b = rg.getBooleanCondition(); if (b) formules = formules.concat(b.getCriteriaValues() || []); });
   // De la colonne du rôle (à gauche de « Name ») à la dernière colonne du tableau
   var col1 = Math.max(cNom, 1);
   var plage = sh.getRange(ligne1, col1, nbLignes, derniere - col1 + 1);
-  // En tête de liste, pour passer avant les couleurs déjà posées sur les dates
-  var nouvelles = [SpreadsheetApp.newConditionalFormatRule().whenFormulaSatisfied(formule(mConfirme)).setBackground(BIBLE_VERT).setRanges([plage]).build()];
-  if (mRelache) nouvelles.push(SpreadsheetApp.newConditionalFormatRule().whenFormulaSatisfied(formule(mRelache)).setBackground(BIBLE_GRIS).setFontColor(BIBLE_GRIS_TEXTE).setRanges([plage]).build());
+  // Une règle par couleur, ajoutée seulement si elle manque ; en tête de liste,
+  // pour passer avant les couleurs déjà posées sur les dates
+  var nouvelles = [];
+  [['confirme', BIBLE_VERT, null], ['encours', BIBLE_ORANGE, null], ['acontacter', BIBLE_BLEU, null], ['relache', BIBLE_GRIS, BIBLE_GRIS_TEXTE]].forEach(function (x) {
+    var m = mot(x[0]);
+    if (!m || formules.indexOf(formule(m)) >= 0) return;
+    var rg = SpreadsheetApp.newConditionalFormatRule().whenFormulaSatisfied(formule(m)).setBackground(x[1]);
+    if (x[2]) rg.setFontColor(x[2]);
+    nouvelles.push(rg.setRanges([plage]).build());
+  });
+  if (!nouvelles.length) return true;
   sh.setConditionalFormatRules(nouvelles.concat(regles));
   return true;
 }
@@ -335,6 +343,8 @@ function bibleStatutOption(txt) {
   var n = bibleNorm(txt);
   if (/^confirm/.test(n)) return 'confirme';
   if (/^(relach|release)/.test(n)) return 'relache';
+  if (/^(en cours|encours|option|en option|pending)/.test(n)) return 'encours';
+  if (/^(a contacter|to contact|contacter)/.test(n)) return 'acontacter';
   return '';
 }
 
