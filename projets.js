@@ -253,19 +253,8 @@ function pjOptionPersonne(o) {
   const t = pjTalentPour(o.nom, o.mail);
   return t ? { ref: t.id, nom: '', role: o.role, opt: o } : { ref: null, nom: o.nom, role: o.role, opt: o };
 }
-// Statut choisi dans la bible pour une option (en option, confirmé, relâché). Gardé à part
-// dans p.optStatuts, par personne : p.options est réécrit à chaque envoi de la fiche de suivi.
-const PJ_OPT_STATUTS = [['', 'EN OPTION'], ['confirme', 'CONFIRMÉ'], ['relache', 'RELÂCHÉ']];
-function pjOptionStatut(p, o) { return (p.optStatuts || {})[pjCle(pjOptionPersonne(o))] || ''; }
-function pjOptionStatutRegler(i, v) {
-  const p = pjCur();
-  const o = p && (p.options || [])[i];
-  if (!o) return;
-  const cle = pjCle(pjOptionPersonne(o));
-  p.optStatuts = p.optStatuts || {};
-  if (v) p.optStatuts[cle] = v; else delete p.optStatuts[cle];
-  pjChange(true);
-}
+// Colonne « Statut » de la fiche de suivi : '' (en option), 'confirme' ou 'relache'
+function pjOptionStatut(o) { return ['confirme', 'relache'].includes(o.statut) ? o.statut : ''; }
 
 // ── Conflits : une même personne sur deux projets aux mêmes dates ────────────
 function pjConflits() {
@@ -282,7 +271,7 @@ function pjConflits() {
     (p.options || []).forEach(o => {
       const a = pjOptionPersonne(o);
       const cle = pjCle(a);
-      if (!o.nom || dansEquipe.has(cle) || pjOptionStatut(p, o) === 'relache') return;
+      if (!o.nom || dansEquipe.has(cle) || pjOptionStatut(o) === 'relache') return;
       pjOptionDates(o).forEach(d => (prises[cle] = prises[cle] || []).push({ p, a, per: { du: d.date, au: d.date, label: d.statut } }));
     });
   });
@@ -978,7 +967,7 @@ function pjOptionsHtml(p) {
   const ordre = options.map((o, i) => [o, i]);
   if (tri === 'nom') ordre.sort((a, b) => String(a[0].nom || '').localeCompare(String(b[0].nom || ''), 'fr'));
   else if (tri === 'role') ordre.sort((a, b) => String(a[0].role || '~').localeCompare(String(b[0].role || '~'), 'fr') || String(a[0].nom || '').localeCompare(String(b[0].nom || ''), 'fr'));
-  const nbConfirmes = options.filter(o => pjOptionStatut(p, o) === 'confirme').length;
+  const nbConfirmes = options.filter(o => pjOptionStatut(o) === 'confirme').length;
   const barre = options.length > 1 ? pjBFBarre(pjBFSel('opTri', tri, [['', 'ORDRE DE LA FICHE'], ['nom', 'PAR NOM'], ['role', 'PAR RÔLE']], 'Ordre')) : '';
   return `<details class="ts-bloc pj-options-bloc"${pjOptionsOuvert ? ' open' : ''} ontoggle="pjOptionsOuvert=this.open">
     <summary><h3>OPTIONS TEAM <small class="pj-muted">· fiche de suivi · ${options.length} ${options.length > 1 ? 'personnes' : 'personne'}${nbConfirmes ? ` · ${nbConfirmes} ${nbConfirmes > 1 ? 'confirmées' : 'confirmée'}` : ''}</small>${nbConflits ? ` <span class="pj-warn">⚠ ${nbConflits}</span>` : ''}${barre}</h3></summary>
@@ -988,13 +977,13 @@ function pjOptionsHtml(p) {
       const cle = pjCle(a);
       const dejaLa = equipe.has(cle);
       const sesConflits = conflits.filter(c => [c.x, c.y].some(q => q.p.id === p.id && q.a.opt === o));
-      const st = pjOptionStatut(p, o);
+      const st = pjOptionStatut(o);
       return `<div class="pj-option${st ? ' ' + st : ''}${sesConflits.length ? ' conflit' : ''}">
         <div class="pj-option-tete">
           <span class="pj-option-role">${esc(o.role || '')}</span>
           <span class="pj-option-nom">${t ? `<a href="#" onclick="event.preventDefault();openDetail('talent', ${t.id})">${esc(o.nom)}</a>` : esc(o.nom)}</span>
           <span class="pj-muted pj-option-contact">${[o.tel, o.mail].filter(Boolean).map(x => esc(x)).join(' · ')}</span>
-          <select class="filter-sel pj-option-statut" title="Statut de l'option" onchange="pjOptionStatutRegler(${i}, this.value)">${PJ_OPT_STATUTS.map(([v, l]) => `<option value="${v}"${st === v ? ' selected' : ''}>${l}</option>`).join('')}</select>
+          ${st ? `<span class="pj-option-statut" title="Colonne Statut de la fiche de suivi">${st === 'confirme' ? 'confirmé' : 'relâché'}</span>` : ''}
           ${dejaLa ? '<span class="pj-muted pj-option-ok">dans l\'équipe</span>' : `<button type="button" class="btn-edit-inline" onclick="pjOptionVersEquipe(${i})">+ ÉQUIPE</button>`}
         </div>
         ${(o.dispos || []).length ? `<div class="pj-option-dispos">${o.dispos.map(d => `<span class="pj-dispo${pjOptionLibre(d.statut) ? ' libre' : ''}">${esc(d.date ? pjDateCourte(d.date) : d.label || '')} : ${esc(d.statut)}</span>`).join('')}</div>` : ''}
