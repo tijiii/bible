@@ -4,7 +4,7 @@ compatibility_date = "2026-09-01"
 compatibility_flags = ["nodejs_compat"]
 
 [vars]
-ALLOWED_ORIGINS = "https://tijiii.github.io"
+ALLOWED_ORIGINS = "https://bible.widenproduction.fr,https://tijiii.github.io"
 
 # Base partagée de la bible (remplace Airtable). Créée automatiquement au
 # premier déploiement.
