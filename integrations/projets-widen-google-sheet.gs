@@ -196,7 +196,7 @@ function bibleLireOptions(ficheId) {
     return -1;
   };
   var cTel = trouve('phone'), cMail = trouve('email'), cNotes = trouve('rates'), cAdresse = trouve('address'), cRegime = trouve('diet');
-  var cStatut = trouve('statut');
+  var caseStatut = bibleCaseStatut(vals, hr), cStatut = caseStatut ? caseStatut.c : -1;
   var cRole = cNom - 1;
   // Colonnes de dates : entre l'email (ou le nom) et « Rates & notes » (ou « Statut »)
   var debut = Math.max(cNom, cTel, cMail) + 1, fin = cNotes > debut ? cNotes : cStatut > debut ? cStatut : h.length;
@@ -254,9 +254,24 @@ function bibleStatutToutesFiches() {
   return msg;
 }
 
-// Ajoute à l'onglet OPTIONS TEAM d'une fiche, si besoin : la colonne « Statut » tout à droite
-// (après « Rates & notes », adresse et régime, pour ne pas être prise pour une date), son menu,
-// et les couleurs de ligne. Rien n'est refait si tout est déjà en place.
+// La case « Statut » de l'onglet : sur la ligne des en-têtes (celle de « Name ») ou juste
+// en dessous (modèle Widen : PRELIGHT · SHOOTING · STATUT en colonnes A-C, une ligne plus bas).
+// La plus à gauche si plusieurs. Renvoie { r, c } (à partir de 0) ou null.
+function bibleCaseStatut(vals, hr) {
+  var best = null;
+  for (var r = Math.max(hr - 1, 0); r <= Math.min(hr + 2, vals.length - 1); r++) {
+    for (var c = 0; c < vals[r].length; c++) {
+      if (bibleNorm(vals[r][c]) === 'statut' && (!best || c < best.c)) best = { r: r, c: c };
+    }
+  }
+  return best;
+}
+
+// Met en place la colonne « Statut » de l'onglet OPTIONS TEAM d'une fiche et les couleurs de
+// ligne : vert si confirmé, gris si relâché, de la colonne du rôle à la dernière colonne du
+// tableau. Si la fiche a déjà une colonne STATUT (et son menu), elle est gardée telle quelle ;
+// sinon elle est ajoutée tout à droite avec le menu Option / Confirmé / Relâché.
+// Rien n'est refait si tout est déjà en place.
 function bibleStatutFiche(ficheId) {
   var ss = SpreadsheetApp.openById(ficheId);
   var sh = ss.getSheetByName(BIBLE_ONGLET_OPTIONS);
@@ -267,39 +282,51 @@ function bibleStatutFiche(ficheId) {
     for (var i = 0; i < vals[r].length; i++) if (bibleNorm(vals[r][i]) === 'name') { hr = r; cNom = i; break; }
   }
   if (hr < 0) return false;
-  var h = vals[hr];
-  var c = -1;
-  for (var j = 0; j < h.length; j++) if (bibleNorm(h[j]) === 'statut') c = j;
-  var ligne1 = hr + 2;                         // première ligne de personnes (1 = première ligne du tableur)
-  var nbLignes = Math.max(sh.getMaxRows() - ligne1 + 1, 1);
-  if (c < 0) {
-    c = sh.getLastColumn();                    // juste après la dernière colonne remplie
+  var derniere = sh.getLastColumn();           // dernière colonne du tableau (1 = A)
+  var st = bibleCaseStatut(vals, hr);
+  var c, ligne1;                               // c : colonne Statut (0 = A) ; ligne1 : première ligne de personnes (1 = ligne 1)
+  if (st) {
+    c = st.c;
+    ligne1 = Math.max(hr, st.r) + 2;
+  } else {
+    c = derniere;                              // juste après la dernière colonne remplie
+    ligne1 = hr + 2;
     if (c + 1 > sh.getMaxColumns()) sh.insertColumnAfter(sh.getMaxColumns());
     var tete = sh.getRange(hr + 1, c + 1);
     sh.getRange(hr + 1, cNom + 1).copyTo(tete, SpreadsheetApp.CopyPasteType.PASTE_FORMAT, false);
     tete.setValue('Statut');
-    var cases = sh.getRange(ligne1, c + 1, nbLignes, 1);
-    cases.setDataValidation(SpreadsheetApp.newDataValidation()
-      .requireValueInList(BIBLE_STATUTS_OPTION, true).setAllowInvalid(true).build());
+    derniere = c + 1;
     sh.setColumnWidth(c + 1, 110);
   }
-  // Couleurs : toute la ligne, de la colonne A à la colonne Statut
+  var nbLignes = Math.max(sh.getMaxRows() - ligne1 + 1, 1);
+  // Les mots du menu : ceux du menu déjà posé dans la fiche, sinon Option / Confirmé / Relâché
+  var choix = [];
+  try {
+    var dv = sh.getRange(ligne1, c + 1).getDataValidation();
+    if (dv && dv.getCriteriaType() === SpreadsheetApp.DataValidationCriteria.VALUE_IN_LIST) choix = dv.getCriteriaValues()[0] || [];
+  } catch (e) {}
+  if (!choix.length) {
+    choix = BIBLE_STATUTS_OPTION;
+    sh.getRange(ligne1, c + 1, nbLignes, 1).setDataValidation(SpreadsheetApp.newDataValidation()
+      .requireValueInList(choix, true).setAllowInvalid(true).build());
+  }
+  var mot = function (statut) { return choix.filter(function (x) { return bibleStatutOption(x) === statut; })[0]; };
   var lettre = bibleLettreColonne(c + 1);
-  var fConfirme = '=$' + lettre + ligne1 + '="' + BIBLE_STATUTS_OPTION[1] + '"';
-  var fRelache = '=$' + lettre + ligne1 + '="' + BIBLE_STATUTS_OPTION[2] + '"';
+  var formule = function (m) { return '=$' + lettre + ligne1 + '="' + String(m).replace(/"/g, '""') + '"'; };
+  var mConfirme = mot('confirme') || BIBLE_STATUTS_OPTION[1], mRelache = mot('relache');
   var regles = sh.getConditionalFormatRules();
   var dejaLa = regles.some(function (rg) {
     var b = rg.getBooleanCondition();
-    return b && (b.getCriteriaValues() || []).indexOf(fConfirme) >= 0;
+    return b && (b.getCriteriaValues() || []).indexOf(formule(mConfirme)) >= 0;
   });
   if (dejaLa) return true;
-  var plage = sh.getRange(ligne1, 1, nbLignes, c + 1);
+  // De la colonne du rôle (à gauche de « Name ») à la dernière colonne du tableau
+  var col1 = Math.max(cNom, 1);
+  var plage = sh.getRange(ligne1, col1, nbLignes, derniere - col1 + 1);
   // En tête de liste, pour passer avant les couleurs déjà posées sur les dates
-  regles.unshift(
-    SpreadsheetApp.newConditionalFormatRule().whenFormulaSatisfied(fConfirme).setBackground(BIBLE_VERT).setRanges([plage]).build(),
-    SpreadsheetApp.newConditionalFormatRule().whenFormulaSatisfied(fRelache).setBackground(BIBLE_GRIS).setFontColor(BIBLE_GRIS_TEXTE).setRanges([plage]).build()
-  );
-  sh.setConditionalFormatRules(regles);
+  var nouvelles = [SpreadsheetApp.newConditionalFormatRule().whenFormulaSatisfied(formule(mConfirme)).setBackground(BIBLE_VERT).setRanges([plage]).build()];
+  if (mRelache) nouvelles.push(SpreadsheetApp.newConditionalFormatRule().whenFormulaSatisfied(formule(mRelache)).setBackground(BIBLE_GRIS).setFontColor(BIBLE_GRIS_TEXTE).setRanges([plage]).build());
+  sh.setConditionalFormatRules(nouvelles.concat(regles));
   return true;
 }
 
