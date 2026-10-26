@@ -15,6 +15,9 @@
  *  - la liste des personnes de l'onglet OPTIONS TEAM de la fiche (rôle, nom,
  *    téléphone, email, option par date, notes) est recopiée dans le projet.
  *    Les lignes et colonnes masquées (exemples du modèle) sont ignorées.
+ *  - l'onglet OPTIONS TEAM reçoit une colonne « Statut » (menu Option /
+ *    Confirmé / Relâché) : une ligne confirmée passe en vert, une ligne
+ *    relâchée en gris. Le statut est aussi envoyé dans la bible.
  * Le calendrier, l'équipe et les notes écrits dans la bible ne sont jamais
  * touchés.
  *
@@ -25,6 +28,9 @@
 var BIBLE_STORE_URL = 'https://bible-ajout-rapide.tom-9dd.workers.dev/store';
 var BIBLE_ONGLET_PROJETS = 'PROJETS';
 var BIBLE_ONGLET_OPTIONS = 'OPTIONS TEAM';
+// Colonne « Statut » de l'onglet OPTIONS TEAM : choix du menu et couleur de la ligne
+var BIBLE_STATUTS_OPTION = ['Option', 'Confirmé', 'Relâché'];
+var BIBLE_VERT = '#d9ead3', BIBLE_GRIS = '#efefef', BIBLE_GRIS_TEXTE = '#999999';
 
 // Statut du tableau → statut de la bible
 var BIBLE_STATUTS = [
@@ -56,6 +62,7 @@ function bibleInstaller() {
 function bibleMenu() {
   SpreadsheetApp.getUi().createMenu('Bible')
     .addItem('Envoyer les projets vers la bible', 'bibleEnvoyerTout')
+    .addItem('Ajouter la colonne Statut aux OPTIONS TEAM', 'bibleStatutToutesFiches')
     .addToUi();
 }
 
@@ -105,6 +112,7 @@ function bibleEnvoyerProjets() {
         try { maj = DriveApp.getFileById(l.ficheId).getLastUpdated().toISOString(); } catch (e) {}
         if (!maj || vues[l.ficheId] !== maj || !Array.isArray(p.options)) {
           try {
+            try { bibleStatutFiche(l.ficheId); } catch (e) { console.warn('Colonne Statut non ajoutée pour ' + l.code + ' : ' + e.message); }
             var options = bibleLireOptions(l.ficheId);
             if (JSON.stringify(options) !== JSON.stringify(p.options || [])) { p.options = options; change = true; }
             if (maj) vues[l.ficheId] = maj;
@@ -188,9 +196,10 @@ function bibleLireOptions(ficheId) {
     return -1;
   };
   var cTel = trouve('phone'), cMail = trouve('email'), cNotes = trouve('rates'), cAdresse = trouve('address'), cRegime = trouve('diet');
+  var cStatut = trouve('statut');
   var cRole = cNom - 1;
-  // Colonnes de dates : entre l'email (ou le nom) et « Rates & notes »
-  var debut = Math.max(cNom, cTel, cMail) + 1, fin = cNotes > debut ? cNotes : h.length;
+  // Colonnes de dates : entre l'email (ou le nom) et « Rates & notes » (ou « Statut »)
+  var debut = Math.max(cNom, cTel, cMail) + 1, fin = cNotes > debut ? cNotes : cStatut > debut ? cStatut : h.length;
   var dates = [];
   for (var j = debut; j < fin; j++) {
     if (sh.isColumnHiddenByUser(j + 1)) continue;   // colonnes masquées : dates du modèle
@@ -223,10 +232,89 @@ function bibleLireOptions(ficheId) {
       notes: cNotes >= 0 ? String(v[cNotes]).trim() : '',
       adresse: cAdresse >= 0 ? String(v[cAdresse]).trim().replace(/^-$/, '') : '',
       regime: cRegime >= 0 ? String(v[cRegime]).trim().replace(/^-$/, '') : '',
+      statut: cStatut >= 0 ? bibleStatutOption(v[cStatut]) : '',
       dispos: dispos,
     });
   }
   return out;
+}
+
+// ── Colonne « Statut » de l'onglet OPTIONS TEAM ───────────────────────
+
+// Depuis le menu : ajoute (ou remet en place) la colonne Statut dans toutes les fiches.
+// L'envoi automatique le fait aussi pour chaque fiche qu'il relit, donc les nouvelles fiches l'ont toutes seules.
+function bibleStatutToutesFiches() {
+  var n = 0, erreurs = [];
+  bibleLignesProjets().forEach(function (l) {
+    if (!l.ficheId) return;
+    try { if (bibleStatutFiche(l.ficheId)) n++; } catch (e) { erreurs.push(l.code + ' : ' + e.message); }
+  });
+  var msg = n + ' fiche(s) avec la colonne Statut.' + (erreurs.length ? ' Problème sur ' + erreurs.join(', ') : '');
+  try { SpreadsheetApp.getActive().toast(msg, 'Bible', 10); } catch (e) {}
+  return msg;
+}
+
+// Ajoute à l'onglet OPTIONS TEAM d'une fiche, si besoin : la colonne « Statut » tout à droite
+// (après « Rates & notes », adresse et régime, pour ne pas être prise pour une date), son menu,
+// et les couleurs de ligne. Rien n'est refait si tout est déjà en place.
+function bibleStatutFiche(ficheId) {
+  var ss = SpreadsheetApp.openById(ficheId);
+  var sh = ss.getSheetByName(BIBLE_ONGLET_OPTIONS);
+  if (!sh) return false;
+  var vals = sh.getDataRange().getValues();
+  var hr = -1, cNom = -1;
+  for (var r = 0; r < Math.min(vals.length, 10) && hr < 0; r++) {
+    for (var i = 0; i < vals[r].length; i++) if (bibleNorm(vals[r][i]) === 'name') { hr = r; cNom = i; break; }
+  }
+  if (hr < 0) return false;
+  var h = vals[hr];
+  var c = -1;
+  for (var j = 0; j < h.length; j++) if (bibleNorm(h[j]) === 'statut') c = j;
+  var ligne1 = hr + 2;                         // première ligne de personnes (1 = première ligne du tableur)
+  var nbLignes = Math.max(sh.getMaxRows() - ligne1 + 1, 1);
+  if (c < 0) {
+    c = sh.getLastColumn();                    // juste après la dernière colonne remplie
+    if (c + 1 > sh.getMaxColumns()) sh.insertColumnAfter(sh.getMaxColumns());
+    var tete = sh.getRange(hr + 1, c + 1);
+    sh.getRange(hr + 1, cNom + 1).copyTo(tete, SpreadsheetApp.CopyPasteType.PASTE_FORMAT, false);
+    tete.setValue('Statut');
+    var cases = sh.getRange(ligne1, c + 1, nbLignes, 1);
+    cases.setDataValidation(SpreadsheetApp.newDataValidation()
+      .requireValueInList(BIBLE_STATUTS_OPTION, true).setAllowInvalid(true).build());
+    sh.setColumnWidth(c + 1, 110);
+  }
+  // Couleurs : toute la ligne, de la colonne A à la colonne Statut
+  var lettre = bibleLettreColonne(c + 1);
+  var fConfirme = '=$' + lettre + ligne1 + '="' + BIBLE_STATUTS_OPTION[1] + '"';
+  var fRelache = '=$' + lettre + ligne1 + '="' + BIBLE_STATUTS_OPTION[2] + '"';
+  var regles = sh.getConditionalFormatRules();
+  var dejaLa = regles.some(function (rg) {
+    var b = rg.getBooleanCondition();
+    return b && (b.getCriteriaValues() || []).indexOf(fConfirme) >= 0;
+  });
+  if (dejaLa) return true;
+  var plage = sh.getRange(ligne1, 1, nbLignes, c + 1);
+  // En tête de liste, pour passer avant les couleurs déjà posées sur les dates
+  regles.unshift(
+    SpreadsheetApp.newConditionalFormatRule().whenFormulaSatisfied(fConfirme).setBackground(BIBLE_VERT).setRanges([plage]).build(),
+    SpreadsheetApp.newConditionalFormatRule().whenFormulaSatisfied(fRelache).setBackground(BIBLE_GRIS).setFontColor(BIBLE_GRIS_TEXTE).setRanges([plage]).build()
+  );
+  sh.setConditionalFormatRules(regles);
+  return true;
+}
+
+// Statut tapé dans la fiche → statut de la bible
+function bibleStatutOption(txt) {
+  var n = bibleNorm(txt);
+  if (/^confirm/.test(n)) return 'confirme';
+  if (/^(relach|release)/.test(n)) return 'relache';
+  return '';
+}
+
+function bibleLettreColonne(n) {
+  var s = '';
+  while (n > 0) { var m = (n - 1) % 26; s = String.fromCharCode(65 + m) + s; n = Math.floor((n - 1) / 26); }
+  return s;
 }
 
 // ── Outils ─────────────────────────────────────────────────────────────

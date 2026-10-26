@@ -153,7 +153,8 @@ Le script `integrations/projets-widen-google-sheet.gs` envoie les projets du Goo
 - chaque ligne qui a une fiche de suivi devient un projet (reconnu par son N°, ex. P05), créé s'il n'existe pas ;
 - client, projet, producer, dates, lieu, usages et livrables sont recopiés (lecture seule dans la bible), avec les boutons **FICHE DE SUIVI ↗** et **DOSSIER DROPBOX ↗** ;
 - le statut est repris quand il change dans le tableau (Devis → En discussion, Pré-production → En prépa, Post-production, Livré…) ;
-- l'onglet **OPTIONS TEAM** de la fiche de suivi est recopié dans le bloc OPTIONS TEAM du projet (replié par défaut, un clic le déroule) : rôle, nom, téléphone, email, option par date (barrée si N/A, relâché…) et notes. Une personne de la bible est reconnue par son email ou son nom (lien vers sa fiche). **+ ÉQUIPE** la met dans l'équipe du projet, sur les dates où elle est en option.
+- l'onglet **OPTIONS TEAM** de chaque fiche reçoit une colonne **Statut** tout à droite, avec un menu *Option / Confirmé / Relâché* : une ligne confirmée passe en vert dans la fiche, une ligne relâchée en gris. Les nouvelles fiches la reçoivent au premier envoi ; **Bible → Ajouter la colonne Statut aux OPTIONS TEAM** le fait tout de suite pour toutes les fiches.
+- dans la bible, seules les personnes **Confirmé** comptent : elles entrent d'elles-mêmes dans l'équipe du projet (une seule fois, sur les dates où elles sont prises, reconnues par leur email ou leur nom), et la bible n'affiche plus l'OPTIONS TEAM. Quelqu'un retiré de l'équipe dans la bible n'y est pas remis.
 Le calendrier, l'équipe et les notes écrits dans la bible ne sont jamais touchés par le script.
 
 Installation (une seule fois) :

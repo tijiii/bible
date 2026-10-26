@@ -14,7 +14,6 @@ let pjMode = (() => { try { return localStorage.getItem('pjMode') || 'liste'; } 
 let pjPlanDebut = '';        // premier mois du planning ('AAAA-MM')
 let pjMois = '';             // mois affiché dans le calendrier du projet ('AAAA-MM')
 let pjRetro = null;          // import de rétroplanning en cours : { pid, fichier, enCours, msg, etapes }
-let pjOptionsOuvert = false; // bloc OPTIONS TEAM déplié (fermé par défaut, il est long)
 let pjRetroOuvert = false;   // bloc d'import du rétroplanning déplié
 let pjEtapesOuvert = false;  // liste des étapes (à modifier) dépliée
 let pjEquipeOuvert = false;  // bloc ÉQUIPE déplié
@@ -253,6 +252,35 @@ function pjOptionPersonne(o) {
   const t = pjTalentPour(o.nom, o.mail);
   return t ? { ref: t.id, nom: '', role: o.role, opt: o } : { ref: null, nom: o.nom, role: o.role, opt: o };
 }
+// Colonne « Statut » de l'OPTIONS TEAM de la fiche de suivi : une personne marquée
+// Confirmé entre d'elle-même dans l'équipe du projet, une seule fois (p.optAjoutes garde
+// qui est déjà entré : quelqu'un retiré de l'équipe dans la bible n'est pas remis).
+function pjAjouterConfirmes(p) {
+  const equipe = new Set((p.equipe || []).filter(a => pjNomPersonne(a)).map(pjCle));
+  let change = false;
+  (p.options || []).forEach(o => {
+    if (o.statut !== 'confirme' || !o.nom) return;
+    const cle = pjCle(pjOptionPersonne(o));
+    if (!Array.isArray(p.optAjoutes)) p.optAjoutes = [];
+    if (p.optAjoutes.includes(cle)) return;
+    p.optAjoutes.push(cle);
+    change = true;
+    if (equipe.has(cle)) return;
+    if (!Array.isArray(p.equipe)) p.equipe = [];
+    const a = pjOptionVersAffectation(o);
+    p.equipe.push(a);
+    pjMettreSurPostProd(p, a);
+    equipe.add(cle);
+  });
+  if (change) p.maj = Date.now();
+  return change;
+}
+let pjConfirmesTimer = null;
+function pjAjouterTousConfirmes() {
+  if (!pjList().map(pjAjouterConfirmes).some(Boolean)) return;
+  clearTimeout(pjConfirmesTimer);
+  pjConfirmesTimer = setTimeout(saveDb, 700);
+}
 
 // ── Conflits : une même personne sur deux projets aux mêmes dates ────────────
 function pjConflits() {
@@ -263,14 +291,6 @@ function pjConflits() {
       if (!pjNomPersonne(a)) return;
       const cle = pjCle(a);
       pjPeriodes(p, a).forEach(per => (prises[cle] = prises[cle] || []).push({ p, a, per }));
-    });
-    // Options de la fiche de suivi (OPTIONS TEAM), sauf pour qui est déjà dans l'équipe du projet
-    const dansEquipe = new Set((p.equipe || []).filter(a => pjNomPersonne(a)).map(pjCle));
-    (p.options || []).forEach(o => {
-      const a = pjOptionPersonne(o);
-      const cle = pjCle(a);
-      if (!o.nom || dansEquipe.has(cle)) return;
-      pjOptionDates(o).forEach(d => (prises[cle] = prises[cle] || []).push({ p, a, per: { du: d.date, au: d.date, label: d.statut } }));
     });
   });
   const out = [];
@@ -295,7 +315,7 @@ function pjMien(c, p) { return c.x.p.id === p.id ? c.x : c.y; }
 function pjGo(vue, id) {
   if (vue === 'ts' && pjVue !== 'ts') pjTsDepuis = pjVue === 'projet' && pjCur() ? pjId : null;
   pjVue = vue;
-  if (id !== undefined && id !== pjId) { pjId = id; pjMois = ''; pjOptionsOuvert = false; pjRetroOuvert = false; pjEtapesOuvert = false; pjEtSel = new Set(); pjEqSel = new Set(); pjEquipeOuvert = false; tdFaitesOuvert = false; pjAffOuvert = new Set(); if (pjRetro && !pjRetro.enCours) pjRetro = null; }
+  if (id !== undefined && id !== pjId) { pjId = id; pjMois = ''; pjRetroOuvert = false; pjEtapesOuvert = false; pjEtSel = new Set(); pjEqSel = new Set(); pjEquipeOuvert = false; tdFaitesOuvert = false; pjAffOuvert = new Set(); if (pjRetro && !pjRetro.enCours) pjRetro = null; }
   buildTabs();
   render();
   window.scrollTo(0, 0);
@@ -329,6 +349,7 @@ function buildPjTabs(nav) {
 }
 
 function renderProjets(main) {
+  pjAjouterTousConfirmes();
   pjEnDessin = true;
   try {
     if (pjVue === 'ts' && tsById(tsId)) renderTsEditor(main);
@@ -344,7 +365,7 @@ function pjFiltres() {
     if (pjFStatut === '' && (p.statut === 'livre' || p.statut === 'annule')) return false;
     if (pjFStatut && pjFStatut !== 'tous' && p.statut !== pjFStatut) return false;
     if (!q) return true;
-    return [p.code, p.nom, p.client, ...(p.equipe || []).map(pjNomPersonne), ...(p.options || []).map(o => o.nom)].some(v => pjNorm(v).includes(q));
+    return [p.code, p.nom, p.client, ...(p.equipe || []).map(pjNomPersonne)].some(v => pjNorm(v).includes(q));
   }).sort((a, b) => {
     const sa = pjSpan(a), sb = pjSpan(b);
     if (sa && sb) return sa.du.localeCompare(sb.du);
@@ -666,8 +687,6 @@ function pjPageHtml(p, conflits, choix) {
 
     ${tdProjetHtml(p)}
 
-    ${pjOptionsHtml(p)}
-
     ${pjTravelHtml(p)}
 
     <section class="ts-bloc">
@@ -697,7 +716,7 @@ function pjEquipeHtml(p, choix) {
     ${pjBFSel('eqTri', f.eqTri, [['', 'ORDRE D\'AJOUT'], ['nom', 'PAR NOM'], ['role', 'PAR RÔLE'], ['partie', 'PAR PARTIE']], 'Ordre')}`, f.eqPiste ? 'eqPiste' : '') : '';
   const noms = eq.map(a => pjNomPersonne(a)).filter(Boolean);
   const ouvert = pjEquipeOuvert || !eq.length;
-  const nbConflits = pjConflitsDe(p).filter(c => !pjMien(c, p).a.opt).length;
+  const nbConflits = pjConflitsDe(p).length;
   return `<details class="ts-bloc pj-repli pj-equipe-bloc"${ouvert ? ' open' : ''} ontoggle="if(this.open!==${ouvert})pjEquipeOuvert=this.open">
     <summary><h3>ÉQUIPE <small class="pj-muted">${noms.length ? `· ${noms.length} ${noms.length > 1 ? 'personnes' : 'personne'}${barre ? '' : ` · ${esc(noms.slice(0, 4).join(', '))}${noms.length > 4 ? '…' : ''}`}` : ''}</small>${nbConflits ? ` <span class="pj-warn">⚠ ${nbConflits}</span>` : ''}${barre}</h3></summary>
     <datalist id="pj-gens">${choix.map(c => `<option value="${esc(c.label)}"></option>`).join('')}</datalist>
@@ -954,52 +973,6 @@ function pjInfosTableauHtml(p) {
   </div>`;
 }
 
-// Onglet OPTIONS TEAM de la fiche de suivi : qui est en option, et quand
-function pjOptionsHtml(p) {
-  const options = p.options || [];
-  if (!options.length) return p.code ? `<section class="ts-bloc"><h3>OPTIONS TEAM</h3><p class="field-hint">Personne dans l'onglet OPTIONS TEAM de la fiche de suivi pour le moment.</p></section>` : '';
-  const conflits = pjConflits();
-  const equipe = new Set((p.equipe || []).filter(a => pjNomPersonne(a)).map(pjCle));
-  const nbConflits = conflits.filter(c => [c.x, c.y].some(q => q.p.id === p.id && q.a.opt)).length;
-  const tri = pjBF(p).opTri || '';
-  const ordre = options.map((o, i) => [o, i]);
-  if (tri === 'nom') ordre.sort((a, b) => String(a[0].nom || '').localeCompare(String(b[0].nom || ''), 'fr'));
-  else if (tri === 'role') ordre.sort((a, b) => String(a[0].role || '~').localeCompare(String(b[0].role || '~'), 'fr') || String(a[0].nom || '').localeCompare(String(b[0].nom || ''), 'fr'));
-  const barre = options.length > 1 ? pjBFBarre(pjBFSel('opTri', tri, [['', 'ORDRE DE LA FICHE'], ['nom', 'PAR NOM'], ['role', 'PAR RÔLE']], 'Ordre')) : '';
-  return `<details class="ts-bloc pj-options-bloc"${pjOptionsOuvert ? ' open' : ''} ontoggle="pjOptionsOuvert=this.open">
-    <summary><h3>OPTIONS TEAM <small class="pj-muted">· fiche de suivi · ${options.length} ${options.length > 1 ? 'personnes' : 'personne'}</small>${nbConflits ? ` <span class="pj-warn">⚠ ${nbConflits}</span>` : ''}${barre}</h3></summary>
-    <div class="pj-options">${ordre.map(([o, i]) => {
-      const a = pjOptionPersonne(o);
-      const t = pjTalent(a.ref);
-      const cle = pjCle(a);
-      const dejaLa = equipe.has(cle);
-      const sesConflits = conflits.filter(c => [c.x, c.y].some(q => q.p.id === p.id && q.a.opt === o));
-      return `<div class="pj-option${sesConflits.length ? ' conflit' : ''}">
-        <div class="pj-option-tete">
-          <span class="pj-option-role">${esc(o.role || '')}</span>
-          <span class="pj-option-nom">${t ? `<a href="#" onclick="event.preventDefault();openDetail('talent', ${t.id})">${esc(o.nom)}</a>` : esc(o.nom)}</span>
-          <span class="pj-muted pj-option-contact">${[o.tel, o.mail].filter(Boolean).map(x => esc(x)).join(' · ')}</span>
-          ${dejaLa ? '<span class="pj-muted pj-option-ok">dans l\'équipe</span>' : `<button type="button" class="btn-edit-inline" onclick="pjOptionVersEquipe(${i})">+ ÉQUIPE</button>`}
-        </div>
-        ${(o.dispos || []).length ? `<div class="pj-option-dispos">${o.dispos.map(d => `<span class="pj-dispo${pjOptionLibre(d.statut) ? ' libre' : ''}">${esc(d.date ? pjDateCourte(d.date) : d.label || '')} : ${esc(d.statut)}</span>`).join('')}</div>` : ''}
-        ${o.notes ? `<div class="pj-muted pj-option-notes">${esc(o.notes)}</div>` : ''}
-        ${sesConflits.map(c => { const b = c.x.p.id === p.id && c.x.a.opt === o ? c.y : c.x; return `<div class="pj-aff-conflit">⚠ Aussi sur <a href="#" onclick="event.preventDefault();pjGo('projet', ${b.p.id})">${esc(pjTitre(b.p))}</a> (${esc(b.per.label)}) : ${esc(pjPeriodeTexte(c.du, c.au))}</div>`; }).join('')}
-      </div>`;
-    }).join('')}</div>
-  </details>`;
-}
-
-// « + ÉQUIPE » sur une option : la personne passe dans l'équipe, sur les dates où elle est prise
-function pjOptionVersEquipe(i) {
-  const p = pjCur();
-  const o = p && (p.options || [])[i];
-  if (!o) return;
-  if (!Array.isArray(p.equipe)) p.equipe = [];
-  const a = pjOptionVersAffectation(o);
-  p.equipe.push(a);
-  pjMettreSurPostProd(p, a);
-  pjChange(true);
-}
 function pjOptionVersAffectation(o) {
   const a = pjOptionPersonne(o);
   const dates = pjOptionDates(o).map(d => d.date).sort();
@@ -1040,7 +1013,7 @@ function pjRetroHtml(p) {
         <input type="text" value="${esc(e.nom)}" oninput="pjRetro.etapes[${i}].nom=this.value" onchange="pjRedessiner()">
         <input type="date" value="${esc(e.du)}" onchange="pjRetro.etapes[${i}].du=this.value">
         <input type="date" value="${esc(e.au)}" onchange="pjRetro.etapes[${i}].au=this.value">
-        ${(() => { const ici = pp.filter(x => x.idx.includes(i)); return ici.length ? `<div class="pj-retro-gens">${ici.map(x => { const on = x.coches.includes(i); return `<label class="pj-retro-pers${on ? '' : ' off'}" title="${esc(x.role || '')}${x.option ? ' · options team' : ''}${x.nouveau ? ' · ajouté à l\'équipe' : ''}"><input type="checkbox" ${on ? 'checked' : ''} onchange="pjRetroCocher('${x.cle}', ${i}, this.checked)">${esc(x.nom)} <small>${esc(x.role || '')}</small></label>`; }).join('')}</div>` : ''; })()}
+        ${(() => { const ici = pp.filter(x => x.idx.includes(i)); return ici.length ? `<div class="pj-retro-gens">${ici.map(x => { const on = x.coches.includes(i); return `<label class="pj-retro-pers${on ? '' : ' off'}" title="${esc(x.role || '')}${x.nouveau ? ' · ajouté à l\'équipe' : ''}"><input type="checkbox" ${on ? 'checked' : ''} onchange="pjRetroCocher('${x.cle}', ${i}, this.checked)">${esc(x.nom)} <small>${esc(x.role || '')}</small></label>`; }).join('')}</div>` : ''; })()}
       </div>`; }).join('')}
       ${r.msg ? `<p class="field-hint">${esc(r.msg)}</p>` : ''}
       ${pp.length ? `<p class="field-hint pj-retro-pp-aide">Sous chaque étape de post-prod, les personnes proposées d'office : le photographe sur les edits photo, le réal et le monteur sur les edits vidéo, le coloriste sur l'étalonnage, le sound designer sur le son. Décoche ce qui ne va pas.</p>` : ''}
@@ -1070,8 +1043,8 @@ function pjRetroPisteTout(k) {
 // Qui va sur quelle post-prod du rétroplanning importé, proposé de façon
 // logique : le photographe sur les edits photo, le réal et le monteur (Jonas,
 // d'office) sur les edits vidéo, le coloriste sur l'étalonnage, le sound designer
-// sur le son… Ce sont l'équipe du projet, les personnes de l'OPTIONS TEAM (pas
-// encore dans l'équipe) et Jonas. Chaque nom se coche ou se décoche étape par étape.
+// sur le son… Ce sont l'équipe du projet (avec les confirmés de l'OPTIONS TEAM)
+// et Jonas. Chaque nom se coche ou se décoche étape par étape.
 function pjRetroPostProd(p, r) {
   const etapes = r.etapes.map((e, i) => ({ ...e, i })).filter(e => e.choisi && e.du);
   const out = [];
@@ -1082,16 +1055,6 @@ function pjRetroPostProd(p, r) {
     vus.add(pjNorm(nom));
     const idx = pjEtapesPourRole(a.role, etapes).map(e => e.i);
     if (idx.length) out.push({ cle: 'e' + a.id, nom, role: a.role, idx, aId: a.id });
-  });
-  (p.options || []).forEach((o, oi) => {
-    const a = pjOptionPersonne(o);
-    const nom = pjNomPersonne(a);
-    if (!o.nom || vus.has(pjNorm(nom))) return;
-    // Une option relâchée partout (N/A, release, pas retenu…) n'est pas proposée
-    if ((o.dispos || []).length && !pjOptionDates(o).length) return;
-    const idx = pjEtapesPourRole(o.role, etapes).map(e => e.i);
-    vus.add(pjNorm(nom));
-    if (idx.length) out.push({ cle: 'o' + oi, nom, role: o.role, idx, oi, option: true });
   });
   if (!vus.has(pjNorm(PJ_MONTEUR.nom))) {
     const idx = pjEtapesPourRole(PJ_MONTEUR.role, etapes).map(e => e.i);
@@ -1267,17 +1230,12 @@ function pjRetroAjouter() {
     const et = { id: uid(), type: e.type, nom: e.nom, piste: e.piste || '', du: e.du, au };
     p.etapes.push(et); ajout.push(et); deja.set(cle, et.id); ids[i] = et.id;
   });
-  // L'équipe sur sa post-prod ; les personnes de l'OPTIONS TEAM entrent dans l'équipe
+  // L'équipe sur sa post-prod (Jonas entre dans l'équipe s'il n'y est pas)
   pp.forEach(x => {
     const etIds = x.coches.map(i => ids[i]).filter(Boolean);
     if (!etIds.length) return;
     if (x.aId != null) { const a = p.equipe.find(y => y.id === x.aId); if (a) pjMettreSurPostProd(p, a, etIds); return; }
-    if (x.nouveau) { p.equipe.push({ id: uid(), ref: null, nom: x.nom, role: x.role, etapes: etIds.slice(), du: '', au: '' }); return; }
-    const o = (p.options || [])[x.oi];
-    if (!o) return;
-    const a = pjOptionVersAffectation(o);
-    a.etapes = etIds.slice();
-    p.equipe.push(a);
+    if (x.nouveau) p.equipe.push({ id: uid(), ref: null, nom: x.nom, role: x.role, etapes: etIds.slice(), du: '', au: '' });
   });
   p.retro = { fichier: r.fichier || 'texte collé', date: pjAujourdhui() };
   const premier = ajout.map(e => e.du).sort()[0];
