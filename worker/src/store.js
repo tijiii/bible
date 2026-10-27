@@ -14,6 +14,10 @@
 //
 // Le site passe par son origine (ALLOWED_ORIGINS). Le script du check-in
 // (Google Apps Script) envoie « Authorization: Bearer <BIBLE_KEY> ».
+//
+// Code de l'équipe (secret TEAM_CODE) : quand il est défini, le site doit
+// l'envoyer (en-tête X-Team-Code, ou « ?k= » pour les images) pour lire ou
+// écrire quoi que ce soit. Sans ce secret, rien ne change.
 
 const DB_KEY = 'db';
 const INDEX_KEY = 'photos';
@@ -27,7 +31,7 @@ function storeCors(origin, env) {
   return {
     'Access-Control-Allow-Origin': ok ? origin : allowed[0],
     'Access-Control-Allow-Methods': 'GET, PUT, POST, DELETE, OPTIONS',
-    'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Photo-Source',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Photo-Source, X-Team-Code',
     'Vary': 'Origin',
     ok,
   };
@@ -44,6 +48,15 @@ function reply(body, status, cors, extra = {}) {
 function hasKey(request, env) {
   return !!env.BIBLE_KEY && request.headers.get('Authorization') === 'Bearer ' + env.BIBLE_KEY;
 }
+
+export function teamOk(request, env, url) {
+  if (!env.TEAM_CODE) return true;
+  const code = String(env.TEAM_CODE).trim();
+  const donne = request.headers.get('X-Team-Code') || url.searchParams.get('k') || '';
+  return donne.trim() === code || hasKey(request, env);
+}
+
+export const TEAM_REFUS = { error: 'Code de l\'équipe manquant ou faux.', team: true };
 
 async function readIndex(env) {
   const idx = await env.BIBLE.get(INDEX_KEY, 'json');
@@ -87,14 +100,16 @@ export async function handleStore(request, env, url) {
 
   const parts = url.pathname.split('/').filter(Boolean).slice(1); // sans « store »
 
-  // Les images s'affichent dans des <img>, sans origine : lecture libre.
+  // Les images s'affichent dans des <img>, sans origine : le code de l'équipe est dans l'adresse.
   if (request.method === 'GET' && parts[0] === 'img') {
+    if (!teamOk(request, env, url)) return new Response('Code de l\'équipe requis', { status: 401 });
     if (parts[1] === 't' && parts[2]) return readImage(request, env, `img:t:${parts[2]}`);
     if (parts[1] === 'l' && parts[2] && parts[3]) return readImage(request, env, `img:l:${parts[2]}:${parts[3]}`);
     return new Response('Introuvable', { status: 404 });
   }
 
   if (!cors.ok && !hasKey(request, env)) return reply({ error: 'Origine non autorisée' }, 403, cors);
+  if (!teamOk(request, env, url)) return reply(TEAM_REFUS, 401, cors);
 
   try {
     if (parts[0] === 'db' && request.method === 'GET') {

@@ -1165,7 +1165,7 @@ async function pjRetroServeur(p, corps) {
   if (typeof SERVER_URL === 'undefined' || !SERVER_URL) throw new Error('Serveur non configuré : ce format ne peut pas être lu.');
   const sp = pjSpan(p);
   const projet = [pjTitre(p), p.datesTexte, sp ? pjPeriodeTexte(sp.du, sp.au) : ''].filter(Boolean).join(' · ');
-  const res = await fetch(SERVER_URL + '/retro', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...corps, projet, fichier: (pjRetro && pjRetro.fichier) || '' }) });
+  const res = await serverFetch(SERVER_URL + '/retro', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...corps, projet, fichier: (pjRetro && pjRetro.fichier) || '' }) });
   const data = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(data.error || 'Le serveur n\'a pas pu lire ce rétroplanning.');
   return data;

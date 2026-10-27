@@ -187,6 +187,14 @@ La base (talents, clubs, lieux…) et les photos importées sont gardées par le
 
 Le script du check-in écrit aussi dans cette base. Il utilise une clé : choisir un mot de passe long, l'ajouter dans GitHub (Settings → Secrets and variables → Actions) sous le nom `BIBLE_KEY`, relancer « Déployer l'ajout rapide », et mettre la même valeur dans les propriétés du script Apps Script (`BIBLE_KEY`).
 
+## Code de l'équipe
+
+La bible est réservée à l'équipe : le serveur Cloudflare ne donne la base, les photos et l'ajout rapide qu'avec le code de l'équipe. Chaque appareil le demande une fois, puis le garde.
+
+Pour l'activer ou le changer : dans le dépôt GitHub, **Settings → Secrets and variables → Actions → New repository secret**, nom `TEAM_CODE`, valeur = le code choisi. Puis **Actions → Déployer l'ajout rapide → Run workflow**. Sans ce secret, la bible reste ouverte comme avant. Les scripts Google Sheets (check-in, PROJETS WIDEN) continuent de passer avec leur clé `BIBLE_KEY`.
+
+Les talents ne sont plus dans `data.js` (fichier public) : ils viennent uniquement de la base partagée.
+
 ## Check-in → profils
 
 Le script `integrations/checkin-google-sheet.gs` relie les réponses du formulaire de check-in aux profils de la bible (par email, puis par nom) et crée le profil s'il n'existe pas.

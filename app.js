@@ -678,7 +678,7 @@ async function resolveMapsLink(link) {
     const place = decoded.match(/\/maps\/place\/([^/@?]+)/);
     return { lat: Number(m[1]), lng: Number(m[2]), nom: place ? place[1].replace(/\+/g, ' ') : '', url: link };
   }
-  const res = await fetch(SERVER_URL + '/maps?url=' + encodeURIComponent(link));
+  const res = await serverFetch(SERVER_URL + '/maps?url=' + encodeURIComponent(link));
   const out = await res.json().catch(() => ({}));
   if (!res.ok || out.error || typeof out.lat !== 'number') throw new Error(out.error || 'Lien illisible.');
   return { lat: out.lat, lng: out.lng, nom: out.nom || '', url: link };
@@ -2973,7 +2973,7 @@ async function runQuickAdd() {
     },
   };
   try {
-    const res = await fetch(QUICK_ADD_URL, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    const res = await serverFetch(QUICK_ADD_URL, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
     const out = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(out.error || 'Erreur ' + res.status);
     openQuickResult(out);
