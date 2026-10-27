@@ -19,11 +19,61 @@ function setSyncStatus(state) {
   el.style.color = s.color;
 }
 
+// ── CODE DE L'ÉQUIPE ─────────────────────────────────────────────────────────
+// Le serveur ne répond qu'avec le code de l'équipe (secret TEAM_CODE du serveur).
+// Il est demandé une fois, puis gardé sur l'appareil.
+const TEAM_CODE_KEY = 'teamCode';
+function teamCode() { try { return localStorage.getItem(TEAM_CODE_KEY) || ''; } catch (e) { return ''; } }
+
+// Toutes les demandes au serveur Cloudflare passent par ici
+async function serverFetch(url, options = {}) {
+  const code = teamCode();
+  const opts = code ? { ...options, headers: { ...(options.headers || {}), 'X-Team-Code': code } } : options;
+  const res = await fetch(url, opts);
+  if (res.status === 401) demanderCodeEquipe(!!code);
+  return res;
+}
+
+// Les images s'affichent dans des <img> : le code va dans l'adresse
+function avecCodeImage(url) {
+  const code = teamCode();
+  return code ? url + (url.includes('?') ? '&' : '?') + 'k=' + encodeURIComponent(code) : url;
+}
+
+function demanderCodeEquipe(refuse) {
+  if (document.getElementById('team-code-bg')) return;
+  setSyncStatus('error');
+  const bg = document.createElement('div');
+  bg.className = 'modal-bg';
+  bg.id = 'team-code-bg';
+  bg.style.display = 'flex';
+  bg.innerHTML = `<div class="modal team-code-modal">
+    <div class="modal-hdr"><span class="modal-title">CODE DE L'ÉQUIPE</span></div>
+    <div class="modal-body">
+      <p class="field-hint">${refuse ? 'Ce code n\'est pas le bon. ' : ''}La bible est réservée à l'équipe Widen. Entre le code une fois : il reste gardé sur cet appareil.</p>
+      <div class="field full"><input id="team-code-input" type="password" autocomplete="current-password" placeholder="Code de l'équipe"
+        onkeydown="if(event.key==='Enter')validerCodeEquipe()"></div>
+    </div>
+    <div class="modal-footer"><div class="spacer"></div><button class="btn-save" onclick="validerCodeEquipe()">ENTRER</button></div>
+  </div>`;
+  document.body.appendChild(bg);
+  setTimeout(() => { const i = document.getElementById('team-code-input'); if (i) i.focus(); }, 0);
+}
+
+function validerCodeEquipe() {
+  const v = (document.getElementById('team-code-input') || {}).value?.trim();
+  if (!v) return;
+  try { localStorage.setItem(TEAM_CODE_KEY, v); } catch (e) {}
+  location.reload();
+}
+
 async function storeFetch(path, options = {}) {
-  const res = await fetch(STORE_URL + path, options);
+  const res = await serverFetch(STORE_URL + path, options);
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
-    throw new Error('Serveur ' + res.status + ' ' + (err?.error || ''));
+    const e = new Error('Serveur ' + res.status + ' ' + (err?.error || ''));
+    if (res.status === 401) e.team = true;
+    throw e;
   }
   return res.json();
 }
@@ -68,7 +118,7 @@ async function initRemoteSync() {
   } catch (e) {
     console.error(e);
     setSyncStatus('error');
-    alert("Impossible de se connecter à la base partagée. Vérifie ta connexion internet.\n\n" + e.message);
+    if (!e.team) alert("Impossible de se connecter à la base partagée. Vérifie ta connexion internet.\n\n" + e.message);
   }
   buildTabs();
   render();
@@ -126,7 +176,7 @@ async function saveDbRemote() {
   } catch (e) {
     console.error(e);
     setSyncStatus('error');
-    alert("La sauvegarde en ligne a échoué. Tes changements restent sur cet appareil mais ne sont pas encore partagés avec l'équipe.\n\n" + e.message);
+    if (!e.team) alert("La sauvegarde en ligne a échoué. Tes changements restent sur cet appareil mais ne sont pas encore partagés avec l'équipe.\n\n" + e.message);
   }
 }
 
@@ -142,11 +192,11 @@ let photoDates = {};     // photoId -> date de prise de vue (AAAA-MM-JJ)
 let photosInitDone = false;
 
 function talentPhotoUrl(talentId, v) {
-  return `${STORE_URL}/img/t/${encodeURIComponent(talentId)}?v=${v}`;
+  return avecCodeImage(`${STORE_URL}/img/t/${encodeURIComponent(talentId)}?v=${v}`);
 }
 
 function lieuPhoto(lieuId, photoId) {
-  const url = `${STORE_URL}/img/l/${encodeURIComponent(lieuId)}/${encodeURIComponent(photoId)}`;
+  const url = avecCodeImage(`${STORE_URL}/img/l/${encodeURIComponent(lieuId)}/${encodeURIComponent(photoId)}`);
   // Les photos iPhone ont un identifiant qui commence par « ip » (voir worker/src/store.js)
   return { id: photoId, url, full: url, kind: String(photoId).startsWith('ip') ? 'iphone' : 'campagne', date: photoDates[photoId] || '' };
 }

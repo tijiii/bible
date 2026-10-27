@@ -442,7 +442,7 @@ function tsLogoColle(e) {
 }
 
 async function tsLogoServeur(corps) {
-  const res = await fetch(SERVER_URL + '/logo', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(corps) });
+  const res = await serverFetch(SERVER_URL + '/logo', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(corps) });
   const data = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(data.error || 'Le serveur ne répond pas.');
   return (data.logos || []).map(l => `data:${l.media_type};base64,${l.data}`);
@@ -521,7 +521,7 @@ function tsLireFichier(f) {
 }
 
 async function tsAppelServeur(text, files) {
-  const res = await fetch(SERVER_URL + '/travel', {
+  const res = await serverFetch(SERVER_URL + '/travel', {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ text, files }),
   });

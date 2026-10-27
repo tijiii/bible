@@ -7,7 +7,7 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { betaZodOutputFormat } from '@anthropic-ai/sdk/helpers/beta/zod';
 import * as z from 'zod/v4';
-import { handleStore } from './store.js';
+import { handleStore, teamOk, TEAM_REFUS } from './store.js';
 
 const MAX_BODY_BYTES = 8 * 1024 * 1024;
 const IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
@@ -339,8 +339,8 @@ function corsHeaders(origin, env) {
   const ok = allowed.includes(origin) || allowed.includes('*');
   return {
     'Access-Control-Allow-Origin': ok ? origin : allowed[0],
-    'Access-Control-Allow-Methods': 'POST, OPTIONS',
-    'Access-Control-Allow-Headers': 'Content-Type',
+    'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type, X-Team-Code',
     'Vary': 'Origin',
     ok,
   };
@@ -437,6 +437,8 @@ export default {
     const origin = request.headers.get('Origin') || '';
     const cors = corsHeaders(origin, env);
     if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers: (({ ok, ...h }) => h)(cors) });
+    // Ajout rapide, travel sheets, rétroplanning, logos, liens Maps : réservés à l'équipe
+    if (!teamOk(request, env, url)) return json(TEAM_REFUS, 401, cors);
     if (url.pathname === '/maps' && request.method === 'GET') {
       if (!cors.ok) return json({ error: 'Origine non autorisée' }, 403, cors);
       return json(await resolveMapsLink(url.searchParams.get('url') || ''), 200, cors);

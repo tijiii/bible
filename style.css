@@ -1011,3 +1011,7 @@ body.doc-vue-ouvert > *:not(#doc-vue) { display:none !important; }
   .list-item .btn-del-inline { order:2; }
   .list-item-sub, .list-item-mail { order:3; flex:1 1 100%; margin-right:0; overflow-wrap:anywhere; }
 }
+
+/* Code de l'équipe : au-dessus de tout */
+#team-code-bg { z-index:2000; }
+.team-code-modal { max-width:420px; }
