@@ -199,6 +199,20 @@ function fixTalentIds() {
   });
 }
 
+// Redessiner un chapitre remplace aussi son champ de recherche : on lui rend le
+// focus, sinon seule la première lettre tapée est prise
+function setMainHtml(main, html) {
+  const f = document.activeElement;
+  const enRecherche = !!(f && f.closest && f.closest('#main-content .search-wrap'));
+  const pos = enRecherche ? f.selectionStart : null;
+  main.innerHTML = html;
+  if (!enRecherche) return;
+  const champ = main.querySelector('.search-wrap input');
+  if (!champ) return;
+  champ.focus();
+  try { champ.setSelectionRange(pos, pos); } catch (e) {}
+}
+
 function render() {
   fixTalentIds();
   updateCounts();
@@ -474,7 +488,7 @@ function renderTalents(main) {
     });
     html += `</div>`;
   }
-  main.innerHTML = html;
+  setMainHtml(main, html);
 }
 
 function getCatBg(cats) {
@@ -518,7 +532,7 @@ function renderClubs(main) {
     </div>`;
   });
   html += `</div>`;
-  main.innerHTML = html;
+  setMainHtml(main, html);
 }
 
 // ── LIEUX (scouting) ──────────────────────────────────────────────────────────
@@ -1550,7 +1564,7 @@ function renderChapitre(main) {
     });
     html += `</div>`;
   }
-  main.innerHTML = html;
+  setMainHtml(main, html);
 }
 
 function itemDetailHtml(it) {
@@ -1682,9 +1696,9 @@ function renderSettings(main) {
     <div class="settings-section">
       <div class="settings-title">SPORTS / SPÉCIALITÉS (${db.sports.length})</div>
       <div class="settings-list">
-        ${db.sports.map(s => `<div class="settings-item">
+        ${db.sports.map((s, i) => `<div class="settings-item">
           <span>${esc(s)}</span>
-          <button onclick="delSport('${esc(s)}')" title="Supprimer">✕</button>
+          <button onclick="delSport(${i})" title="Supprimer">✕</button>
         </div>`).join('')}
       </div>
       <div class="settings-add">
@@ -1778,8 +1792,9 @@ function addSport() {
   renderSettings(document.getElementById('main-content'));
 }
 
-function delSport(val) {
-  if (!confirm(`Supprimer le sport "${val}" ?`)) return;
+function delSport(i) {
+  const val = db.sports[i];
+  if (val === undefined || !confirm(`Supprimer le sport "${val}" ?`)) return;
   db.sports = db.sports.filter(s => s !== val);
   saveDb();
   renderSettings(document.getElementById('main-content'));
