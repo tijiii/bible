@@ -651,7 +651,7 @@ body.doc-vue-ouvert > *:not(#doc-vue) { display:none !important; }
 @media print { .doc-vue-barre { display:none !important; } }
 
 /* ── PRODUCTION (projets.js) ── */
-.pj-modes { display:flex; border:1px solid var(--border); }
+.pj-modes { display:flex; flex-wrap:wrap; border:1px solid var(--border); }
 .pj-modes button { background:#fff; border:none; border-left:1px solid var(--border); padding:7px 12px; font-family:var(--serif); font-size:13px; letter-spacing:.03em; color:var(--muted); cursor:pointer; }
 .pj-modes button:first-child { border-left:none; }
 .pj-modes button.on { background:#111; color:#fff; }
@@ -732,7 +732,7 @@ body.doc-vue-ouvert > *:not(#doc-vue) { display:none !important; }
 .pj-etape-ajout { background:transparent; border:none; border-bottom:1px dashed var(--border2); padding:3px 2px; font-family:var(--serif); font-size:13px; outline:none; min-width:190px; color:var(--text); }
 .pj-aff { border-top:1px solid var(--border); padding:12px 0; }
 .pj-aff:first-child { border-top:none; padding-top:2px; }
-.pj-aff.conflit { background:#fdf3f2; padding-left:8px; padding-right:8px; }
+.pj-aff.conflit { background:#fdf3f2; padding-left:28px; padding-right:8px; }
 .pj-aff-ligne { display:grid; grid-template-columns:minmax(0,1.4fr) minmax(0,1fr) 24px; gap:10px; align-items:end; }
 .pj-aff-ligne .ts-x { margin-bottom:6px; }
 .pj-aff-quand { display:flex; align-items:center; gap:6px 14px; flex-wrap:wrap; margin-top:8px; font-size:14px; }
@@ -1002,3 +1002,12 @@ body.doc-vue-ouvert > *:not(#doc-vue) { display:none !important; }
 .fs-opt.sel { background:var(--bg3); font-weight:600; }
 .fs-vide { font-family:var(--serif); font-size:14px; color:var(--muted); padding:8px; }
 .check-new button { text-transform:none; }
+
+/* Téléphone : les agences passent sur deux lignes au lieu de déborder de l'écran */
+@media (max-width:640px) {
+  .list-item { flex-wrap:wrap; gap:4px 8px; }
+  .list-item-name { order:0; }
+  .list-item .btn-edit-inline { order:1; }
+  .list-item .btn-del-inline { order:2; }
+  .list-item-sub, .list-item-mail { order:3; flex:1 1 100%; margin-right:0; overflow-wrap:anywhere; }
+}

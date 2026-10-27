@@ -402,9 +402,9 @@ async function runLieuxExport() {
   };
   // Une description en cours de frappe est enregistrée avant de créer le PDF
   document.querySelectorAll('.export-reglage textarea').forEach(ta => exportDescClient(Number(ta.id.replace('ex-desc-', '')), ta.value));
-  if (opts.meteo && !opts.du) { alert('Choisis les dates pour avoir la météo, ou décoche « Météo de la période ».'); return; }
+  // Sans dates, le PDF se fait simplement sans la météo
   if (opts.du && opts.au < opts.du) { alert('La date de fin est avant la date de début.'); return; }
-  if (opts.du && ajoutJours(opts.du, 31) < opts.au) { alert('Choisis une période d\'un mois au plus.'); return; }
+  if (opts.meteo && opts.du && ajoutJours(opts.du, 31) < opts.au) { alert('La météo se calcule sur un mois au plus : raccourcis la période, ou décoche « Météo de la période ».'); return; }
   const lieux = lieuxList().filter(l => exportSel.has(l.id));
   if (!lieux.length) { alert('Coche au moins un lieu.'); return; }
   exportForm = opts;

@@ -651,6 +651,9 @@ document.addEventListener('pointerup', () => {
 function pjRedessiner() {
   if (pjEnDessin) return;
   if (pjAppui) { pjAttente = true; return; }
+  // Champ quitté au clavier (Tab, « suivant » du téléphone) : on attend que le
+  // focus soit arrivé sur le champ suivant, sinon le redessin le lui retire
+  if (window.event && window.event.type === 'change') { setTimeout(pjRedessiner, 0); return; }
   if (!enProjets()) return;
   const y = window.scrollY;
   const f = document.activeElement;
