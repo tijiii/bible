@@ -34,6 +34,7 @@ function tdVueRegler(k, v) {
   pjRedessinerListe();
 }
 let tdFaitesOuvert = false;  // tâches faites d'un projet dépliées
+let tdOuvert = false;        // bloc TO-DO d'un projet déplié
 let tdBandeauFerme = false;  // bandeau « pour toi » fermé pour cette visite
 
 // ── Qui est sur cet appareil ─────────────────────────────────────────────────
@@ -305,8 +306,11 @@ function tdProjetHtml(p) {
   const barre = toutes.length ? pjBFBarre(`${pjBFSel('tdQui', quiF, [['', 'TOUT LE MONDE']].concat(gens.map(([k, n]) => [k, n.toUpperCase()])), 'Personne')}
     ${pjBFSel('tdStatut', stF, [['', 'À FAIRE + EN COURS'], ['afaire', 'À FAIRE'], ['encours', 'EN COURS'], ['fait', 'TERMINÉES'], ['toutes', 'TOUTES']], 'Statut')}
     ${pjBFSel('tdTri', tri, TD_P_TRIS, 'Ordre')}`, quiF || stF ? 'tdQui,tdStatut' : '') : '';
-  return `<section class="ts-bloc pj-taches">
-    <h3>TO-DO <small class="pj-muted">${nbOuvertes ? `· ${nbOuvertes} à faire` : ''}</small>${barre}</h3>
+  // Repliable comme l'équipe : fermé dès qu'il y a des tâches, le résumé donne le compte
+  const ouvert = tdOuvert || !toutes.length;
+  const nbRetard = toutes.filter(t => tdEtat(t) === 'retard').length;
+  return `<details class="ts-bloc pj-repli pj-taches"${ouvert ? ' open' : ''} ontoggle="if(this.open!==${ouvert})tdOuvert=this.open">
+    <summary><h3>TO-DO <small class="pj-muted">${nbOuvertes ? `· ${nbOuvertes} à faire` : ''}</small>${nbRetard ? ` <span class="pj-warn">⚠ ${nbRetard} en retard</span>` : ''}${barre}</h3></summary>
     <datalist id="td-noms">${tdNoms(p).map(n => `<option value="${esc(n)}"></option>`).join('')}</datalist>
     <div class="td-liste">${ouvertes.map(t => tdLigneHtml(t)).join('') || (l.length !== toutes.length || stF ? '<p class="field-hint">Aucune tâche avec ces filtres.</p>' : '<p class="field-hint">Rien à faire pour le moment. Ajoute une tâche, attribue-la à quelqu\'un : elle apparaîtra chez lui. La date est facultative : sans date, choisis un rappel tous les jours ou tous les 2 jours.</p>')}</div>
     <div class="ts-add-row"><button type="button" class="btn-upload" onclick="tdAjouter()">+ TÂCHE</button></div>
@@ -314,7 +318,7 @@ function tdProjetHtml(p) {
       <summary><span class="pj-sous-titre">TERMINÉES</span> <small class="pj-muted">${faites.length}</small></summary>
       <div class="td-liste">${faites.map(t => tdLigneHtml(t)).join('')}</div>
     </details>` : ''}
-  </section>`;
+  </details>`;
 }
 
 function tdLigneHtml(t) {
@@ -354,6 +358,7 @@ function tdAjouter() {
   const st = pjBF(p).tdStatut === 'encours' ? 'encours' : 'afaire';
   if (pjBF(p).tdStatut === 'fait') delete pjBF(p).tdStatut;
   tdTaches(p).push({ id: uid(), texte: '', qui, echeance: '', rappel: 'j2', urgence: '2', statut: st, fait: false, par: tdMoi(), le: pjAujourdhui() });
+  tdOuvert = true;
   pjChange(true);
   const champs = document.querySelectorAll('.pj-taches .td-texte input');
   if (champs.length) champs[champs.length - 1].focus();

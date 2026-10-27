@@ -352,7 +352,7 @@ function pjMien(c, p) { return c.x.p.id === p.id ? c.x : c.y; }
 function pjGo(vue, id) {
   if (vue === 'ts' && pjVue !== 'ts') pjTsDepuis = pjVue === 'projet' && pjCur() ? pjId : null;
   pjVue = vue;
-  if (id !== undefined && id !== pjId) { pjId = id; pjMois = ''; pjRetroOuvert = false; pjEtapesOuvert = false; pjEtSel = new Set(); pjEqSel = new Set(); pjEquipeOuvert = false; tdFaitesOuvert = false; pjAffOuvert = new Set(); if (pjRetro && !pjRetro.enCours) pjRetro = null; }
+  if (id !== undefined && id !== pjId) { pjId = id; pjMois = ''; pjRetroOuvert = false; pjEtapesOuvert = false; pjEtSel = new Set(); pjEqSel = new Set(); pjEquipeOuvert = false; tdOuvert = false; tdFaitesOuvert = false; pjAffOuvert = new Set(); if (pjRetro && !pjRetro.enCours) pjRetro = null; }
   buildTabs();
   render();
   window.scrollTo(0, 0);
