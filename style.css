@@ -757,7 +757,7 @@ body.doc-vue-ouvert > *:not(#doc-vue) { display:none !important; }
   .pj-grid-infos { grid-template-columns:1fr 1fr; }
   .pj-jour { min-height:52px; padding:2px; }
   .pj-jour .pj-chip { font-size:10px; padding:0 2px; }
-  .pj-etape { grid-template-columns:1fr 1fr; padding-right:30px; position:relative; }
+  .pj-etape { grid-template-columns:minmax(0,1fr) minmax(0,1fr); padding-right:30px; position:relative; }
   .pj-etape .ts-x { position:absolute; top:8px; right:0; }
   .pj-etape > .field:nth-child(3) { grid-column:1 / -1; }
   .pj-aff-quand .pj-mini input { width:auto; }
@@ -945,6 +945,24 @@ body.doc-vue-ouvert > *:not(#doc-vue) { display:none !important; }
 .pj-rp-groupe th.pj-rp-phase, .pj-rp-groupe td { background:#a5a5a5 !important; color:#fff; letter-spacing:.08em; font-weight:500; height:22px; }
 .pj-rp-groupe td.we { background:#bfbfbf !important; }
 .pj-chip-rp { background:var(--e); color:var(--t); }
+.pj-chap-btn { background:none; border:none; color:inherit; cursor:pointer; font:inherit; font-size:12px; padding:0 6px 0 0; }
+.pj-chap-btn small { font-size:10px; opacity:.75; margin-left:2px; }
+.pj-rp-sous th.pj-rp-phase { padding-left:28px; }
+.pj-rp-sous th.pj-rp-phase > a { font-size:11.5px; }
+.pj-chap { margin:-4px 0 8px 14px; }
+.pj-chap-tete { background:none; border:none; cursor:pointer; font-family:var(--serif); font-size:13px; color:var(--muted); padding:2px 0; }
+.pj-chap-tete:hover { color:var(--text); }
+.pj-chap-tete small { font-size:12px; }
+.pj-etapes-sous { border-left:1px dashed var(--border2); padding:4px 0 6px 10px; }
+.pj-etapes-sous > .export-lien { margin:2px 0 0 10px; }
+.pj-etape-dans { margin-left:auto; font-size:12.5px; color:var(--muted); display:inline-flex; align-items:center; gap:6px; }
+.pj-etape-dans select { font-family:var(--serif); font-size:12.5px; border:none; border-bottom:1px dashed var(--border2); background:transparent; padding:2px 0; max-width:180px; }
+.pj-aj-dans { margin-right:4px; }
+@media (max-width:640px) {
+  .pj-chap { margin-left:0; }
+  .pj-etapes-sous { padding-left:6px; }
+  .pj-etape-dans { margin-left:0; }
+}
 .pj-chip-rp .pj-piste-pt { margin-right:4px; box-shadow:0 0 0 1px #fff; }
 .pj-retro-gens { grid-column:1 / -1; display:flex; flex-wrap:wrap; gap:6px; padding:2px 0 4px 26px; }
 .pj-retro-pers { display:inline-flex; align-items:center; gap:4px; font-size:12.5px; padding:2px 8px 2px 4px; border:1px solid var(--border2); background:#fff; cursor:pointer; }

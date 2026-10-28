@@ -16,6 +16,7 @@ let pjMois = '';             // mois affiché dans le calendrier du projet ('AAA
 let pjRetro = null;          // import de rétroplanning en cours : { pid, fichier, enCours, msg, etapes }
 let pjRetroOuvert = false;   // bloc d'import du rétroplanning déplié
 let pjEtapesOuvert = false;  // liste des étapes (à modifier) dépliée
+let pjChapOuverts = new Set(); // étapes « chapitres » (V1, Musique…) dépliées sur leurs sous-étapes
 let pjEquipeOuvert = false;  // bloc ÉQUIPE déplié
 let pjBlocFiltres = {};      // filtres et tris des blocs d'un projet (étapes, to-do, équipe, options), par projet
 let pjModifie = null;        // dernier projet modifié (la synchro le garde tant qu'il n'est pas envoyé)
@@ -148,7 +149,7 @@ function pjEtapeCouleur(p, e) {
   const cat = pjEtapeCat(e), piste = pjPisteDe(e);
   const cle = piste === 'photo' && /selection|select/.test(pjNorm(pjEtapeNom(e))) ? 'photo:selection' : piste === 'photo' && PJ_TEINTES['photo:' + cat] ? 'photo:' + cat : cat;
   const l = PJ_TEINTES[cle] || PJ_TEINTES.autre;
-  const memes = (p ? pjEtapesDatees(p) : []).filter(x => pjPisteDe(x) === piste && pjEtapeCat(x) === cat && (cle !== 'photo:selection') === !/selection|select/.test(pjNorm(pjEtapeNom(x))));
+  const memes = (p ? pjEtapesDatees(p) : []).filter(x => !x.parent === !e.parent && pjPisteDe(x) === piste && pjEtapeCat(x) === cat && (cle !== 'photo:selection') === !/selection|select/.test(pjNorm(pjEtapeNom(x))));
   const i = Math.max(0, memes.findIndex(x => x.id === e.id));
   return l[Math.min(i, l.length - 1)];
 }
@@ -161,6 +162,34 @@ function pjTexteSur(hex) {
 function pjEtapesDatees(p) {
   return (p.etapes || []).filter(e => pjEtapeDates(e)).sort((a, b) => a.du.localeCompare(b.du));
 }
+// Sous-étapes : une étape peut être rangée dans une autre (« dans la V1 »),
+// qui devient un chapitre qu'on déplie. Un seul niveau.
+function pjParentDe(p, e) { return e.parent ? (p.etapes || []).find(x => x.id === e.parent && !x.parent) || null : null; }
+function pjSousEtapes(p, e) { return (p.etapes || []).filter(x => x.parent === e.id); }
+// Range les étapes d'une liste en chapitres : [[étape, [ses sous-étapes de la liste]], …]
+// Une sous-étape dont le chapitre n'est pas dans la liste (filtré) reste seule.
+function pjChapitres(l) {
+  const ids = new Set(l.map(e => e.id));
+  return l.filter(e => !e.parent || !ids.has(e.parent)).map(e => [e, l.filter(x => x.parent === e.id && x !== e)]);
+}
+function pjChapBasculer(id) {
+  if (pjChapOuverts.has(id)) pjChapOuverts.delete(id); else pjChapOuverts.add(id);
+  pjRedessiner();
+}
+// Change le chapitre d'une étape (vide : étape principale)
+function pjEtapeDans(eid, v) {
+  const p = pjCur();
+  const e = p && (p.etapes || []).find(x => x.id === eid);
+  if (!e) return;
+  const par = (p.etapes || []).find(x => String(x.id) === String(v) && x.id !== eid && !x.parent);
+  if (par) { e.parent = par.id; pjChapOuverts.add(par.id); } else delete e.parent;
+  pjChange(true);
+}
+// Les chapitres possibles pour une étape : les étapes principales, sauf elle
+function pjChoixChapitres(p, e) {
+  return (p.etapes || []).filter(x => !x.parent && (!e || x.id !== e.id)).sort((a, b) => (a.du || '9').localeCompare(b.du || '9'));
+}
+
 function pjSpan(p) {
   const et = pjEtapesDatees(p);
   if (!et.length) return null;
@@ -507,7 +536,7 @@ function pjPlanningHtml(list) {
         ${mois.map(m => { const [y, mm] = m.split('-').map(Number); return `<div class="pj-plan-mois" style="left:${pos(m + '-01')}%">${PJ_MOIS[mm - 1]} ${y}</div>`; }).join('')}
       </div></div>
       ${list.map(p => {
-        const barres = pjEtapesDatees(p).map(e => {
+        const barres = pjEtapesDatees(p).filter(e => !pjParentDe(p, e)).map(e => {
           const d = pjEtapeDates(e);
           if (d.au < debut || d.du > fin) return '';
           const a = d.du < debut ? debut : d.du, b = d.au > fin ? fin : d.au;
@@ -851,20 +880,23 @@ function pjFriseHtml(p, mode) {
   const mois = [];
   jours.forEach((d, i) => { const k = d.slice(0, 7); if (!mois.length || mois[mois.length - 1].k !== k) mois.push({ k, n: 1 }); else mois[mois.length - 1].n++; });
   const jj = d => { const x = pjDate(d); return String(x.getDate()).padStart(2, '0') + '/' + String(x.getMonth() + 1).padStart(2, '0'); };
-  const ligne = e => {
+  const ligne = (e, sous) => {
     const x = pjEtapeDates(e);
     const coul = pjEtapeCouleur(p, e), txt = pjTexteSur(coul);
     const qui = gens.filter(a => pjSurEtape(p, a, e));
     const nb = pjJours(x.du, x.au) + 1;
     const titre = esc(pjEtapeNom(e) + ' · ' + pjPeriodeTexte(x.du, x.au) + (qui.length ? ' · ' + qui.map(pjNomPersonne).join(', ') : ''));
-    return `<tr style="--e:${coul};--t:${txt}">
-      <th class="pj-rp-phase"><a href="#" onclick="event.preventDefault();pjVoirEtape(${e.id})">${esc(pjEtapeNom(e).toUpperCase())}</a>${qui.length ? `<span class="pj-rp-gens">${qui.map(a => `<a href="#" onclick="event.preventDefault();pjVoirPersonne(${a.id})" title="${esc(a.role || '')}">${esc(pjNomPersonne(a))}</a>`).join(' · ')}</span>` : ''}</th>
+    const chap = sous && sous.length ? `<button type="button" class="pj-chap-btn" title="${pjChapOuverts.has(e.id) ? 'Replier' : 'Déplier'} les étapes de ${esc(pjEtapeNom(e))}" onclick="pjChapBasculer(${e.id})">${pjChapOuverts.has(e.id) ? '▾' : '▸'}<small>${sous.length}</small></button>` : '';
+    return `<tr class="${sous ? '' : 'pj-rp-sous'}" style="--e:${coul};--t:${txt}">
+      <th class="pj-rp-phase">${chap}<a href="#" onclick="event.preventDefault();pjVoirEtape(${e.id})">${esc(pjEtapeNom(e).toUpperCase())}</a>${qui.length ? `<span class="pj-rp-gens">${qui.map(a => `<a href="#" onclick="event.preventDefault();pjVoirPersonne(${a.id})" title="${esc(a.role || '')}">${esc(pjNomPersonne(a))}</a>`).join(' · ')}</span>` : ''}</th>
       <td class="pj-rp-d pj-rp-col">${jj(x.du)}</td><td class="pj-rp-d pj-rp-col">${jj(x.au)}</td><td class="pj-rp-n pj-rp-col">${nb}</td>
       ${jours.map(d => d >= x.du && d <= x.au ? `<td class="pj-rp-j on${jcls(d)}" title="${titre}"></td>` : `<td class="pj-rp-j${jcls(d)}"></td>`).join('')}
     </tr>`;
   };
   const tri = (l) => l.slice().sort((a, b) => a.du.localeCompare(b.du) || pjEtapeDates(a).au.localeCompare(pjEtapeDates(b).au));
-  const groupes = [['', 'COMMUN'], ['video', 'VIDÉO'], ['photo', 'PHOTO']].map(([k, lab]) => [lab, tri(et.filter(e => pjPisteDe(e) === k))]).filter(g => g[1].length);
+  // Les sous-étapes suivent leur chapitre, quelle que soit leur partie
+  const chapitres = pjChapitres(tri(et));
+  const groupes = [['', 'COMMUN'], ['video', 'VIDÉO'], ['photo', 'PHOTO']].map(([k, lab]) => [lab, chapitres.filter(([e]) => pjPisteDe(e) === k)]).filter(g => g[1].length);
   const titres = groupes.length > 1 || (groupes[0] && groupes[0][0] !== 'COMMUN');
   const vide = jours.map(d => `<td class="pj-rp-j${jcls(d)}"></td>`).join('');
   return filtres + `<div class="pj-rp pj-rp-${mode}"><table>
@@ -873,7 +905,7 @@ function pjFriseHtml(p, mode) {
       <tr class="pj-rp-dates"><th class="pj-rp-phase" rowspan="2">PHASE</th><th class="pj-rp-col" rowspan="2">DÉBUT</th><th class="pj-rp-col" rowspan="2">FIN</th><th class="pj-rp-col" rowspan="2">JOURS</th>${jours.map(d => `<th class="${jcls(d)}">${pjDate(d).getDate()}</th>`).join('')}</tr>
       <tr class="pj-rp-lettres">${jours.map(d => `<th class="${jcls(d)}">${'DLMMJVS'[pjDate(d).getDay()]}</th>`).join('')}</tr>
     </thead>
-    <tbody>${groupes.map(([lab, l]) => (titres ? `<tr class="pj-rp-groupe"><th class="pj-rp-phase">${lab}</th><td class="pj-rp-col" colspan="3"></td>${vide}</tr>` : '') + l.map(ligne).join('')).join('')}</tbody>
+    <tbody>${groupes.map(([lab, l]) => (titres ? `<tr class="pj-rp-groupe"><th class="pj-rp-phase">${lab}</th><td class="pj-rp-col" colspan="3"></td>${vide}</tr>` : '') + l.map(([e, sous]) => ligne(e, sous) + (pjChapOuverts.has(e.id) ? sous.map(x => ligne(x, null)).join('') : '')).join('')).join('')}</tbody>
   </table></div>`;
 }
 // Ouvre une étape dans la liste des étapes pour la modifier
@@ -899,15 +931,29 @@ function pjEtapesBlocHtml(p) {
   const toutes = tout.filter(e => pjEtapeVisible(p, e));
   const filtre = toutes.length !== tout.length;
   const ouvert = pjEtapesOuvert || !tout.length;
+  // Les sous-étapes sont rangées sous leur chapitre (V1, Musique…), qu'on déplie
+  const chapitres = pjChapitres(toutes);
   const groupes = [['', 'COMMUN']].concat(PJ_PISTES.map(x => [x[0], x[1].toUpperCase()]))
-    .map(([k, lab]) => [lab, toutes.filter(e => pjPisteDe(e) === k)]).filter(g => g[1].length);
+    .map(([k, lab]) => [lab, chapitres.filter(([e]) => pjPisteDe(e) === k)]).filter(g => g[1].length);
   const avecTitres = groupes.length > 1 || (groupes[0] && groupes[0][0] !== 'COMMUN');
+  const ids = l => l.flatMap(([e, sous]) => [e.id].concat(sous.map(x => x.id)));
+  const chapHtml = ([e, sous]) => {
+    const n = pjSousEtapes(p, e).length;
+    if (!n) return pjEtapeHtml(e);
+    const ouv = pjChapOuverts.has(e.id);
+    return pjEtapeHtml(e) + `<div class="pj-chap${ouv ? ' ouvert' : ''}">
+      <button type="button" class="pj-chap-tete" onclick="pjChapBasculer(${e.id})">${ouv ? '▾' : '▸'} ${n} étape${n > 1 ? 's' : ''} dans ${esc(pjEtapeNom(e))}${sous.length < n ? ` <small>(${sous.length} avec ces filtres)</small>` : ''}</button>
+      ${ouv ? `<div class="pj-etapes-sous">${sous.map(x => pjEtapeHtml(x)).join('')}<button type="button" class="export-lien" onclick="pjAjouterEtape('', ${e.id})">+ étape dans ${esc(pjEtapeNom(e))}</button></div>` : ''}
+    </div>`;
+  };
+  const chaps = pjChoixChapitres(p, null);
+  const dans = chaps.some(x => String(x.id) === String(pjBF(p).ajDans)) ? String(pjBF(p).ajDans) : '';
   return `<details class="pj-sous-bloc"${ouvert ? ' open' : ''} ontoggle="if(this.open!==${ouvert})pjEtapesOuvert=this.open">
     <summary><span class="pj-sous-titre">ÉTAPES</span> <small class="pj-muted">${tout.length ? `${filtre ? toutes.length + ' sur ' + tout.length : tout.length}${pjEtFiltresHtml(p) ? '' : ' · modifier les dates, ajouter une étape'}` : 'aucune pour le moment'}</small>${pjEtFiltresHtml(p)}</summary>
     <datalist id="pj-gens-etapes">${pjEtapesChoixHtml(p)}</datalist>
     ${pjEtSelBarreHtml(p, toutes)}
-    <div class="pj-etapes">${groupes.map(([lab, l]) => (avecTitres ? `<div class="pj-etapes-groupe">${lab}${toutes.length > l.length && l.length > 1 ? ` <button type="button" class="export-lien" onclick="pjEtSelTout('${l.map(e => e.id).join(',')}')">${l.every(e => pjEtSel.has(e.id)) ? 'désélectionner' : 'sélectionner'} ces étapes</button>` : ''}</div>` : '') + l.map(e => pjEtapeHtml(e)).join('')).join('') || (filtre ? '<p class="field-hint">Aucune étape avec ces filtres.</p>' : '') || '<p class="field-hint">Aucune étape. Importe le rétroplanning ci-dessous, ou ajoute la prépa, le tournage, la post-prod… avec leurs dates.</p>'}</div>
-    <div class="ts-add-row">${PJ_ETAPES.map(t => `<button type="button" class="btn-upload" onclick="pjAjouterEtape('${t[0]}')">+ ${t[1].toUpperCase()}</button>`).join('')}</div>
+    <div class="pj-etapes">${groupes.map(([lab, l]) => (avecTitres ? `<div class="pj-etapes-groupe">${lab}${toutes.length > l.length && l.length > 1 ? ` <button type="button" class="export-lien" onclick="pjEtSelTout('${ids(l).join(',')}')">${ids(l).every(id => pjEtSel.has(id)) ? 'désélectionner' : 'sélectionner'} ces étapes</button>` : ''}</div>` : '') + l.map(chapHtml).join('')).join('') || (filtre ? '<p class="field-hint">Aucune étape avec ces filtres.</p>' : '') || '<p class="field-hint">Aucune étape. Importe le rétroplanning ci-dessous, ou ajoute la prépa, le tournage, la post-prod… avec leurs dates.</p>'}</div>
+    <div class="ts-add-row">${chaps.length ? `<select class="filter-sel pj-aj-dans" title="Où ranger la nouvelle étape" onchange="pjBFRegler('ajDans', this.value)"><option value="">NOUVELLE ÉTAPE</option>${chaps.map(x => `<option value="${x.id}"${dans === String(x.id) ? ' selected' : ''}>DANS ${esc(pjEtapeNom(x).toUpperCase())}</option>`).join('')}</select>` : ''}${PJ_ETAPES.map(t => `<button type="button" class="btn-upload" onclick="pjAjouterEtape('${t[0]}', ${dans || 'null'})">+ ${t[1].toUpperCase()}</button>`).join('')}</div>
   </details>`;
 }
 
@@ -1295,14 +1341,22 @@ function pjEtapeHtml(e) {
     ${pjField('DU', 'du', e.du, { ...o, type: 'date' })}
     ${pjField('AU', 'au', e.au, { ...o, type: 'date' })}
     <button type="button" class="ts-x" title="Retirer" onclick="pjRetirer('etapes', ${e.id})">✕</button>
-    ${pjEtapeGensHtml(e)}
+    ${pjEtapeGensHtml(e, pjEtapeDansHtml(e))}
     <input type="checkbox" class="pj-etape-sel" title="Sélectionner pour y mettre quelqu'un avec d'autres étapes"${pjEtSel.has(e.id) ? ' checked' : ''} onchange="pjEtSelBasculer(${e.id}, this.checked)">
   </div>`;
 }
 
 // Les personnes d'une étape, à ajouter ou retirer directement depuis l'étape
 // (c'est la même chose que cocher l'étape dans l'équipe)
-function pjEtapeGensHtml(e) {
+// Ranger une étape dans un chapitre (pas une étape qui a déjà les siennes)
+function pjEtapeDansHtml(e) {
+  const p = pjCur();
+  if (!p || pjSousEtapes(p, e).length) return '';
+  const chaps = pjChoixChapitres(p, e);
+  if (!chaps.length) return '';
+  return `<label class="pj-etape-dans" title="Ranger cette étape dans une autre (V1, Musique…)">dans <select onchange="pjEtapeDans(${e.id}, this.value)"><option value="">— étape principale —</option>${chaps.map(x => `<option value="${x.id}"${e.parent === x.id ? ' selected' : ''}>${esc(pjEtapeNom(x))}</option>`).join('')}</select></label>`;
+}
+function pjEtapeGensHtml(e, dans) {
   const p = pjCur();
   const eq = (p && p.equipe || []).filter(a => pjNomPersonne(a));
   const sur = eq.filter(a => (a.etapes || []).includes(e.id));
@@ -1312,6 +1366,7 @@ function pjEtapeGensHtml(e) {
     ${sur.map(a => chip(a, false)).join('')}
     ${toutLeProjet.map(a => chip(a, true)).join('')}
     <input class="pj-etape-ajout" list="pj-gens-etapes" placeholder="+ personne sur cette étape" onchange="pjEtapeAjouterPersonne(${e.id}, this.value)" onkeydown="if(event.key==='Enter')this.blur()">
+    ${dans || ''}
   </div>`;
 }
 
@@ -1525,11 +1580,19 @@ function pjDatesLibres(id, on) {
   pjChange(true);
 }
 
-function pjAjouterEtape(type) {
+function pjAjouterEtape(type, parent) {
   const p = pjCur();
   if (!p) return;
   if (!Array.isArray(p.etapes)) p.etapes = [];
-  const e = { id: uid(), type, nom: '', du: '', au: '' };
+  const par = parent ? (p.etapes || []).find(x => x.id === parent && !x.parent) : null;
+  const e = { id: uid(), type: type || (par ? par.type : 'autre'), nom: '', du: '', au: '' };
+  // Rangée dans un chapitre (« dans la V1 ») : même partie, et on le déplie
+  if (par) {
+    e.parent = par.id;
+    if (typeof par.piste === 'string' || pjPisteDe(par)) e.piste = pjPisteDe(par);
+    if (par.post) e.post = true;
+    pjChapOuverts.add(par.id);
+  }
   // Ajoutée depuis le calendrier POST-PROD : elle y reste, même en « Autre »
   if (pjBF(p).calVue === 'postprod') e.post = true;
   p.etapes.push(e);
@@ -1539,9 +1602,8 @@ function pjAjouterEtape(type) {
   if (pjCalCats(p).length && !pjCalCats(p).includes(pjEtapeCat(e))) delete pjBF(p).calCats;
   pjEtapesOuvert = true;
   pjChange(true);
-  const champs = document.querySelectorAll('.pj-etape [data-k="du"]');
-  const dernier = [...champs].find(c => !c.value);
-  if (dernier) dernier.focus();
+  const champ = document.querySelector('#pj-et-' + e.id + ' [data-k="du"]');
+  if (champ) champ.focus();
 }
 
 function pjAjouterPersonne() {
@@ -1561,6 +1623,8 @@ function pjRetirer(liste, id) {
   p[liste] = (p[liste] || []).filter(x => x.id !== id);
   // Une étape retirée n'est plus cochée pour personne
   if (liste === 'etapes') (p.equipe || []).forEach(a => { if (a.etapes) a.etapes = a.etapes.filter(x => x !== id); });
+  // Un chapitre retiré : ses sous-étapes redeviennent des étapes principales
+  if (liste === 'etapes') p.etapes.forEach(e => { if (e.parent === id) delete e.parent; });
   pjChange(true);
 }
 
