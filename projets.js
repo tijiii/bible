@@ -1529,7 +1529,10 @@ function pjAjouterEtape(type) {
   const p = pjCur();
   if (!p) return;
   if (!Array.isArray(p.etapes)) p.etapes = [];
-  p.etapes.push({ id: uid(), type, nom: '', du: '', au: '' });
+  const e = { id: uid(), type, nom: '', du: '', au: '' };
+  p.etapes.push(e);
+  // Un filtre (vidéo, photo, type, personne) cacherait la nouvelle étape : on l'enlève pour la remplir
+  if (!pjEtapeVisible(p, e)) ['etType', 'etPiste', 'etQui'].forEach(k => delete pjBF(p)[k]);
   pjEtapesOuvert = true;
   pjChange(true);
   const champs = document.querySelectorAll('.pj-etape [data-k="du"]');
