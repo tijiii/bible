@@ -823,7 +823,7 @@ function pjCalCatBasculer(k) {
 }
 function pjFriseHtml(p, mode) {
   const f = pjEtF(p);
-  const toutes = pjEtapesDatees(p).filter(e => mode !== 'postprod' || PJ_CATS_POST.includes(pjEtapeCat(e)));
+  const toutes = pjEtapesDatees(p).filter(e => mode !== 'postprod' || e.post || PJ_CATS_POST.includes(pjEtapeCat(e)));
   const cats = pjCalCats(p);
   const presentes = PJ_CATS.filter(c => toutes.some(e => pjEtapeCat(e) === c[0]));
   // Le filtre de type de la liste des étapes ne s'applique pas ici : les catégories le remplacent
@@ -1530,9 +1530,13 @@ function pjAjouterEtape(type) {
   if (!p) return;
   if (!Array.isArray(p.etapes)) p.etapes = [];
   const e = { id: uid(), type, nom: '', du: '', au: '' };
+  // Ajoutée depuis le calendrier POST-PROD : elle y reste, même en « Autre »
+  if (pjBF(p).calVue === 'postprod') e.post = true;
   p.etapes.push(e);
   // Un filtre (vidéo, photo, type, personne) cacherait la nouvelle étape : on l'enlève pour la remplir
   if (!pjEtapeVisible(p, e)) ['etType', 'etPiste', 'etQui'].forEach(k => delete pjBF(p)[k]);
+  // Pareil pour les catégories cochées du calendrier
+  if (pjCalCats(p).length && !pjCalCats(p).includes(pjEtapeCat(e))) delete pjBF(p).calCats;
   pjEtapesOuvert = true;
   pjChange(true);
   const champs = document.querySelectorAll('.pj-etape [data-k="du"]');
