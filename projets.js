@@ -146,6 +146,9 @@ const PJ_TEINTES = {
   'photo:livraison': ['#c27ba0', '#741b47'],
 };
 function pjEtapeCouleur(p, e) {
+  // Une sous-étape prend la couleur de son chapitre
+  const par = p && pjParentDe(p, e);
+  if (par) return pjEtapeCouleur(p, par);
   const cat = pjEtapeCat(e), piste = pjPisteDe(e);
   const cle = piste === 'photo' && /selection|select/.test(pjNorm(pjEtapeNom(e))) ? 'photo:selection' : piste === 'photo' && PJ_TEINTES['photo:' + cat] ? 'photo:' + cat : cat;
   const l = PJ_TEINTES[cle] || PJ_TEINTES.autre;
@@ -172,6 +175,9 @@ function pjChapitres(l) {
   const ids = new Set(l.map(e => e.id));
   return l.filter(e => !e.parent || !ids.has(e.parent)).map(e => [e, l.filter(x => x.parent === e.id && x !== e)]);
 }
+// Une sous-étape suit son chapitre dans le calendrier (vue POST-PROD, catégories)
+function pjEtapeCatChap(p, e) { return pjEtapeCat(pjParentDe(p, e) || e); }
+function pjEtapePost(p, e) { const x = pjParentDe(p, e) || e; return !!x.post || PJ_CATS_POST.includes(pjEtapeCat(x)); }
 function pjChapBasculer(id) {
   if (pjChapOuverts.has(id)) pjChapOuverts.delete(id); else pjChapOuverts.add(id);
   pjRedessiner();
@@ -186,8 +192,11 @@ function pjEtapeDans(eid, v) {
   pjChange(true);
 }
 // Les chapitres possibles pour une étape : les étapes principales, sauf elle
+// (nommées, de la même partie : celle de l'étape, ou celle du filtre pour une nouvelle)
 function pjChoixChapitres(p, e) {
-  return (p.etapes || []).filter(x => !x.parent && (!e || x.id !== e.id)).sort((a, b) => (a.du || '9').localeCompare(b.du || '9'));
+  const f = pjEtF(p);
+  const piste = e ? pjPisteDe(e) : f.piste ? (f.piste === 'commun' ? '' : f.piste) : null;
+  return (p.etapes || []).filter(x => !x.parent && (x.nom || '').trim() && (!e || x.id !== e.id) && (piste === null || pjPisteDe(x) === piste)).sort((a, b) => (a.du || '9').localeCompare(b.du || '9'));
 }
 
 function pjSpan(p) {
@@ -852,13 +861,13 @@ function pjCalCatBasculer(k) {
 }
 function pjFriseHtml(p, mode) {
   const f = pjEtF(p);
-  const toutes = pjEtapesDatees(p).filter(e => mode !== 'postprod' || e.post || PJ_CATS_POST.includes(pjEtapeCat(e)));
+  const toutes = pjEtapesDatees(p).filter(e => mode !== 'postprod' || pjEtapePost(p, e));
   const cats = pjCalCats(p);
-  const presentes = PJ_CATS.filter(c => toutes.some(e => pjEtapeCat(e) === c[0]));
+  const presentes = PJ_CATS.filter(c => toutes.some(e => pjEtapeCatChap(p, e) === c[0]));
   // Le filtre de type de la liste des étapes ne s'applique pas ici : les catégories le remplacent
   const et = toutes.filter(e => (!f.piste || pjPisteDe(e) === (f.piste === 'commun' ? '' : f.piste))
     && (!f.qui || !(p.equipe || []).some(a => String(a.id) === f.qui) || pjSurEtape(p, (p.equipe || []).find(a => String(a.id) === f.qui), e))
-    && (!cats.length || cats.includes(pjEtapeCat(e))));
+    && (!cats.length || cats.includes(pjEtapeCatChap(p, e))));
   const pistes = PJ_PISTES.filter(x => toutes.some(e => pjPisteDe(e) === x[0]));
   const gens = (p.equipe || []).filter(a => pjNomPersonne(a));
   const filtres = `<div class="pj-frise-filtres">
@@ -881,6 +890,8 @@ function pjFriseHtml(p, mode) {
   jours.forEach((d, i) => { const k = d.slice(0, 7); if (!mois.length || mois[mois.length - 1].k !== k) mois.push({ k, n: 1 }); else mois[mois.length - 1].n++; });
   const jj = d => { const x = pjDate(d); return String(x.getDate()).padStart(2, '0') + '/' + String(x.getMonth() + 1).padStart(2, '0'); };
   const ligne = (e, sous) => {
+    // Une sous-étape pas encore datée : sa ligne, sans barre, pour la voir dans son chapitre
+    if (!pjEtapeDates(e)) return `<tr class="pj-rp-sous pj-rp-sans-date"><th class="pj-rp-phase"><a href="#" onclick="event.preventDefault();pjVoirEtape(${e.id})">${esc(pjEtapeNom(e).toUpperCase())}</a></th><td class="pj-rp-d pj-rp-col" colspan="2">dates ?</td><td class="pj-rp-n pj-rp-col"></td>${jours.map(d => `<td class="pj-rp-j${jcls(d)}"></td>`).join('')}</tr>`;
     const x = pjEtapeDates(e);
     const coul = pjEtapeCouleur(p, e), txt = pjTexteSur(coul);
     const qui = gens.filter(a => pjSurEtape(p, a, e));
@@ -896,6 +907,9 @@ function pjFriseHtml(p, mode) {
   const tri = (l) => l.slice().sort((a, b) => a.du.localeCompare(b.du) || pjEtapeDates(a).au.localeCompare(pjEtapeDates(b).au));
   // Les sous-étapes suivent leur chapitre, quelle que soit leur partie
   const chapitres = pjChapitres(tri(et));
+  // Les sous-étapes sans dates suivent leur chapitre
+  const fp = f.piste === 'commun' ? '' : f.piste;
+  chapitres.forEach(c => { c[1] = c[1].concat(pjSousEtapes(p, c[0]).filter(x => !pjEtapeDates(x) && (!f.piste || pjPisteDe(x) === fp))); });
   const groupes = [['', 'COMMUN'], ['video', 'VIDÉO'], ['photo', 'PHOTO']].map(([k, lab]) => [lab, chapitres.filter(([e]) => pjPisteDe(e) === k)]).filter(g => g[1].length);
   const titres = groupes.length > 1 || (groupes[0] && groupes[0][0] !== 'COMMUN');
   const vide = jours.map(d => `<td class="pj-rp-j${jcls(d)}"></td>`).join('');
@@ -1593,13 +1607,17 @@ function pjAjouterEtape(type, parent) {
     if (par.post) e.post = true;
     pjChapOuverts.add(par.id);
   }
+  // Filtré sur vidéo (ou photo, ou commun) : la nouvelle étape est de cette partie
+  else if (pjEtF(p).piste) e.piste = pjEtF(p).piste === 'commun' ? '' : pjEtF(p).piste;
   // Ajoutée depuis le calendrier POST-PROD : elle y reste, même en « Autre »
   if (pjBF(p).calVue === 'postprod') e.post = true;
   p.etapes.push(e);
-  // Un filtre (vidéo, photo, type, personne) cacherait la nouvelle étape : on l'enlève pour la remplir
-  if (!pjEtapeVisible(p, e)) ['etType', 'etPiste', 'etQui'].forEach(k => delete pjBF(p)[k]);
+  // Un filtre de type ou de personne cacherait la nouvelle étape : on l'enlève pour la remplir
+  // (on garde celui de la partie : la nouvelle étape en est)
+  if (!pjEtapeVisible(p, e)) ['etType', 'etQui'].forEach(k => delete pjBF(p)[k]);
+  if (!pjEtapeVisible(p, e)) delete pjBF(p).etPiste;
   // Pareil pour les catégories cochées du calendrier
-  if (pjCalCats(p).length && !pjCalCats(p).includes(pjEtapeCat(e))) delete pjBF(p).calCats;
+  if (pjCalCats(p).length && !pjCalCats(p).includes(pjEtapeCatChap(p, e))) delete pjBF(p).calCats;
   pjEtapesOuvert = true;
   pjChange(true);
   const champ = document.querySelector('#pj-et-' + e.id + ' [data-k="du"]');
