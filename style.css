@@ -1110,3 +1110,4 @@ body.doc-vue-ouvert > *:not(#doc-vue) { display:none !important; }
 .pj-onglet-corps .pj-sous-bloc:not(.pj-retro) { margin-top:0; border-top:none; padding-top:0; }
 .pj-onglet-corps .pj-sous-bloc:not(.pj-retro) > summary { cursor:default; }
 .pj-onglet-corps .pj-sous-bloc:not(.pj-retro) > summary::before { display:none; }
+.pdt-editor .pdt-pied { margin-top:14px; }

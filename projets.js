@@ -413,7 +413,7 @@ function buildPjTabs(nav) {
     nav.style.display = '';
     nav.innerHTML = `<button class="crumb-back" onclick="pdtRetour()">← ${esc((dest ? pjTitre(dest) : 'PROJETS').toUpperCase())}</button>
       <span class="crumb-sep">/</span>
-      <span class="crumb-title"><span class="ch-dot" style="background:#111"></span>PDT · SHOOT DAY ${d.jour || 1} / ${d.jours || 1}</span>`;
+      <span class="crumb-title"><span class="ch-dot" style="background:#111"></span>PDT ${pdtType(d) === 'photo' ? 'PHOTO' : 'VIDÉO'} · JOUR ${d.jour || 1} / ${d.jours || 1}</span>`;
     return;
   }
   if (pjVue === 'ts' && tsById(tsId)) {

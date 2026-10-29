@@ -29,11 +29,13 @@ const pdtLid = () => 'l' + Date.now().toString(36) + Math.random().toString(36).
 
 // ── Ce qu'on reprend du projet ───────────────────────────────────────────────
 // Les jours de tournage du calendrier du projet
-function pdtJoursTournage(p) {
+// (pour un PDT photo ou vidéo : les tournages de cette partie et ceux en commun)
+function pdtJoursTournage(p, type) {
   const jours = new Set();
   (p.etapes || []).forEach(e => {
     const d = pjEtapeDates(e);
     if (!d || pjEtapeCat(e) !== 'tournage') return;
+    if (type && pjPisteDe(e) && pjPisteDe(e) !== type) return;
     for (let x = d.du; x <= d.au; x = pjPlusJours(x, 1)) jours.add(x);
   });
   return [...jours].sort();
@@ -59,26 +61,37 @@ function pdtLignesDepart(lieu) {
   ];
 }
 
-function pdtNouveau(pid) {
+const PDT_TYPES = [['video', 'Vidéo'], ['photo', 'Photo']];
+const pdtType = d => d && d.type === 'photo' ? 'photo' : 'video';
+// Les mots qui changent entre un PDT vidéo et un PDT photo (formulaire et PDF)
+const PDT_MOTS = {
+  video: { plan: 'PLAN', num: 'SHOT #', scene: 'SCÈNE', sceneCol: 'SCENE', technique: 'DESCRIPTION TECHNIQUE', techniqueCol: 'DESCRIPTION<br>TECHNIQUE', optique: 'CAMÉRA / OPTIQUE', optiqueCol: 'CAMERA<br>-<br>LENS', phScene: 'Ce qu\'on voit dans le plan…', phTech: 'Plan large fixe' },
+  photo: { plan: 'PHOTO', num: 'PHOTO #', scene: 'DESCRIPTION', sceneCol: 'DESCRIPTION', technique: 'CADRAGE / SET', techniqueCol: 'CADRAGE<br>/ SET', optique: 'OPTIQUE', optiqueCol: 'OPTIQUE', phScene: 'Ce qu\'on voit sur la photo…', phTech: 'Plein pied, fond studio' },
+};
+const pdtMots = d => PDT_MOTS[pdtType(d)];
+
+// Nouveau PDT vidéo ou photo. S'il y en a déjà un du même type, il reprend son
+// en-tête, ses horaires et son cast, et prend le jour de tournage suivant.
+function pdtNouveau(pid, type) {
   const p = pjById(pid);
   if (!p) return;
-  const siens = pdtDuProjet(pid);
-  const jours = pdtJoursTournage(p);
+  type = type === 'photo' ? 'photo' : 'video';
+  const siens = pdtDuProjet(pid).filter(d => pdtType(d) === type);
+  const jours = pdtJoursTournage(p, type);
   const n = siens.length + 1;
   const client = String(p.client || '').trim();
   const nom = String(p.nom || '').trim();
   const titre = client && nom && !pjNorm(nom).includes(pjNorm(client)) ? `${client} “${nom}”` : nom || client;
   const d = {
-    id: uid(), projetId: p.id, maj: Date.now(),
+    id: uid(), projetId: p.id, maj: Date.now(), type,
     client, titre: titre.toUpperCase(), logo: prodData().logos[tsCleClient(client)] || '',
     date: jours[n - 1] || '', jour: n, jours: Math.max(jours.length, n), lieu: p.lieu || '',
     debut: '09:00',
     horaires: PDT_HORAIRES_DEFAUT.map(label => ({ heure: '', label })),
     cast: pdtCastDuProjet(p),
-    prepaHeure: '', prepaTexte: 'PRÉPA (LUMIÈRE, CAMÉRA, VIDÉO, CAST…)',
+    prepaHeure: '', prepaTexte: type === 'photo' ? 'PRÉPA (LUMIÈRE, SET, HMC, CAST…)' : 'PRÉPA (LUMIÈRE, CAMÉRA, VIDÉO, CAST…)',
     lignes: pdtLignesDepart(p.lieu),
   };
-  // Le jour suivant reprend l'en-tête, les horaires et le cast du jour précédent
   const avant = siens[siens.length - 1];
   if (avant) {
     ['client', 'titre', 'logo', 'lieu', 'debut', 'prepaHeure', 'prepaTexte'].forEach(k => { d[k] = avant[k]; });
@@ -91,6 +104,36 @@ function pdtNouveau(pid) {
   pdtList().push(d);
   saveDb();
   pdtOuvrir(d.id);
+}
+
+// Importer un PDT tout prêt (fichier .json) dans ce projet. Les images de
+// référence incluses dans le fichier sont envoyées au serveur une fois le PDT créé.
+async function pdtImporter(f, pid) {
+  const p = pjById(pid);
+  if (!f || !p) return;
+  let x;
+  try { const o = JSON.parse(await f.text()); x = o && o.pdt ? o.pdt : o; } catch { x = null; }
+  if (!x || !Array.isArray(x.lignes)) { alert('Ce fichier n\'est pas un plan de travail.'); return; }
+  const d = JSON.parse(JSON.stringify(x));
+  Object.assign(d, { id: uid(), projetId: p.id, maj: Date.now(), type: d.type === 'photo' ? 'photo' : 'video' });
+  d.lignes = d.lignes.filter(l => l && PDT_TYPES_NOM[l.type]).map(l => ({ ...l, id: pdtLid() }));
+  ['horaires', 'cast'].forEach(k => { if (!Array.isArray(d[k])) d[k] = []; });
+  if (!d.client) d.client = String(p.client || '').trim();
+  if (!d.logo) d.logo = prodData().logos[tsCleClient(d.client)] || '';
+  pdtList().push(d);
+  saveDb();
+  pdtOuvrir(d.id);
+  let n = 0;
+  for (const l of d.lignes) {
+    if (!/^data:image\//.test(l.img || '')) continue;
+    try {
+      const blob = dataUrlToBlob(l.img);
+      const res = await storeFetch('/photo/ref', { method: 'POST', headers: { 'Content-Type': blob.type }, body: blob });
+      l.img = 'r:' + res.id;
+      n++;
+    } catch (e) { console.error(e); } // l'image reste dans le PDT
+  }
+  if (n) { d.maj = Date.now(); saveDb(); if (pdtCur() === d) pdtRedessiner(); }
 }
 
 function pdtOuvrir(id) {
@@ -111,13 +154,15 @@ function pjPdtHtml(p) {
     ${siens.length ? `<div class="pj-ts-liste">${siens.map(d => {
       const n = (d.lignes || []).filter(l => l.type === 'plan').length;
       return `<div class="pj-ts-ligne" onclick="pdtOuvrir(${d.id})">
-        <span class="pj-nom"><span class="ch-dot" style="background:#111"></span>SHOOT DAY ${d.jour || 1} / ${d.jours || 1}</span>
-        <span class="pj-muted">${n} plan${n > 1 ? 's' : ''}${d.lieu ? ' · ' + esc(d.lieu) : ''}</span>
+        <span class="pj-nom"><span class="ch-dot" style="background:${PJ_PISTES.find(x => x[0] === pdtType(d))[2]}"></span>PDT ${pdtType(d) === 'photo' ? 'PHOTO' : 'VIDÉO'} · JOUR ${d.jour || 1} / ${d.jours || 1}</span>
+        <span class="pj-muted">${n} ${pdtType(d) === 'photo' ? 'photo' : 'plan'}${n > 1 ? 's' : ''}${d.lieu ? ' · ' + esc(d.lieu) : ''}</span>
         <span class="pj-muted">${d.date ? esc(tsDateCourte(d.date)) : 'date à compléter'}</span>
       </div>`;
     }).join('')}</div>` : '<p class="field-hint">Aucun plan de travail pour ce projet. Le PDT reprend les dates de tournage, le lieu et le cast du projet.</p>'}
     <div class="ts-add-row">
-      <button type="button" class="btn-upload" onclick="pdtNouveau(${p.id})">+ ${siens.length ? 'PDT DU JOUR SUIVANT' : 'NOUVEAU PDT'}</button>
+      <button type="button" class="btn-upload" onclick="pdtNouveau(${p.id}, 'video')">+ PDT VIDÉO</button>
+      <button type="button" class="btn-upload" onclick="pdtNouveau(${p.id}, 'photo')">+ PDT PHOTO</button>
+      <label class="btn-upload">IMPORTER UN PDT<input type="file" accept=".json,application/json" hidden onchange="pdtImporter(this.files[0], ${p.id}); this.value=''"></label>
     </div>
   </section>`;
 }
@@ -189,7 +234,7 @@ function pdtInput(el) {
     row[k] = k === 'duree' ? (v === '' ? '' : Math.max(0, Number(v) || 0)) : v;
   } else d[k] = k === 'jour' || k === 'jours' ? Math.max(1, Number(v) || 1) : v;
   if (['debut', 'duree', 'heure', 'hors'].includes(k)) pdtMajHeures();
-  if (k === 'jour' || k === 'jours') buildTabs();
+  if (k === 'jour' || k === 'jours' || k === 'type') buildTabs();
   if (k === 'client' && !d.logo) { const l = prodData().logos[tsCleClient(d.client)]; if (l) { d.logo = l; pdtLogoMaj(); } }
   pdtChange();
 }
@@ -228,6 +273,7 @@ function renderPdtEditor(main) {
       <section class="ts-bloc">
         <h3>EN-TÊTE</h3>
         <div class="ts-grid">
+          ${pdtField('TYPE DE PDT', 'type', pdtType(d), { select: PDT_TYPES, redessiner: true })}
           ${pdtField('TITRE', 'titre', d.titre, { ph: 'ex : SIMOND “AVANTGARDE”' })}
           ${pdtField('CLIENT', 'client', d.client, { ph: 'ex : SIMOND' })}
           ${pdtField('DATE DU TOURNAGE', 'date', d.date, { type: 'date' })}
@@ -280,9 +326,10 @@ function renderPdtEditor(main) {
         <div class="ts-add-row">
           <button type="button" class="btn-upload" onclick="pdtAjouter('partie')">+ PARTIE (DÉCOR)</button>
           <button type="button" class="btn-upload" onclick="pdtAjouter('install')">+ MISE EN PLACE</button>
-          <button type="button" class="btn-upload" onclick="pdtAjouter('plan')">+ PLAN</button>
+          <button type="button" class="btn-upload" onclick="pdtAjouter('plan')">+ ${pdtMots(d).plan}</button>
           <button type="button" class="btn-upload" onclick="pdtAjouter('pause')">+ PAUSE / BATTEMENT</button>
         </div>
+        ${pdtField('NOTE EN BAS DU PDF', 'piedPage', d.piedPage, { full: true, cls: 'pdt-pied', ph: 'ex : Rouge = à prévoir / à valider · TBC = à confirmer' })}
         <datalist id="pdt-pauses">${PDT_PAUSES.map(x => `<option value="${x}">`).join('')}</datalist>
       </section>
 
@@ -305,14 +352,15 @@ function renderPdtEditor(main) {
 const PDT_TYPES_NOM = { partie: 'PARTIE', install: 'MISE EN PLACE', plan: 'PLAN', pause: 'PAUSE' };
 
 function pdtLigneHtml(l, i, h, n) {
+  const M = pdtMots(pdtCur());
   const o = { l: 'lignes', i: l.id };
   const heure = h.num ? `PARTIE ${h.num}` : h.hors ? (l.type === 'partie' ? 'HORS PLATEAU' : '') : pdtPlage(h);
   const hdr = `<div class="ts-ligne-hdr">
-      <b>${l.type === 'plan' ? `PLAN${l.shot ? ' #' + esc(l.shot) : ''}` : l.type === 'partie' ? '' : PDT_TYPES_NOM[l.type]}</b>
+      <b>${l.type === 'plan' ? `${pdtMots(pdtCur()).plan}${l.shot ? ' #' + esc(l.shot) : ''}` : l.type === 'partie' ? '' : PDT_TYPES_NOM[l.type]}</b>
       <span class="pdt-h" data-h="${l.id}" data-t="${l.type}">${esc(heure)}</span>
       <div class="spacer"></div>
       <select class="pdt-ajout" onchange="pdtAjouter(this.value, ${i}); this.value=''" title="Ajouter une ligne en dessous">
-        <option value="">+ dessous</option><option value="plan">Plan</option><option value="install">Mise en place</option><option value="pause">Pause / battement</option><option value="partie">Partie (décor)</option>
+        <option value="">+ dessous</option><option value="plan">${M.plan === 'PHOTO' ? 'Photo' : 'Plan'}</option><option value="install">Mise en place</option><option value="pause">Pause / battement</option><option value="partie">Partie (décor)</option>
       </select>
       <button type="button" class="ts-x" onclick="pdtDeplacer(${i}, -1)" title="Monter"${i ? '' : ' disabled'}>↑</button>
       <button type="button" class="ts-x" onclick="pdtDeplacer(${i}, 1)" title="Descendre"${i < n - 1 ? '' : ' disabled'}>↓</button>
@@ -348,11 +396,11 @@ function pdtLigneHtml(l, i, h, n) {
         <input class="pdt-ref-colle" placeholder="ou colle l'image ici" onpaste="pdtImageColle(event, '${l.id}')" onkeydown="if(event.key==='Enter'){event.preventDefault();pdtImageLien(this.value, '${l.id}')}">
       </div>
       <div class="ts-grid pdt-grid-plan">
-        ${pdtField('SHOT #', 'shot', l.shot, { ...o, ph: '40' })}
+        ${pdtField(M.num, 'shot', l.shot, { ...o, ph: '40' })}
         ${temps}
-        ${pdtField('SCÈNE', 'scene', l.scene, { ...o, textarea: true, full: true, ph: 'Ce qu\'on voit dans le plan…' })}
-        ${pdtField('DESCRIPTION TECHNIQUE', 'technique', l.technique, { ...o, ph: 'Plan large fixe' })}
-        ${pdtField('CAMÉRA / OPTIQUE', 'optique', l.optique, { ...o, ph: '35MM' })}
+        ${pdtField(M.scene, 'scene', l.scene, { ...o, textarea: true, full: true, ph: M.phScene })}
+        ${pdtField(M.technique, 'technique', l.technique, { ...o, ph: M.phTech })}
+        ${pdtField(M.optique, 'optique', l.optique, { ...o, ph: '35MM' })}
         ${pdtField('EFFET LUMIÈRE', 'lumiere', l.lumiere, { ...o, textarea: true, rows: 2, ph: 'NUIT\n(2e ligne en petit)' })}
         ${pdtField('COULEUR DE LA CASE', 'lumCouleur', l.lumCouleur, { ...o, select: PDT_LUMIERES_CHOIX })}
         ${pdtField('NOTES / À PRÉVOIR', 'note', l.note, { ...o, textarea: true, rows: 2, ph: 'Prévoir accessoire…' })}
@@ -596,6 +644,7 @@ function pdtDateTexte(iso) {
 }
 
 function pdtDocHtml(d, ecran) {
+  const M = pdtMots(d);
   const base = location.href.replace(/[#?].*$/, '').replace(/[^/]*$/, '');
   const h = pdtHoraires(d);
   const lignes = d.lignes || [];
@@ -618,7 +667,7 @@ function pdtDocHtml(d, ecran) {
   }
 
   const entete = `<tr class="th">
-    <th>HORAIRES</th><th>DURATION</th><th>SHOT #</th><th>REFERENCE</th><th>SCENE</th><th>DESCRIPTION<br>TECHNIQUE</th><th>CAMERA<br>-<br>LENS</th><th>LIGHTING<br>EFFECT</th><th>NOTES /<br>À PRÉVOIR</th>
+    <th>HORAIRES</th><th>DURATION</th><th>${M.num}</th><th>REFERENCE</th><th>${M.sceneCol}</th><th>${M.techniqueCol}</th><th>${M.optiqueCol}</th><th>LIGHTING<br>EFFECT</th><th>NOTES /<br>À PRÉVOIR</th>
   </tr>`;
   const corps = lignes.map(l => {
     const x = h[l.id] || {};
@@ -693,6 +742,7 @@ function pdtDocHtml(d, ecran) {
   .pdt-doc td.note { font-size: 7px; }
   .pdt-doc td.note.rouge { color: #e00000; }
   .pdt-doc thead { display: table-header-group; }
+  .pdt-doc .pied { margin: 6px 0 0; font-size: 7px; font-style: italic; }
   @media screen and (max-width: 760px) { .pdt-doc { zoom: .46; margin: 8px auto; } }
   @media print { body { background: #fff; } .barre-impr { display: none; } .pdt-doc { width: auto; min-height: 0; margin: 0; padding: 0; } }
 </style></head><body>
@@ -704,7 +754,7 @@ ${ecran ? '' : '<div class="barre barre-impr" style="position:sticky;top:0;z-ind
       <h1>SHOOTING SCHEDULE</h1>
       <div class="t">${esc(String(d.titre || '').toUpperCase())}</div>
       <div class="d">${esc(pdtDateTexte(d.date))}${d.lieu ? ' · ' + esc(String(d.lieu).toUpperCase()) : ''}</div>
-      <div class="d">SHOOT DAY ${Number(d.jour) || 1} / ${Math.max(Number(d.jours) || 1, Number(d.jour) || 1)}</div>
+      <div class="d">${pdtType(d) === 'photo' ? 'PHOTO · ' : ''}SHOOT DAY ${Number(d.jour) || 1} / ${Math.max(Number(d.jours) || 1, Number(d.jour) || 1)}</div>
     </div>
     <div class="cl">${d.logo ? `<img src="${esc(d.logo)}" alt="${esc(d.client)}">` : esc(String(d.client || '').toUpperCase())}</div>
   </div>
@@ -719,6 +769,7 @@ ${ecran ? '' : '<div class="barre barre-impr" style="position:sticky;top:0;z-ind
     <thead>${entete}</thead>
     <tbody>${corps}</tbody>
   </table>
+  ${d.piedPage ? `<p class="pied">${esc(d.piedPage)}</p>` : ''}
 </div>
 </body></html>`;
 }
