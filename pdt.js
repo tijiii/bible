@@ -114,6 +114,11 @@ async function pdtImporter(f, pid) {
   let x;
   try { const o = JSON.parse(await f.text()); x = o && o.pdt ? o.pdt : o; } catch { x = null; }
   if (!x || !Array.isArray(x.lignes)) { alert('Ce fichier n\'est pas un plan de travail.'); return; }
+  await pdtAjouterDonnees(x, p, true);
+}
+
+// Ajoute un PDT tout prêt (fichier importé ou modèle) au projet p, et envoie ses images au serveur
+async function pdtAjouterDonnees(x, p, ouvrir) {
   const d = JSON.parse(JSON.stringify(x));
   Object.assign(d, { id: uid(), projetId: p.id, maj: Date.now(), type: d.type === 'photo' ? 'photo' : 'video' });
   d.lignes = d.lignes.filter(l => l && PDT_TYPES_NOM[l.type]).map(l => ({ ...l, id: pdtLid() }));
@@ -122,7 +127,8 @@ async function pdtImporter(f, pid) {
   if (!d.logo) d.logo = prodData().logos[tsCleClient(d.client)] || '';
   pdtList().push(d);
   saveDb();
-  pdtOuvrir(d.id);
+  if (ouvrir) pdtOuvrir(d.id);
+  else if (!document.querySelector('.pdt-editor, .ts-editor') && !(typeof pjEnEdition === 'function' && pjEnEdition())) render();
   let n = 0;
   for (const l of d.lignes) {
     if (!/^data:image\//.test(l.img || '')) continue;
@@ -134,6 +140,34 @@ async function pdtImporter(f, pid) {
     } catch (e) { console.error(e); } // l'image reste dans le PDT
   }
   if (n) { d.maj = Date.now(); saveDb(); if (pdtCur() === d) pdtRedessiner(); }
+}
+
+// PDT déjà préparés, ajoutés une seule fois au projet qui leur correspond dès que la base est chargée
+// (on peut ensuite les modifier ou les supprimer : ils ne reviennent pas)
+const PDT_MODELES = [{ cle: 'simond-avantgarde', fichier: 'modeles/pdt-simond-avantgarde.json', projet: /simond/i, deja: /avant.?garde/i }];
+let pdtSemis = false;
+async function pdtSemer() {
+  if (pdtSemis) return;
+  pdtSemis = true;
+  const faits = prodData().pdtModeles || (prodData().pdtModeles = []);
+  for (const m of PDT_MODELES) {
+    if (faits.includes(m.cle)) continue;
+    const projets = (db.projets || []).filter(p => m.projet.test(`${p.client || ''} ${p.nom || ''}`));
+    const p = projets.find(x => m.deja.test(x.nom || '')) || projets[0];
+    if (!p) continue;
+    faits.push(m.cle);
+    // Déjà importé à la main : on ne le remet pas
+    if (pdtDuProjet(p.id).some(d => m.deja.test(d.titre || ''))) { saveDb(); continue; }
+    try {
+      const r = await fetch(m.fichier, { cache: 'no-store' });
+      const o = await r.json();
+      await pdtAjouterDonnees(o.pdt || o, p, false);
+    } catch (e) {
+      console.error(e);
+      faits.splice(faits.indexOf(m.cle), 1);
+      pdtSemis = false;
+    }
+  }
 }
 
 function pdtOuvrir(id) {
