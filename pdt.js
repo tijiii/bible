@@ -532,7 +532,7 @@ function renderPdtDoc(main) {
     const tr = e.target.closest('tr[data-li]');
     if (!tr) return;
     e.preventDefault();
-    const bas = e.clientY > tr.getBoundingClientRect().top + tr.offsetHeight / 2;
+    const bas = pdtGlisseDessous(tr, e);
     zone.querySelectorAll('.pdt-vise-haut, .pdt-vise-bas').forEach(x => x.classList.remove('pdt-vise-haut', 'pdt-vise-bas'));
     tr.classList.add(bas ? 'pdt-vise-bas' : 'pdt-vise-haut');
   });
@@ -541,7 +541,7 @@ function renderPdtDoc(main) {
       const tr = e.target.closest('tr[data-li]');
       e.preventDefault();
       if (!tr) return;
-      const bas = e.clientY > tr.getBoundingClientRect().top + tr.offsetHeight / 2;
+      const bas = pdtGlisseDessous(tr, e);
       const de = pdtGlisse;
       pdtGlisse = null;
       pdtDeplacerVers(de, Number(tr.dataset.li) + (bas ? 1 : 0));
@@ -899,6 +899,15 @@ function pdtRedimDebut(e, h) {
   };
   document.addEventListener('mousemove', bouge);
   document.addEventListener('mouseup', fin);
+}
+
+// Où poser la ligne glissée : sur une barre de partie, toujours dessous (dans la partie) ;
+// ailleurs, au-dessus ou au-dessous selon la moitié de la ligne visée (taille réelle, zoom compris)
+function pdtGlisseDessous(tr, e) {
+  const l = (pdtCur().lignes || [])[Number(tr.dataset.li)];
+  if (l && l.type === 'partie') return true;
+  const r = tr.getBoundingClientRect();
+  return e.clientY > r.top + r.height / 2;
 }
 
 // Déplace la ligne i à la place « avant la ligne j » (j = longueur : à la fin)
