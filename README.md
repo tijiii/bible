@@ -217,3 +217,7 @@ Dans la page d'un projet (Suivi production), bloc **PLANS DE TRAVAIL (PDT)** : *
 Le formulaire : horaires de la journée (call, ready to shoot, wrap…), cast (call, PAT), puis le déroulé ligne par ligne : **parties** (décor / ambiance), **mises en place**, **plans** (shot #, image de référence, scène, description technique, optique, effet lumière, notes à prévoir) et **pauses** (battement, déjeuner, marge, wrap). Les horaires se calculent tout seuls à partir de l'heure du premier plan et des durées ; un « début fixe » fait repartir d'une heure précise. Une partie « hors plateau » liste des plans sans horaires (post-prod, stock). La case LIGHTING EFFECT se colore toute seule (orange pour le jour, bleu pour la nuit). **CRÉER LE PDF** ouvre le document à imprimer ou enregistrer en PDF.
 
 Les images de référence sont envoyées au serveur Cloudflare (`/store/photo/ref`) ; si l'envoi échoue, une petite copie est gardée dans le PDT.
+
+## Page d'un projet
+
+La page d'un projet s'ouvre sur son **CALENDRIER** (rétroplanning, post-prod ou mois). Le reste est rangé dans des onglets en haut : **ÉTAPES** (modifier les étapes, importer un rétroplanning), **ÉQUIPE**, **TO-DO**, **PDT**, **TRAVEL SHEETS** et **INFOS & NOTES** (nom, client, statut, couleur, notes, supprimer le projet). Un nouveau projet s'ouvre sur INFOS & NOTES pour écrire son nom.
