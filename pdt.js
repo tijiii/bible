@@ -1257,7 +1257,12 @@ function pdtDocCorps(d, edit) {
 
 // Styles du document. ecran : aperçu (fond blanc) ; edit : dans la page du site
 function pdtDocCss(ecran, edit, paysage) {
-  return `${edit ? '' : `@page { size: A4 ${paysage ? 'landscape' : 'portrait'}; margin: 9mm 8mm; }
+  return `${edit ? '' : `@page {
+    size: A4 ${paysage ? 'landscape' : 'portrait'}; margin: 9mm 8mm 11mm;
+    /* Des cases de marge remplies : le navigateur n'imprime plus l'adresse du site, la date ni le titre */
+    @top-right { content: " "; }
+    @bottom-right { content: "PAGE " counter(page) " / " counter(pages); font-family: 'Karla', Arial, sans-serif; font-size: 8px; font-weight: 700; letter-spacing: .02em; color: #111; vertical-align: middle; }
+  }
   body { margin: 0; background: ${ecran ? '#fff' : '#e9e9e7'}; -webkit-print-color-adjust: exact; print-color-adjust: exact; }`}
   .pdt-doc, .pdt-doc * { box-sizing: border-box; }
   .pdt-doc { font-family: 'Karla', Arial, sans-serif; color: #111; width: 210mm; min-height: 297mm; margin: ${ecran ? '0' : '10mm'} auto; background: #fff; padding: 9mm 8mm; font-size: 8px; line-height: 1.25; text-align: left; letter-spacing: normal; }
