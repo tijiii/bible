@@ -404,9 +404,26 @@ function renderPdtDoc(main) {
       <style>${pdtDocCss(true, true)}</style>
       ${pdtDocCorps(d, true)}
     </div>
+    <div class="pdt-zoom" title="Zoom sur le document (ou Ctrl + molette, ou pincer le pavé tactile)">
+      <button type="button" onclick="pdtZoomer(pdtZoom / 1.2)" title="Dézoomer">−</button>
+      <button type="button" class="pdt-zoom-val" onclick="pdtZoomer(1)" title="Revenir à 100 %">${Math.round(pdtZoom * 100)} %</button>
+      <button type="button" onclick="pdtZoomer(pdtZoom * 1.2)" title="Zoomer">+</button>
+    </div>
   </div>`;
+  pdtZoomer(pdtZoom);
   window.scrollTo(0, scroll);
   const zone = main.querySelector('.pdt-ed-zone');
+  // Zoom au Ctrl + molette (et pincer sur le pavé tactile), centré sous la souris
+  zone.addEventListener('wheel', e => {
+    if (!e.ctrlKey && !e.metaKey) return;
+    e.preventDefault();
+    pdtZoomer(pdtZoom * Math.exp(-e.deltaY / 500), e);
+  }, { passive: false });
+  // Safari : pincer
+  let pz0 = null;
+  zone.addEventListener('gesturestart', e => { e.preventDefault(); pz0 = pdtZoom; });
+  zone.addEventListener('gesturechange', e => { e.preventDefault(); if (pz0) pdtZoomer(pz0 * e.scale, e); });
+  zone.addEventListener('gestureend', () => { pz0 = null; });
   zone.addEventListener('input', pdtEdInput);
   zone.addEventListener('focusout', pdtEdSortie);
   zone.addEventListener('keydown', e => {
@@ -645,6 +662,29 @@ function pdtDeplacer(i, sens) {
   [d.lignes[i], d.lignes[j]] = [d.lignes[j], d.lignes[i]];
   pdtChange();
   pdtRedessiner();
+}
+
+// Zoom du document dans l'éditeur (pas de la page) ; gardé d'une fois sur l'autre
+let pdtZoom = (() => { try { return Number(localStorage.getItem('pdtZoom')) || 1; } catch (e) { return 1; } })();
+function pdtZoomer(z, e) {
+  z = Math.min(3, Math.max(0.5, Math.round(z * 100) / 100));
+  const zone = document.querySelector('.pdt-ed-zone'), doc = zone && zone.querySelector('.pdt-doc');
+  if (!doc) { pdtZoom = z; return; }
+  // Le point sous la souris reste sous la souris
+  const r = doc.getBoundingClientRect();
+  const fx = e ? (e.clientX - r.left) / r.width : 0.5, fy = e ? (e.clientY - r.top) / r.height : null;
+  const old = pdtZoom;
+  pdtZoom = z;
+  doc.style.zoom = z;
+  zone.classList.toggle('zoome', z > 1);
+  if (e && old !== z) {
+    const r2 = doc.getBoundingClientRect();
+    zone.scrollLeft += r2.left + fx * r2.width - e.clientX;
+    window.scrollBy(0, r2.top + fy * r2.height - e.clientY);
+  }
+  const v = document.querySelector('.pdt-zoom-val');
+  if (v) v.textContent = Math.round(z * 100) + ' %';
+  try { localStorage.setItem('pdtZoom', z); } catch (err) {}
 }
 
 // Déplace la ligne i à la place « avant la ligne j » (j = longueur : à la fin)
