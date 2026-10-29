@@ -949,6 +949,8 @@ body.doc-vue-ouvert > *:not(#doc-vue) { display:none !important; }
 .pj-chap-btn small { font-size:10px; opacity:.75; margin-left:2px; }
 .pj-rp-sous th.pj-rp-phase { padding-left:28px; }
 .pj-rp-sous th.pj-rp-phase > a { font-size:11.5px; }
+.pj-rp-sans-date th.pj-rp-phase { background:#fff; color:var(--muted); font-style:italic; }
+.pj-rp-sans-date .pj-rp-d { background:#fff; color:var(--muted); font-style:italic; text-align:center; }
 .pj-chap { margin:-4px 0 8px 14px; }
 .pj-chap-tete { background:none; border:none; cursor:pointer; font-family:var(--serif); font-size:13px; color:var(--muted); padding:2px 0; }
 .pj-chap-tete:hover { color:var(--text); }
