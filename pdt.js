@@ -29,11 +29,13 @@ const pdtLid = () => 'l' + Date.now().toString(36) + Math.random().toString(36).
 
 // ── Ce qu'on reprend du projet ───────────────────────────────────────────────
 // Les jours de tournage du calendrier du projet
-function pdtJoursTournage(p) {
+// (pour un PDT photo ou vidéo : les tournages de cette partie et ceux en commun)
+function pdtJoursTournage(p, type) {
   const jours = new Set();
   (p.etapes || []).forEach(e => {
     const d = pjEtapeDates(e);
     if (!d || pjEtapeCat(e) !== 'tournage') return;
+    if (type && pjPisteDe(e) && pjPisteDe(e) !== type) return;
     for (let x = d.du; x <= d.au; x = pjPlusJours(x, 1)) jours.add(x);
   });
   return [...jours].sort();
@@ -59,26 +61,37 @@ function pdtLignesDepart(lieu) {
   ];
 }
 
-function pdtNouveau(pid) {
+const PDT_TYPES = [['video', 'Vidéo'], ['photo', 'Photo']];
+const pdtType = d => d && d.type === 'photo' ? 'photo' : 'video';
+// Les mots qui changent entre un PDT vidéo et un PDT photo (formulaire et PDF)
+const PDT_MOTS = {
+  video: { plan: 'PLAN', num: 'SHOT #', scene: 'SCÈNE', sceneCol: 'SCENE', technique: 'DESCRIPTION TECHNIQUE', techniqueCol: 'DESCRIPTION<br>TECHNIQUE', optique: 'CAMÉRA / OPTIQUE', optiqueCol: 'CAMERA<br>-<br>LENS', phScene: 'Ce qu\'on voit dans le plan…', phTech: 'Plan large fixe' },
+  photo: { plan: 'PHOTO', num: 'PHOTO #', scene: 'DESCRIPTION', sceneCol: 'DESCRIPTION', technique: 'CADRAGE / SET', techniqueCol: 'CADRAGE<br>/ SET', optique: 'OPTIQUE', optiqueCol: 'OPTIQUE', phScene: 'Ce qu\'on voit sur la photo…', phTech: 'Plein pied, fond studio' },
+};
+const pdtMots = d => PDT_MOTS[pdtType(d)];
+
+// Nouveau PDT vidéo ou photo. S'il y en a déjà un du même type, il reprend son
+// en-tête, ses horaires et son cast, et prend le jour de tournage suivant.
+function pdtNouveau(pid, type) {
   const p = pjById(pid);
   if (!p) return;
-  const siens = pdtDuProjet(pid);
-  const jours = pdtJoursTournage(p);
+  type = type === 'photo' ? 'photo' : 'video';
+  const siens = pdtDuProjet(pid).filter(d => pdtType(d) === type);
+  const jours = pdtJoursTournage(p, type);
   const n = siens.length + 1;
   const client = String(p.client || '').trim();
   const nom = String(p.nom || '').trim();
   const titre = client && nom && !pjNorm(nom).includes(pjNorm(client)) ? `${client} “${nom}”` : nom || client;
   const d = {
-    id: uid(), projetId: p.id, maj: Date.now(),
+    id: uid(), projetId: p.id, maj: Date.now(), type,
     client, titre: titre.toUpperCase(), logo: prodData().logos[tsCleClient(client)] || '',
     date: jours[n - 1] || '', jour: n, jours: Math.max(jours.length, n), lieu: p.lieu || '',
     debut: '09:00',
     horaires: PDT_HORAIRES_DEFAUT.map(label => ({ heure: '', label })),
     cast: pdtCastDuProjet(p),
-    prepaHeure: '', prepaTexte: 'PRÉPA (LUMIÈRE, CAMÉRA, VIDÉO, CAST…)',
+    prepaHeure: '', prepaTexte: type === 'photo' ? 'PRÉPA (LUMIÈRE, SET, HMC, CAST…)' : 'PRÉPA (LUMIÈRE, CAMÉRA, VIDÉO, CAST…)',
     lignes: pdtLignesDepart(p.lieu),
   };
-  // Le jour suivant reprend l'en-tête, les horaires et le cast du jour précédent
   const avant = siens[siens.length - 1];
   if (avant) {
     ['client', 'titre', 'logo', 'lieu', 'debut', 'prepaHeure', 'prepaTexte'].forEach(k => { d[k] = avant[k]; });
@@ -91,6 +104,36 @@ function pdtNouveau(pid) {
   pdtList().push(d);
   saveDb();
   pdtOuvrir(d.id);
+}
+
+// Importer un PDT tout prêt (fichier .json) dans ce projet. Les images de
+// référence incluses dans le fichier sont envoyées au serveur une fois le PDT créé.
+async function pdtImporter(f, pid) {
+  const p = pjById(pid);
+  if (!f || !p) return;
+  let x;
+  try { const o = JSON.parse(await f.text()); x = o && o.pdt ? o.pdt : o; } catch { x = null; }
+  if (!x || !Array.isArray(x.lignes)) { alert('Ce fichier n\'est pas un plan de travail.'); return; }
+  const d = JSON.parse(JSON.stringify(x));
+  Object.assign(d, { id: uid(), projetId: p.id, maj: Date.now(), type: d.type === 'photo' ? 'photo' : 'video' });
+  d.lignes = d.lignes.filter(l => l && PDT_TYPES_NOM[l.type]).map(l => ({ ...l, id: pdtLid() }));
+  ['horaires', 'cast'].forEach(k => { if (!Array.isArray(d[k])) d[k] = []; });
+  if (!d.client) d.client = String(p.client || '').trim();
+  if (!d.logo) d.logo = prodData().logos[tsCleClient(d.client)] || '';
+  pdtList().push(d);
+  saveDb();
+  pdtOuvrir(d.id);
+  let n = 0;
+  for (const l of d.lignes) {
+    if (!/^data:image\//.test(l.img || '')) continue;
+    try {
+      const blob = dataUrlToBlob(l.img);
+      const res = await storeFetch('/photo/ref', { method: 'POST', headers: { 'Content-Type': blob.type }, body: blob });
+      l.img = 'r:' + res.id;
+      n++;
+    } catch (e) { console.error(e); } // l'image reste dans le PDT
+  }
+  if (n) { d.maj = Date.now(); saveDb(); if (pdtCur() === d) pdtRedessiner(); }
 }
 
 function pdtOuvrir(id) {
@@ -111,13 +154,15 @@ function pjPdtHtml(p) {
     ${siens.length ? `<div class="pj-ts-liste">${siens.map(d => {
       const n = (d.lignes || []).filter(l => l.type === 'plan').length;
       return `<div class="pj-ts-ligne" onclick="pdtOuvrir(${d.id})">
-        <span class="pj-nom"><span class="ch-dot" style="background:#111"></span>SHOOT DAY ${d.jour || 1} / ${d.jours || 1}</span>
-        <span class="pj-muted">${n} plan${n > 1 ? 's' : ''}${d.lieu ? ' · ' + esc(d.lieu) : ''}</span>
+        <span class="pj-nom"><span class="ch-dot" style="background:${PJ_PISTES.find(x => x[0] === pdtType(d))[2]}"></span>PDT ${pdtType(d) === 'photo' ? 'PHOTO' : 'VIDÉO'} · JOUR ${d.jour || 1} / ${d.jours || 1}</span>
+        <span class="pj-muted">${n} ${pdtType(d) === 'photo' ? 'photo' : 'plan'}${n > 1 ? 's' : ''}${d.lieu ? ' · ' + esc(d.lieu) : ''}</span>
         <span class="pj-muted">${d.date ? esc(tsDateCourte(d.date)) : 'date à compléter'}</span>
       </div>`;
     }).join('')}</div>` : '<p class="field-hint">Aucun plan de travail pour ce projet. Le PDT reprend les dates de tournage, le lieu et le cast du projet.</p>'}
     <div class="ts-add-row">
-      <button type="button" class="btn-upload" onclick="pdtNouveau(${p.id})">+ ${siens.length ? 'PDT DU JOUR SUIVANT' : 'NOUVEAU PDT'}</button>
+      <button type="button" class="btn-upload" onclick="pdtNouveau(${p.id}, 'video')">+ PDT VIDÉO</button>
+      <button type="button" class="btn-upload" onclick="pdtNouveau(${p.id}, 'photo')">+ PDT PHOTO</button>
+      <label class="btn-upload">IMPORTER UN PDT<input type="file" accept=".json,application/json" hidden onchange="pdtImporter(this.files[0], ${p.id}); this.value=''"></label>
     </div>
   </section>`;
 }
@@ -189,7 +234,7 @@ function pdtInput(el) {
     row[k] = k === 'duree' ? (v === '' ? '' : Math.max(0, Number(v) || 0)) : v;
   } else d[k] = k === 'jour' || k === 'jours' ? Math.max(1, Number(v) || 1) : v;
   if (['debut', 'duree', 'heure', 'hors'].includes(k)) pdtMajHeures();
-  if (k === 'jour' || k === 'jours') buildTabs();
+  if (k === 'jour' || k === 'jours' || k === 'type') buildTabs();
   if (k === 'client' && !d.logo) { const l = prodData().logos[tsCleClient(d.client)]; if (l) { d.logo = l; pdtLogoMaj(); } }
   pdtChange();
 }
@@ -217,7 +262,17 @@ function pdtField(label, k, v, opts = {}) {
   return `<div class="field${opts.full ? ' full' : ''}${opts.cls ? ' ' + opts.cls : ''}"><label>${esc(label)}</label>${input}</div>`;
 }
 
+// Deux façons de remplir un PDT : directement sur le document (par défaut sur
+// ordinateur) ou avec le formulaire (pratique sur téléphone). Choix gardé sur l'appareil.
+let pdtMode = (() => { try { return localStorage.getItem('pdtMode') || ''; } catch { return ''; } })() || (window.innerWidth < 760 ? 'form' : 'doc');
+function pdtSetMode(m) {
+  pdtMode = m === 'form' ? 'form' : 'doc';
+  try { localStorage.setItem('pdtMode', pdtMode); } catch {}
+  pdtRedessiner();
+}
+
 function renderPdtEditor(main) {
+  if (pdtMode !== 'form') { renderPdtDoc(main); return; }
   const d = pdtCur();
   const p = pjById(d.projetId);
   const h = pdtHoraires(d);
@@ -228,6 +283,7 @@ function renderPdtEditor(main) {
       <section class="ts-bloc">
         <h3>EN-TÊTE</h3>
         <div class="ts-grid">
+          ${pdtField('TYPE DE PDT', 'type', pdtType(d), { select: PDT_TYPES, redessiner: true })}
           ${pdtField('TITRE', 'titre', d.titre, { ph: 'ex : SIMOND “AVANTGARDE”' })}
           ${pdtField('CLIENT', 'client', d.client, { ph: 'ex : SIMOND' })}
           ${pdtField('DATE DU TOURNAGE', 'date', d.date, { type: 'date' })}
@@ -280,15 +336,17 @@ function renderPdtEditor(main) {
         <div class="ts-add-row">
           <button type="button" class="btn-upload" onclick="pdtAjouter('partie')">+ PARTIE (DÉCOR)</button>
           <button type="button" class="btn-upload" onclick="pdtAjouter('install')">+ MISE EN PLACE</button>
-          <button type="button" class="btn-upload" onclick="pdtAjouter('plan')">+ PLAN</button>
+          <button type="button" class="btn-upload" onclick="pdtAjouter('plan')">+ ${pdtMots(d).plan}</button>
           <button type="button" class="btn-upload" onclick="pdtAjouter('pause')">+ PAUSE / BATTEMENT</button>
         </div>
+        ${pdtField('NOTE EN BAS DU PDF', 'piedPage', d.piedPage, { full: true, cls: 'pdt-pied', ph: 'ex : Rouge = à prévoir / à valider · TBC = à confirmer' })}
         <datalist id="pdt-pauses">${PDT_PAUSES.map(x => `<option value="${x}">`).join('')}</datalist>
       </section>
 
       <div class="ts-actions">
         <button type="button" class="btn-del" onclick="pdtSupprimer()">✕ SUPPRIMER</button>
         <div class="spacer"></div>
+        <button type="button" class="btn-cancel" onclick="pdtSetMode('doc')">MODIFIER SUR LE DOCUMENT</button>
         <button type="button" class="btn-cancel" onclick="pdtDupliquer()">DUPLIQUER</button>
         <button type="button" class="btn-save" onclick="pdtPdf()">CRÉER LE PDF</button>
       </div>
@@ -302,17 +360,119 @@ function renderPdtEditor(main) {
   pdtMajApercu();
 }
 
+// ── Éditeur sur le document ──────────────────────────────────────────────────
+function renderPdtDoc(main) {
+  const d = pdtCur();
+  const p = pjById(d.projetId);
+  const scroll = window.scrollY;
+  const equipe = p ? (p.equipe || []).filter(a => pjNomPersonne(a)) : [];
+  main.innerHTML = `<div class="pdt-editor pdt-ed-page">
+    <div class="pdt-ed-barre">
+      <div class="field"><label>TYPE</label><select data-k="type" onchange="pdtInput(this); pdtRedessiner()">${PDT_TYPES.map(([v, lab]) => `<option value="${v}"${pdtType(d) === v ? ' selected' : ''}>${lab}</option>`).join('')}</select></div>
+      <div class="field"><label>1ER PLAN À</label><input type="time" data-k="debut" value="${esc(d.debut || '')}" oninput="pdtInput(this); pdtMajHeuresDoc()" onchange="pdtRedessiner()"></div>
+      ${equipe.length ? `<div class="field"><label>CAST</label><select onchange="pdtCastEquipe(this.value)"><option value="">Ajouter de l'équipe…</option>${equipe.map(a => `<option value="${a.id}">${esc(pjNomPersonne(a) + (a.role ? ' · ' + a.role : ''))}</option>`).join('')}</select></div>` : ''}
+      <div class="field ts-logo" id="pdt-logo-zone">${pdtLogoZoneHtml(d)}</div>
+      <div class="spacer"></div>
+      <div class="pdt-ed-actions">
+        <button type="button" class="btn-del" onclick="pdtSupprimer()">✕ SUPPRIMER</button>
+        <button type="button" class="btn-cancel" onclick="pdtSetMode('form')">FORMULAIRE</button>
+        <button type="button" class="btn-cancel" onclick="pdtDupliquer()">DUPLIQUER</button>
+        <button type="button" class="btn-save" onclick="pdtPdf()">CRÉER LE PDF</button>
+      </div>
+    </div>
+    <p class="field-hint pdt-ed-aide">Clique dans une case pour écrire. Passe sur une ligne pour ses outils, dans la marge : ajouter dessous, déplacer, dupliquer, couleur de la lumière, note rouge ou noire, supprimer. Les horaires se calculent avec les durées ; écris une heure dans la case HORAIRES d'une ligne pour la fixer. Clique sur une image (ou colle-la) pour la changer.</p>
+    <div class="pdt-ed-zone">
+      <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Karla:ital,wght@0,400;0,700;1,400&display=swap">
+      <style>${pdtDocCss(true, true)}</style>
+      ${pdtDocCorps(d, true)}
+    </div>
+  </div>`;
+  window.scrollTo(0, scroll);
+  const zone = main.querySelector('.pdt-ed-zone');
+  zone.addEventListener('input', pdtEdInput);
+  zone.addEventListener('focusout', pdtEdSortie);
+  zone.addEventListener('keydown', e => {
+    const el = e.target.closest && e.target.closest('.ed');
+    if (el && e.key === 'Enter' && !el.dataset.multi) { e.preventDefault(); el.blur(); }
+  });
+  zone.addEventListener('click', e => {
+    const r = e.target.closest('[data-img]');
+    if (!r) return;
+    const f = document.createElement('input');
+    f.type = 'file'; f.accept = 'image/*';
+    f.onchange = () => pdtImageFichier(f.files[0], r.dataset.img);
+    f.click();
+  });
+  zone.addEventListener('paste', e => { const r = e.target.closest('[data-img]'); if (r) pdtImageColle(e, r.dataset.img); });
+  zone.addEventListener('dragover', e => { if (e.target.closest('[data-img]')) e.preventDefault(); });
+  zone.addEventListener('drop', e => { const r = e.target.closest('[data-img]'); if (r) pdtImageDepose(e, r.dataset.img); });
+}
+
+// Une case du document modifiée
+function pdtEdInput(e) {
+  const el = e.target.closest && e.target.closest('[data-k]');
+  if (!el || (el.dataset.k === 'heure' && el.dataset.l === 'lignes')) return;
+  let v = el.tagName === 'INPUT' ? el.value : el.innerText.replace(/\n$/, '');
+  if (!el.dataset.multi) v = v.replace(/\n/g, ' ');
+  pdtInput({ value: v, type: '', dataset: el.dataset });
+  if (el.dataset.k === 'duree') pdtMajHeuresDoc();
+  if (el.dataset.k === 'lumiere') {
+    const l = pdtLigne(el.dataset.i), td = el.closest('td'), c = l && pdtLumiere(l);
+    if (td) { td.style.background = c ? c[0] : ''; td.style.color = c ? c[1] : ''; }
+  }
+}
+
+// Case HORAIRES d'une ligne quittée : l'heure écrite devient son début fixe (vide : à la suite)
+function pdtEdSortie(e) {
+  const el = e.target.closest && e.target.closest('[data-k="heure"][data-l="lignes"]');
+  const d = pdtCur(), l = el && pdtLigne(el.dataset.i);
+  if (!l) return;
+  const m = /(\d{1,2})[:h.](\d{2})/.exec(el.innerText);
+  const avant = l.heure;
+  if (!m) delete l.heure;
+  else {
+    const hh = String(m[1]).padStart(2, '0') + ':' + m[2];
+    delete l.heure;
+    const calc = pdtHoraires(d)[l.id];
+    if (avant || !calc || hh !== pdtHh(calc.du)) l.heure = hh;
+  }
+  pdtChange();
+  pdtMajHeuresDoc(true);
+}
+
+// Les horaires calculés affichés dans le document, sans le redessiner
+function pdtMajHeuresDoc(tout) {
+  const d = pdtCur();
+  if (!d) return;
+  const h = pdtHoraires(d);
+  document.querySelectorAll('.pdt-doc-ed [data-hd]').forEach(el => {
+    if (!tout && el === document.activeElement) return;
+    const x = h[el.dataset.hd], l = pdtLigne(el.dataset.hd);
+    if (!x || !l) return;
+    el.textContent = l.type === 'partie' ? (l.hors ? 'HORS PLATEAU' : `PARTIE ${x.num}`) : pdtPlage(x);
+  });
+}
+
+function pdtLigneRegler(id, k, v) {
+  const l = pdtLigne(id);
+  if (!l) return;
+  if (v === '' || v === false) delete l[k]; else l[k] = v;
+  pdtChange();
+  pdtRedessiner();
+}
+
 const PDT_TYPES_NOM = { partie: 'PARTIE', install: 'MISE EN PLACE', plan: 'PLAN', pause: 'PAUSE' };
 
 function pdtLigneHtml(l, i, h, n) {
+  const M = pdtMots(pdtCur());
   const o = { l: 'lignes', i: l.id };
   const heure = h.num ? `PARTIE ${h.num}` : h.hors ? (l.type === 'partie' ? 'HORS PLATEAU' : '') : pdtPlage(h);
   const hdr = `<div class="ts-ligne-hdr">
-      <b>${l.type === 'plan' ? `PLAN${l.shot ? ' #' + esc(l.shot) : ''}` : l.type === 'partie' ? '' : PDT_TYPES_NOM[l.type]}</b>
+      <b>${l.type === 'plan' ? `${pdtMots(pdtCur()).plan}${l.shot ? ' #' + esc(l.shot) : ''}` : l.type === 'partie' ? '' : PDT_TYPES_NOM[l.type]}</b>
       <span class="pdt-h" data-h="${l.id}" data-t="${l.type}">${esc(heure)}</span>
       <div class="spacer"></div>
       <select class="pdt-ajout" onchange="pdtAjouter(this.value, ${i}); this.value=''" title="Ajouter une ligne en dessous">
-        <option value="">+ dessous</option><option value="plan">Plan</option><option value="install">Mise en place</option><option value="pause">Pause / battement</option><option value="partie">Partie (décor)</option>
+        <option value="">+ dessous</option><option value="plan">${M.plan === 'PHOTO' ? 'Photo' : 'Plan'}</option><option value="install">Mise en place</option><option value="pause">Pause / battement</option><option value="partie">Partie (décor)</option>
       </select>
       <button type="button" class="ts-x" onclick="pdtDeplacer(${i}, -1)" title="Monter"${i ? '' : ' disabled'}>↑</button>
       <button type="button" class="ts-x" onclick="pdtDeplacer(${i}, 1)" title="Descendre"${i < n - 1 ? '' : ' disabled'}>↓</button>
@@ -348,11 +508,11 @@ function pdtLigneHtml(l, i, h, n) {
         <input class="pdt-ref-colle" placeholder="ou colle l'image ici" onpaste="pdtImageColle(event, '${l.id}')" onkeydown="if(event.key==='Enter'){event.preventDefault();pdtImageLien(this.value, '${l.id}')}">
       </div>
       <div class="ts-grid pdt-grid-plan">
-        ${pdtField('SHOT #', 'shot', l.shot, { ...o, ph: '40' })}
+        ${pdtField(M.num, 'shot', l.shot, { ...o, ph: '40' })}
         ${temps}
-        ${pdtField('SCÈNE', 'scene', l.scene, { ...o, textarea: true, full: true, ph: 'Ce qu\'on voit dans le plan…' })}
-        ${pdtField('DESCRIPTION TECHNIQUE', 'technique', l.technique, { ...o, ph: 'Plan large fixe' })}
-        ${pdtField('CAMÉRA / OPTIQUE', 'optique', l.optique, { ...o, ph: '35MM' })}
+        ${pdtField(M.scene, 'scene', l.scene, { ...o, textarea: true, full: true, ph: M.phScene })}
+        ${pdtField(M.technique, 'technique', l.technique, { ...o, ph: M.phTech })}
+        ${pdtField(M.optique, 'optique', l.optique, { ...o, ph: '35MM' })}
         ${pdtField('EFFET LUMIÈRE', 'lumiere', l.lumiere, { ...o, textarea: true, rows: 2, ph: 'NUIT\n(2e ligne en petit)' })}
         ${pdtField('COULEUR DE LA CASE', 'lumCouleur', l.lumCouleur, { ...o, select: PDT_LUMIERES_CHOIX })}
         ${pdtField('NOTES / À PRÉVOIR', 'note', l.note, { ...o, textarea: true, rows: 2, ph: 'Prévoir accessoire…' })}
@@ -477,6 +637,7 @@ function pdtLogoMettre(png) {
   d.logo = png;
   if (png && d.client) prodData().logos[tsCleClient(d.client)] = png;
   pdtChange();
+  if (pdtMode !== 'form') pdtRedessiner();
   pdtLogoMaj();
 }
 async function pdtLogoFichier(f) {
@@ -595,71 +756,138 @@ function pdtDateTexte(iso) {
   return iso ? tsD(iso).toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC' }).toUpperCase() : '[DATE À COMPLÉTER]';
 }
 
-function pdtDocHtml(d, ecran) {
+// Le document : edit = true pour l'éditeur « sur le document » (cases modifiables,
+// outils de ligne dans la marge), sinon le rendu de l'aperçu et du PDF.
+function pdtDocCorps(d, edit) {
+  const M = pdtMots(d);
   const base = location.href.replace(/[#?].*$/, '').replace(/[^/]*$/, '');
   const h = pdtHoraires(d);
   const lignes = d.lignes || [];
   const premier = lignes.find(l => l.type !== 'partie' && h[l.id] && h[l.id].du != null);
   // READY TO SHOOT et WRAP vides : l'heure du premier plan et celle de la fin
   const auto = lab => /ready/i.test(lab) && premier ? pdtHh(h[premier.id].du) : /wrap/i.test(lab) && h.fin != null ? pdtHh(h.fin) : '';
-  const horaires = (d.horaires || []).filter(x => x.label || x.heure);
-  const cast = (d.cast || []).filter(x => x.nom || x.role);
+  const up = v => String(v == null ? '' : v).toUpperCase();
+  // Une case : modifiable dans l'éditeur, texte simple sinon
+  const ed = (v, k, o = {}) => edit
+    ? `<span class="ed${o.up ? ' up' : ''}${o.tbc ? ' ph-tbc' : ''}" contenteditable="plaintext-only" spellcheck="false" data-k="${k}"${o.l ? ` data-l="${o.l}" data-i="${o.i}"` : ''}${o.multi ? ' data-multi="1"' : ''} data-ph="${esc(o.ph || '')}">${esc(v == null ? '' : v)}</span>`
+    : o.tbc ? pdtTbc(o.up ? up(v) : v) : esc(o.up ? up(v) : v);
+  const outils = (l, i) => !edit ? '' : `<div class="pdt-outils" contenteditable="false">
+      <select title="Ajouter une ligne en dessous" onchange="pdtAjouter(this.value, ${i}); this.value=''"><option value="">＋</option><option value="plan">${M.plan === 'PHOTO' ? 'Photo' : 'Plan'}</option><option value="install">Mise en place</option><option value="pause">Pause / battement</option><option value="partie">Partie (décor)</option></select>
+      <button type="button" title="Monter" onclick="pdtDeplacer(${i}, -1)">↑</button>
+      <button type="button" title="Descendre" onclick="pdtDeplacer(${i}, 1)">↓</button>
+      <button type="button" title="Dupliquer la ligne" onclick="pdtCopierLigne(${i})">⧉</button>
+      ${l.type === 'plan' ? `<select title="Couleur de la case lumière" onchange="pdtLigneRegler('${l.id}', 'lumCouleur', this.value)">${PDT_LUMIERES_CHOIX.map(([v, lab]) => `<option value="${v}"${(l.lumCouleur || '') === v ? ' selected' : ''}>${v ? '◐ ' + lab : '◐ Auto'}</option>`).join('')}</select>
+      <button type="button" class="${l.noteNoire ? '' : 'on-rouge'}" title="Note en rouge ou en noir" onclick="pdtNoteRouge('${l.id}', ${l.noteNoire ? 'true' : 'false'}); pdtRedessiner()">A</button>` : ''}
+      ${l.type === 'partie' ? `<button type="button" class="${l.hors ? 'on' : ''}" title="Hors plateau (sans horaires)" onclick="pdtLigneRegler('${l.id}', 'hors', ${l.hors ? 'false' : 'true'})">HORS</button>` : ''}
+      <button type="button" title="Retirer" onclick="pdtRetirer('lignes', ${i})">✕</button>
+    </div>`;
+
+  // En-tête : horaires de la journée à gauche, cast à droite
+  const horaires = edit ? d.horaires || [] : (d.horaires || []).filter(x => x.label || x.heure);
+  const cast = edit ? d.cast || [] : (d.cast || []).filter(x => x.nom || x.role);
   const nHaut = Math.max(horaires.length, cast.length + 1);
   const haut = [];
+  const x0 = { up: true };
   for (let i = 0; i < nHaut; i++) {
     const x = horaires[i];
     const c = i === 0 ? null : cast[i - 1];
+    const oh = { l: 'horaires', i };
+    const oc = { l: 'cast', i: i - 1 };
     haut.push(`<tr>
-      <td class="hh">${x ? pdtTbc(x.heure || auto(x.label)) : ''}</td><td class="lab">${x ? esc(String(x.label || '').toUpperCase()) : ''}</td>
+      <td class="hh">${x ? `${edit ? `<div class="pdt-outils" contenteditable="false"><button type="button" title="Retirer" onclick="pdtRetirer('horaires', ${i})">✕</button></div>` : ''}${ed(x.heure || (edit ? '' : auto(x.label)), 'heure', { ...oh, tbc: true, ph: auto(x.label) || 'TBC' })}` : ''}</td>
+      <td class="lab">${x ? ed(x.label, 'label', { ...oh, ...x0, ph: 'QUOI' }) : ''}</td>
       ${i === 0 ? '<th>CAST</th><th>ROLE</th><th>CALL</th><th>PAT</th>'
-        : c ? `<td class="c">${pdtTbc(c.nom)}</td><td class="c b">${esc(String(c.role || '').toUpperCase())}</td><td class="c">${pdtTbc(c.call)}</td><td class="c">${pdtTbc(c.pat)}</td>`
+        : c ? `<td class="c">${ed(c.nom, 'nom', { ...oc, up: true, tbc: true, ph: 'TBC' })}</td><td class="c b">${ed(c.role, 'role', { ...oc, up: true, ph: 'RÔLE' })}</td><td class="c">${ed(c.call, 'call', { ...oc, tbc: true, ph: 'TBC' })}</td><td class="c pat">${ed(c.pat, 'pat', { ...oc, tbc: true, ph: 'TBC' })}${edit ? `<div class="pdt-outils droite" contenteditable="false"><button type="button" title="Retirer" onclick="pdtRetirer('cast', ${i - 1})">✕</button></div>` : ''}</td>`
           : '<td></td><td></td><td></td><td></td>'}
     </tr>`);
   }
 
   const entete = `<tr class="th">
-    <th>HORAIRES</th><th>DURATION</th><th>SHOT #</th><th>REFERENCE</th><th>SCENE</th><th>DESCRIPTION<br>TECHNIQUE</th><th>CAMERA<br>-<br>LENS</th><th>LIGHTING<br>EFFECT</th><th>NOTES /<br>À PRÉVOIR</th>
+    <th>HORAIRES</th><th>DURATION</th><th>${M.num}</th><th>REFERENCE</th><th>${M.sceneCol}</th><th>${M.techniqueCol}</th><th>${M.optiqueCol}</th><th>LIGHTING<br>EFFECT</th><th>NOTES /<br>À PRÉVOIR</th>
   </tr>`;
-  const corps = lignes.map(l => {
+  const corps = lignes.map((l, i) => {
     const x = h[l.id] || {};
+    const o = { l: 'lignes', i: l.id };
     if (l.type === 'partie') {
-      const t = String(l.titre || '').toUpperCase();
-      if (l.hors) return `<tr class="saut"><td colspan="9"></td></tr><tr class="noir"><td colspan="9"></td></tr><tr class="barre"><td colspan="9">${esc(/^HORS PLATEAU/.test(t) ? t : 'HORS PLATEAU' + (t ? ' — ' + t : ''))}</td></tr>`;
-      return `<tr class="barre"><td colspan="9">${esc(/^PARTIE/.test(t) ? t : `PARTIE ${x.num}${t ? ' — ' + t : ''}`)}</td></tr>`;
+      const t = up(l.titre);
+      const titre = edit ? `<span data-hd="${l.id}">${l.hors ? 'HORS PLATEAU' : `PARTIE ${x.num}`}</span> — ${ed(l.titre, 'titre', { ...o, up: true, ph: 'DÉCOR — AMBIANCE' })}`
+        : esc(l.hors ? (/^HORS PLATEAU/.test(t) ? t : 'HORS PLATEAU' + (t ? ' — ' + t : '')) : /^PARTIE/.test(t) ? t : `PARTIE ${x.num}${t ? ' — ' + t : ''}`);
+      return `${l.hors ? '<tr class="saut"><td colspan="9"></td></tr><tr class="noir"><td colspan="9"></td></tr>' : ''}<tr class="barre"><td colspan="9">${outils(l, i)}${titre}</td></tr>`;
     }
     if (l.type === 'pause') {
-      const nom = String(l.nom || 'PAUSE').toUpperCase();
-      return `<tr class="barre"><td colspan="9">${esc([nom, pdtPlage(x)].filter(Boolean).join(' ') + (l.texte ? ' — ' + String(l.texte).toUpperCase() : ''))}</td></tr>`;
+      if (!edit) return `<tr class="barre"><td colspan="9">${esc([up(l.nom || 'PAUSE'), pdtPlage(x)].filter(Boolean).join(' ') + (l.texte ? ' — ' + up(l.texte) : ''))}</td></tr>`;
+      return `<tr class="barre"><td colspan="9">${outils(l, i)}${ed(l.nom, 'nom', { ...o, up: true, ph: 'PAUSE' })} <span data-hd="${l.id}">${esc(pdtPlage(x))}</span> — ${ed(l.texte, 'texte', { ...o, up: true, ph: 'détail' })} <span class="pdt-duree-barre">(${ed(l.duree, 'duree', { ...o, ph: '0' })} min)</span></td></tr>`;
     }
-    const duree = x.hors || !x.duree ? '-' : `${x.duree} mins`;
-    if (l.type === 'install') return `<tr class="install"><td class="hh">${esc(pdtPlage(x))}</td><td>${duree}</td><td class="c">-</td><td colspan="6" class="it">${esc(String(l.texte || '').toUpperCase())}</td></tr>`;
+    const heure = edit ? `<span class="ed" contenteditable="plaintext-only" spellcheck="false" data-k="heure" data-l="lignes" data-i="${l.id}" data-hd="${l.id}" title="Écris une heure pour fixer le début de cette ligne">${esc(pdtPlage(x))}</span>` : esc(pdtPlage(x));
+    const duree = x.hors ? '-' : edit ? `${ed(l.duree, 'duree', { ...o, ph: '0' })} mins` : x.duree ? `${x.duree} mins` : '-';
+    if (l.type === 'install') return `<tr class="install"><td class="hh">${outils(l, i)}${heure}</td><td class="du">${duree}</td><td class="c">-</td><td colspan="6" class="it">${ed(l.texte, 'texte', { ...o, up: true, ph: 'MISE EN PLACE…' })}</td></tr>`;
     const lum = pdtLumiere(l);
+    const lumStyle = lum ? ` style="background:${lum[0]};color:${lum[1]}"` : '';
     const [lum1, ...lumS] = pdtLignes(l.lumiere);
     const opt = pdtLignes(l.optique);
-    return `<tr class="plan${l.img ? ' avec-img' : ''}">
-      <td class="hh">${esc(pdtPlage(x))}</td><td>${duree}</td><td class="shot">${esc(l.shot || '-')}</td>
-      <td class="ref">${l.img ? `<img src="${esc(pdtImgSrc(l.img))}" alt="">` : ''}</td>
-      <td class="txt">${esc(l.scene || '').replace(/\n/g, '<br>')}</td>
-      <td class="txt">${esc(l.technique || '').replace(/\n/g, '<br>')}</td>
-      <td class="opt">${opt.map((o, i) => i ? `<small>${esc(o.toUpperCase())}</small>` : esc(o.toUpperCase())).join('')}</td>
-      <td class="lum"${lum ? ` style="background:${lum[0]};color:${lum[1]}"` : ''}>${lum1 ? esc(lum1.toUpperCase()) : ''}${lumS.map(s => `<small>${esc(s.toUpperCase())}</small>`).join('')}</td>
-      <td class="note${l.noteNoire ? '' : ' rouge'}">${esc(l.note || '').replace(/\n/g, '<br>')}</td>
+    const ref = edit
+      ? `<div class="pdt-ref-ed" tabindex="0" data-img="${l.id}" title="Clique pour choisir une image, ou colle / glisse une image ici">${l.img ? `<img src="${esc(pdtImgSrc(l.img))}" alt="">` : `<span>${l.imgEnvoi ? 'ENVOI…' : '+ IMAGE'}</span>`}</div>`
+      : l.img ? `<img src="${esc(pdtImgSrc(l.img))}" alt="">` : '';
+    return `<tr class="plan${l.img || edit ? ' avec-img' : ''}">
+      <td class="hh">${outils(l, i)}${heure}</td><td class="du">${duree}</td><td class="shot">${ed(l.shot || (edit ? '' : '-'), 'shot', { ...o, ph: '#' })}</td>
+      <td class="ref">${ref}</td>
+      <td class="txt">${ed(l.scene, 'scene', { ...o, multi: true, ph: M.phScene })}</td>
+      <td class="txt">${ed(l.technique, 'technique', { ...o, multi: true, ph: M.phTech })}</td>
+      <td class="opt">${edit ? ed(l.optique, 'optique', { ...o, up: true, multi: true, ph: '35MM' }) : opt.map((v, j) => j ? `<small>${esc(up(v))}</small>` : esc(up(v))).join('')}</td>
+      <td class="lum"${lumStyle}>${edit ? ed(l.lumiere, 'lumiere', { ...o, up: true, multi: true, ph: 'JOUR / NUIT' }) : (lum1 ? esc(up(lum1)) : '') + lumS.map(s => `<small>${esc(up(s))}</small>`).join('')}</td>
+      <td class="note${l.noteNoire ? '' : ' rouge'}">${ed(l.note, 'note', { ...o, multi: true, ph: 'à prévoir…' })}</td>
     </tr>`;
   }).join('');
 
-  return `<!DOCTYPE html><html lang="fr"><head><meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>PDT ${esc([d.titre || d.client, 'J' + (d.jour || 1)].filter(Boolean).join(' ').replace(/[“”"]/g, ''))}</title>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Karla:ital,wght@0,400;0,700;1,400&display=swap">
-<style>
-  @page { size: A4 portrait; margin: 9mm 8mm; }
-  body { margin: 0; background: ${ecran ? '#fff' : '#e9e9e7'}; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  const date = edit
+    ? `<label class="pdt-ed-date" title="Choisir la date du tournage">${esc(pdtDateTexte(d.date))}<input type="date" data-k="date" value="${esc(d.date || '')}" onclick="try{this.showPicker()}catch(e){}" onchange="pdtInput(this); pdtRedessiner()"></label> · ${ed(d.lieu, 'lieu', { up: true, ph: 'LIEU' })}`
+    : esc(pdtDateTexte(d.date)) + (d.lieu ? ' · ' + esc(up(d.lieu)) : '');
+  const jours = Math.max(Number(d.jours) || 1, Number(d.jour) || 1);
+  const client = d.logo ? `<img src="${esc(d.logo)}" alt="${esc(d.client)}"${edit ? ' title="Logo du client : change-le dans la barre au-dessus"' : ''}>` : ed(d.client, 'client', { up: true, ph: 'CLIENT' });
+  return `<div class="pdt-doc${edit ? ' pdt-doc-ed' : ''}">
+  <div class="tete">
+    <img class="widen" src="${base}widen-logo.png" alt="WIDEN">
+    <div class="mil">
+      <h1>SHOOTING SCHEDULE</h1>
+      <div class="t">${ed(d.titre, 'titre', { up: true, ph: 'CLIENT “PROJET”' })}</div>
+      <div class="d">${date}</div>
+      <div class="d">${pdtType(d) === 'photo' ? 'PHOTO · ' : ''}SHOOT DAY ${edit ? `${ed(d.jour || 1, 'jour')} / ${ed(d.jours || 1, 'jours')}` : `${Number(d.jour) || 1} / ${jours}`}</div>
+    </div>
+    <div class="cl">${client}</div>
+  </div>
+  <table class="haut">
+    <colgroup><col style="width:10%"><col style="width:30%"><col style="width:21%"><col style="width:17%"><col style="width:9%"><col style="width:13%"></colgroup>
+    ${haut.join('')}
+    ${edit ? `<tr class="pdt-ajout-haut"><td colspan="2"><button type="button" onclick="pdtAjouterSimple('horaires')">+ horaire</button></td><td colspan="4"><button type="button" onclick="pdtAjouterSimple('cast')">+ cast</button></td></tr>` : ''}
+    <tr class="noir"><td colspan="6"></td></tr>
+    <tr class="prepa"><td>${edit ? ed(d.prepaHeure, 'prepaHeure', { ph: d.debut ? 'TBC-' + d.debut : 'TBC' }) : pdtTbc(d.prepaHeure || (d.debut ? 'TBC-' + d.debut : ''))}</td><td colspan="5">${ed(d.prepaTexte, 'prepaTexte', { up: true, ph: 'PRÉPA…' })}</td></tr>
+  </table>
+  <table class="plan-t">
+    <colgroup><col style="width:10%"><col style="width:7%"><col style="width:5.5%"><col style="width:17.5%"><col style="width:18%"><col style="width:13%"><col style="width:8%"><col style="width:10%"><col style="width:11%"></colgroup>
+    <thead>${entete}</thead>
+    <tbody>${corps}</tbody>
+  </table>
+  ${edit ? `<div class="pdt-ajout-bas">
+      <button type="button" onclick="pdtAjouter('partie')">+ PARTIE (DÉCOR)</button>
+      <button type="button" onclick="pdtAjouter('install')">+ MISE EN PLACE</button>
+      <button type="button" onclick="pdtAjouter('plan')">+ ${M.plan}</button>
+      <button type="button" onclick="pdtAjouter('pause')">+ PAUSE / BATTEMENT</button>
+    </div>
+    <p class="pied">${ed(d.piedPage, 'piedPage', { ph: 'Note en bas de page (facultatif) : Rouge = à prévoir · TBC = à confirmer…' })}</p>`
+    : d.piedPage ? `<p class="pied">${esc(d.piedPage)}</p>` : ''}
+</div>`;
+}
+
+// Styles du document. ecran : aperçu (fond blanc) ; edit : dans la page du site
+function pdtDocCss(ecran, edit) {
+  return `${edit ? '' : `@page { size: A4 portrait; margin: 9mm 8mm; }
+  body { margin: 0; background: ${ecran ? '#fff' : '#e9e9e7'}; -webkit-print-color-adjust: exact; print-color-adjust: exact; }`}
   .pdt-doc, .pdt-doc * { box-sizing: border-box; }
-  .pdt-doc { font-family: 'Karla', Arial, sans-serif; color: #111; width: 210mm; min-height: 297mm; margin: ${ecran ? '0' : '10mm'} auto; background: #fff; padding: 9mm 8mm; font-size: 8px; line-height: 1.25; }
+  .pdt-doc { font-family: 'Karla', Arial, sans-serif; color: #111; width: 210mm; min-height: 297mm; margin: ${ecran ? '0' : '10mm'} auto; background: #fff; padding: 9mm 8mm; font-size: 8px; line-height: 1.25; text-align: left; letter-spacing: normal; }
   .pdt-doc .tete { display: grid; grid-template-columns: 1fr 2fr 1fr; align-items: center; margin-bottom: 5mm; }
   .pdt-doc .tete .widen { height: 15px; display: block; }
   .pdt-doc .tete .mil { text-align: center; }
-  .pdt-doc .tete .mil h1 { font-size: 15px; font-weight: 700; margin: 0 0 9px; letter-spacing: .02em; }
+  .pdt-doc .tete .mil h1 { font-family: inherit; font-size: 15px; font-weight: 700; margin: 0 0 9px; letter-spacing: .02em; }
   .pdt-doc .tete .mil .t { font-size: 10px; font-weight: 700; margin-bottom: 14px; }
   .pdt-doc .tete .mil .d { font-size: 8px; font-weight: 700; }
   .pdt-doc .tete .cl { justify-self: end; text-align: right; font-weight: 700; font-size: 17px; letter-spacing: .03em; }
@@ -687,39 +915,61 @@ function pdtDocHtml(d, ecran) {
   .pdt-doc td.shot { font-weight: 700; font-size: 10px; }
   .pdt-doc td.ref { padding: 0; }
   .pdt-doc td.ref img { width: 100%; height: 25mm; object-fit: cover; display: block; }
-  .pdt-doc td.txt { font-size: 7px; }
+  .pdt-doc td.txt { font-size: 7px; white-space: pre-line; }
   .pdt-doc td.opt, .pdt-doc td.lum { font-size: 8px; }
   .pdt-doc td small { display: block; font-size: 5.5px; margin-top: 3px; }
-  .pdt-doc td.note { font-size: 7px; }
+  .pdt-doc td.note { font-size: 7px; white-space: pre-line; }
   .pdt-doc td.note.rouge { color: #e00000; }
   .pdt-doc thead { display: table-header-group; }
+  .pdt-doc .pied { margin: 6px 0 0; font-size: 7px; font-style: italic; }
+  ${edit ? `
+  .pdt-doc-ed .ed { outline: none; min-width: 1.2em; display: inline-block; border-radius: 1px; cursor: text; }
+  .pdt-doc-ed td > .ed, .pdt-doc-ed .t > .ed, .pdt-doc-ed .pied > .ed { display: block; min-height: 1.25em; }
+  .pdt-doc-ed .ed:hover { box-shadow: 0 0 0 1px #9cb6d8; }
+  .pdt-doc-ed .ed:focus { box-shadow: 0 0 0 1.5px #2f5597; background: #fff8; }
+  .pdt-doc-ed .ed:empty::before { content: attr(data-ph); color: #aaa; font-weight: 400; font-style: italic; }
+  .pdt-doc-ed .ed.ph-tbc:empty::before { color: #c00000; font-weight: 700; font-style: normal; }
+  .pdt-doc-ed .ed.up { text-transform: uppercase; }
+  .pdt-doc-ed .ed.up:empty::before { text-transform: none; }
+  .pdt-doc-ed td.txt .ed, .pdt-doc-ed td.note .ed, .pdt-doc-ed td.opt .ed, .pdt-doc-ed td.lum .ed { white-space: pre-wrap; }
+  .pdt-doc-ed td.lum .ed, .pdt-doc-ed td.opt .ed { font-size: 5.5px; }
+  .pdt-doc-ed td.lum .ed::first-line, .pdt-doc-ed td.opt .ed::first-line { font-size: 8px; }
+  .pdt-doc-ed tr.barre .ed { min-width: 3em; }
+  .pdt-doc-ed tr.barre td > .ed { display: inline-block; }
+  .pdt-doc-ed .pdt-duree-barre { font-weight: 400; color: #666; }
+  .pdt-doc-ed .pdt-ed-date { position: relative; cursor: pointer; }
+  .pdt-doc-ed .pdt-ed-date:hover { box-shadow: 0 0 0 1px #9cb6d8; }
+  .pdt-doc-ed .pdt-ed-date input { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer; border: none; padding: 0; }
+  .pdt-doc-ed td.du { white-space: nowrap; }
+  .pdt-doc-ed td.du > .ed { display: inline-block; min-height: 0; }
+  .pdt-doc-ed .pdt-ref-ed { width: 100%; height: 25mm; display: flex; align-items: center; justify-content: center; cursor: pointer; outline: none; color: #999; font-size: 7px; letter-spacing: .05em; }
+  .pdt-doc-ed .pdt-ref-ed img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .pdt-doc-ed .pdt-ref-ed:hover, .pdt-doc-ed .pdt-ref-ed:focus { box-shadow: inset 0 0 0 1.5px #2f5597; }
+  .pdt-doc-ed td { position: relative; }
+  .pdt-doc-ed .pdt-outils { position: absolute; right: calc(100% + 6px); top: 50%; transform: translateY(-50%); display: none; gap: 2px; flex-direction: column; align-items: stretch; z-index: 3; font-size: 11px; font-family: Arial, sans-serif; }
+  .pdt-doc-ed tr.barre .pdt-outils { flex-direction: row; }
+  .pdt-doc-ed .pdt-outils.droite { right: auto; left: calc(100% + 6px); }
+  .pdt-doc-ed tr:hover .pdt-outils, .pdt-doc-ed tr:focus-within .pdt-outils { display: flex; }
+  .pdt-doc-ed .pdt-outils button, .pdt-doc-ed .pdt-outils select { font: 11px Arial, sans-serif; background: #fff; border: 1px solid #ccc; color: #333; padding: 1px 4px; cursor: pointer; min-width: 22px; max-width: 70px; }
+  .pdt-doc-ed .pdt-outils button:hover { border-color: #2f5597; }
+  .pdt-doc-ed .pdt-outils .on, .pdt-doc-ed .pdt-outils .on-rouge { color: #e00000; border-color: #e00000; font-weight: 700; }
+  .pdt-doc-ed .pdt-outils .on { color: #2f5597; border-color: #2f5597; }
+  .pdt-doc-ed tr.pdt-ajout-haut td { border: none; height: auto; padding: 3px 0; text-align: left; }
+  .pdt-doc-ed .pdt-ajout-haut button, .pdt-doc-ed .pdt-ajout-bas button { font: 10px Arial, sans-serif; background: #fff; border: 1px dashed #aaa; color: #555; padding: 3px 8px; cursor: pointer; }
+  .pdt-doc-ed .pdt-ajout-haut button:hover, .pdt-doc-ed .pdt-ajout-bas button:hover { border-color: #2f5597; color: #2f5597; }
+  .pdt-doc-ed .pdt-ajout-bas { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 6px; }` : `
   @media screen and (max-width: 760px) { .pdt-doc { zoom: .46; margin: 8px auto; } }
-  @media print { body { background: #fff; } .barre-impr { display: none; } .pdt-doc { width: auto; min-height: 0; margin: 0; padding: 0; } }
-</style></head><body>
+  @media print { body { background: #fff; } .barre-impr { display: none; } .pdt-doc { width: auto; min-height: 0; margin: 0; padding: 0; } }`}`;
+}
+
+function pdtDocHtml(d, ecran) {
+  return `<!DOCTYPE html><html lang="fr"><head><meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PDT ${esc([d.titre || d.client, 'J' + (d.jour || 1)].filter(Boolean).join(' ').replace(/[“”"]/g, ''))}</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Karla:ital,wght@0,400;0,700;1,400&display=swap">
+<style>${pdtDocCss(ecran, false)}</style></head><body>
 ${ecran ? '' : '<div class="barre barre-impr" style="position:sticky;top:0;z-index:5;display:flex;gap:12px;align-items:center;justify-content:center;padding:12px;background:#111;color:#fff;font:14px Arial">Vérifie le plan de travail puis <button onclick="window.print()">IMPRIMER / ENREGISTRER EN PDF</button></div>'}
-<div class="pdt-doc">
-  <div class="tete">
-    <img class="widen" src="${base}widen-logo.png" alt="WIDEN">
-    <div class="mil">
-      <h1>SHOOTING SCHEDULE</h1>
-      <div class="t">${esc(String(d.titre || '').toUpperCase())}</div>
-      <div class="d">${esc(pdtDateTexte(d.date))}${d.lieu ? ' · ' + esc(String(d.lieu).toUpperCase()) : ''}</div>
-      <div class="d">SHOOT DAY ${Number(d.jour) || 1} / ${Math.max(Number(d.jours) || 1, Number(d.jour) || 1)}</div>
-    </div>
-    <div class="cl">${d.logo ? `<img src="${esc(d.logo)}" alt="${esc(d.client)}">` : esc(String(d.client || '').toUpperCase())}</div>
-  </div>
-  <table class="haut">
-    <colgroup><col style="width:10%"><col style="width:30%"><col style="width:21%"><col style="width:17%"><col style="width:9%"><col style="width:13%"></colgroup>
-    ${haut.join('')}
-    <tr class="noir"><td colspan="6"></td></tr>
-    <tr class="prepa"><td>${pdtTbc(d.prepaHeure || (d.debut ? 'TBC-' + d.debut : ''))}</td><td colspan="5">${esc(String(d.prepaTexte || '').toUpperCase())}</td></tr>
-  </table>
-  <table class="plan-t">
-    <colgroup><col style="width:10%"><col style="width:7%"><col style="width:5.5%"><col style="width:17.5%"><col style="width:18%"><col style="width:13%"><col style="width:8%"><col style="width:10%"><col style="width:11%"></colgroup>
-    <thead>${entete}</thead>
-    <tbody>${corps}</tbody>
-  </table>
-</div>
+${pdtDocCorps(d, false)}
 </body></html>`;
 }
 
