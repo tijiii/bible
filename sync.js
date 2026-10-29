@@ -154,6 +154,7 @@ async function pullRemoteDb() {
       else { buildTabs(); render(); }
     }
     setSyncStatus('ok');
+    if (typeof pdtSemer === 'function') pdtSemer();
   } catch (e) {
     setSyncStatus('error');
   }
