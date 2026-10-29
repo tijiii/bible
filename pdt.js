@@ -932,8 +932,18 @@ function pdtGlisseDessous(tr, e) {
   return e.clientY > r.top + r.height / 2;
 }
 
-// Déplace la ligne i à la place « avant la ligne j » (j = longueur : à la fin)
 let pdtGlisse = null, pdtGlisseVers = null;
+
+// Pendant le glisser, la page défile toute seule quand la souris approche du haut ou du bas
+// de l'écran : on peut emmener une ligne loin sans lâcher
+document.addEventListener('dragover', e => {
+  if (pdtGlisse == null) return;
+  const bord = 90, h = window.innerHeight;
+  const v = e.clientY < bord ? e.clientY - bord : e.clientY > h - bord ? e.clientY - (h - bord) : 0;
+  if (v) window.scrollBy(0, Math.round(v / 3));
+});
+
+// Déplace la ligne i à la place « avant la ligne j » (j = longueur : à la fin)
 function pdtDeplacerVers(i, j) {
   const d = pdtCur();
   if (!d || !d.lignes[i] || j === i || j === i + 1) return pdtRedessiner();
