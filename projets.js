@@ -761,8 +761,8 @@ function renderPjProjet(main) {
 // le reste (étapes à modifier et import du rétroplanning, équipe, to-do, PDT,
 // travel sheets, infos) est à un clic.
 const PJ_ONGLETS = [
-  ['calendrier', 'CALENDRIER'], ['retro', 'ÉTAPES'], ['equipe', 'ÉQUIPE'], ['todo', 'TO-DO'],
-  ['pdt', 'PDT'], ['travel', 'TRAVEL SHEETS'], ['infos', 'INFOS & NOTES'],
+  ['infos', 'NOTES & INFOS'], ['calendrier', 'CALENDRIER'], ['retro', 'ÉTAPES'], ['equipe', 'ÉQUIPE'], ['todo', 'TO-DO'],
+  ['pdt', 'PDT'], ['travel', 'TRAVEL SHEETS'],
 ];
 
 function pjOngletsHtml(p) {
@@ -822,9 +822,14 @@ function pjPageHtml(p, conflits, choix) {
   </div>`;
 }
 
-// Onglet INFOS & NOTES : nom, client, statut, couleur, ce qui vient de PROJETS WIDEN, notes
+// Onglet NOTES & INFOS : les notes, puis nom, client, statut, couleur, ce qui vient de PROJETS WIDEN
 function pjInfosHtml(p) {
   return `<section class="ts-bloc">
+      <h3>NOTES</h3>
+      ${pjField('', 'notes', p.notes, { textarea: true, rows: 4, full: true, ph: 'Infos utiles, liens (devis, Dropbox, rétroplanning)…' })}
+    </section>
+
+    <section class="ts-bloc">
       <h3>PROJET</h3>
       <div class="ts-grid pj-grid-infos">
         ${pjField('NOM DU PROJET', 'nom', p.nom, { ph: 'ex : IKKS FW26', change: true })}
@@ -833,11 +838,6 @@ function pjInfosHtml(p) {
         <div class="field pj-couleur"><label>COULEUR</label><input type="color" value="${esc(pjCouleur(p))}" data-k="couleur" onchange="pjInput(this, true)"></div>
       </div>
       ${pjInfosTableauHtml(p)}
-    </section>
-
-    <section class="ts-bloc">
-      <h3>NOTES</h3>
-      ${pjField('', 'notes', p.notes, { textarea: true, rows: 4, full: true, ph: 'Infos utiles, liens (devis, Dropbox, rétroplanning)…' })}
     </section>
 
     <div class="ts-actions">
