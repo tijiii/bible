@@ -144,7 +144,7 @@ async function pdtAjouterDonnees(x, p, ouvrir) {
 
 // PDT déjà préparés, ajoutés une seule fois au projet qui leur correspond dès que la base est chargée
 // (on peut ensuite les modifier ou les supprimer : ils ne reviennent pas)
-const PDT_MODELES = [{ cle: 'simond-avantgarde', fichier: 'modeles/pdt-simond-avantgarde.json', projet: /simond/i, deja: /avant.?garde/i }];
+const PDT_MODELES = [{ cle: 'simond-avantgarde-2', fichier: 'modeles/pdt-simond-avantgarde.json', projet: /simond/i, deja: /avant.?garde/i }];
 let pdtSemis = false;
 async function pdtSemer() {
   if (pdtSemis) return;
@@ -156,8 +156,13 @@ async function pdtSemer() {
     const p = projets.find(x => m.deja.test(x.nom || '')) || projets[0];
     if (!p) continue;
     faits.push(m.cle);
-    // Déjà importé à la main : on ne le remet pas
-    if (pdtDuProjet(p.id).some(d => m.deja.test(d.titre || ''))) { saveDb(); continue; }
+    // Déjà importé à la main (un PDT rempli) : on ne le remet pas
+    const vide = d => !(d.lignes || []).some(l => l.scene || l.technique || l.note || l.img);
+    const memes = pdtDuProjet(p.id).filter(d => m.deja.test(d.titre || ''));
+    if (memes.some(d => !vide(d))) { saveDb(); continue; }
+    // Un PDT vide créé en attendant est remplacé par le modèle
+    const vides = new Set(memes.map(d => d.id));
+    if (vides.size) { const l = pdtList(); for (let i = l.length - 1; i >= 0; i--) if (vides.has(l[i].id)) l.splice(i, 1); }
     try {
       const r = await fetch(m.fichier, { cache: 'no-store' });
       const o = await r.json();
