@@ -362,12 +362,18 @@ a { color:inherit; }
 @media (max-width: 600px) { .mens-grid, .mens-form { grid-template-columns: repeat(2, 1fr); } }
 
 /* Carte des lieux */
-.lieux-map { position:relative; z-index:0; height:min(68vh,620px); min-height:340px; border-bottom:1px solid var(--border); background:radial-gradient(ellipse at center, #1b2338 0%, #070a12 75%); }
+.lieux-map { position:relative; z-index:0; height:var(--lieux-carte-h, min(68vh,620px)); min-height:240px; border-bottom:1px solid var(--border); background:radial-gradient(ellipse at center, #1b2338 0%, #070a12 75%); }
 .lieux-map-hint { padding:8px 24px; font-size:13px; color:var(--muted); border-bottom:1px solid var(--border); }
+/* Poignée pour agrandir ou rapetisser la carte (en dessous sur mobile, sur le côté sur ordinateur) */
+.lieux-poignee { display:flex; align-items:center; justify-content:center; height:16px; cursor:row-resize; touch-action:none; background:var(--bg2); border-bottom:1px solid var(--border); }
+.lieux-poignee span { width:36px; height:2px; border-top:1px solid var(--muted); border-bottom:1px solid var(--muted); }
+.lieux-poignee:hover, .lieux-poignee.actif { background:var(--bg3); }
 /* Ordinateur : globe fixe à gauche, lieux qui défilent à droite */
 @media (min-width:900px) {
-  .lieux-split { display:grid; grid-template-columns:minmax(380px,42%) minmax(0,1fr); min-height:480px; }
-  .lieux-globe-col { display:flex; flex-direction:column; min-height:0; border-right:1px solid var(--border); }
+  .lieux-split { display:grid; grid-template-columns:var(--lieux-carte, 42%) 10px minmax(0,1fr); min-height:480px; }
+  .lieux-globe-col { display:flex; flex-direction:column; min-height:0; min-width:0; }
+  .lieux-poignee { height:auto; cursor:col-resize; border-bottom:none; border-left:1px solid var(--border); border-right:1px solid var(--border); }
+  .lieux-poignee span { width:2px; height:36px; border-top:none; border-bottom:none; border-left:1px solid var(--muted); border-right:1px solid var(--muted); }
   .lieux-globe-col .lieux-map { flex:1; height:auto; min-height:0; }
   .lieux-globe-col .lieux-map-hint { border-bottom:none; }
   #lieux-list { overflow-y:auto; min-height:0; overscroll-behavior:contain; }
@@ -382,6 +388,8 @@ a { color:inherit; }
 .globe-fonds { position:absolute; top:10px; left:10px; z-index:2; display:flex; background:rgba(255,255,255,.92); border:1px solid var(--border); }
 .globe-fonds button { border:none; background:none; font-family:var(--serif); font-size:12px; letter-spacing:.06em; padding:6px 10px; cursor:pointer; color:var(--muted); }
 .globe-fonds button.on { background:#111; color:#fff; }
+.globe-pins { position:absolute; top:44px; left:10px; z-index:2; display:flex; align-items:center; gap:6px; background:rgba(255,255,255,.92); border:1px solid var(--border); font-family:var(--serif); font-size:12px; letter-spacing:.06em; padding:5px 10px; cursor:pointer; color:#111; user-select:none; }
+.globe-pins input { margin:0; accent-color:#111; cursor:pointer; }
 .lieu-popup { display:flex; flex-direction:column; gap:8px; align-items:flex-start; }
 .lieu-popup-gps { font-family:var(--serif); font-size:13px; color:var(--muted); }
 .lieu-maps-add { display:flex; gap:0; flex:1 1 280px; max-width:420px; }

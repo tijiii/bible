@@ -717,6 +717,11 @@ const LIEUX_FONDS = {
     layers: [{ id: 'sat', type: 'raster', source: 'sat' }],
   },
 };
+// Les pins des lieux, qu'on peut masquer pour une carte propre
+let lieuxPins = (() => { try { return localStorage.getItem('lieuxPins') !== '0'; } catch { return true; } })();
+// Taille de la carte, réglée en glissant la poignée : part de la largeur (ordinateur), hauteur (mobile)
+let lieuxCarteFrac = (() => { try { const v = parseFloat(localStorage.getItem('lieuxCarteFrac')); return v >= .2 && v <= .85 ? v : .42; } catch { return .42; } })();
+let lieuxCarteH = (() => { try { const v = parseInt(localStorage.getItem('lieuxCarteH'), 10); return v >= 240 ? v : 0; } catch { return 0; } })();
 let lieuxFond = (() => { try { return localStorage.getItem('lieuxFond') === 'satellite' ? 'satellite' : 'plan'; } catch { return 'plan'; } })();
 
 function closeLieuxPopup() {
@@ -768,6 +773,7 @@ function renderLieuxPins(map, list) {
   lieuxMarkers.forEach(m => m.remove());
   lieuxMarkers = [];
   hideLieuxHover();
+  if (!lieuxPins) return;
   groupLieux(list, map.getZoom()).forEach(g => {
     const n = g.lieux.length;
     const pin = document.createElement('div');
@@ -864,6 +870,20 @@ function initLieuxMap(list) {
   });
   el.appendChild(fonds);
 
+  // Afficher / masquer les pins
+  const pins = document.createElement('label');
+  pins.className = 'globe-pins';
+  pins.title = 'Afficher ou masquer les pins des lieux';
+  pins.innerHTML = `<input type="checkbox"${lieuxPins ? ' checked' : ''}> LIEUX`;
+  pins.addEventListener('click', e => e.stopPropagation());
+  pins.querySelector('input').onchange = e => {
+    lieuxPins = e.target.checked;
+    try { localStorage.setItem('lieuxPins', lieuxPins ? '1' : '0'); } catch {}
+    closeLieuxPopup();
+    renderLieuxPins(map, list);
+  };
+  el.appendChild(pins);
+
   // Les pins se regroupent selon le zoom
   renderLieuxPins(map, list);
   map.on('zoomend', () => renderLieuxPins(map, list));
@@ -871,7 +891,7 @@ function initLieuxMap(list) {
   // Clic sur la carte : proposer d'ajouter un lieu à cet endroit
   // (un clic quand le cadre est ouvert ne fait que le fermer)
   map.on('click', e => {
-    if (e.originalEvent && e.originalEvent.target.closest('.lieu-pin, .globe-fonds, .maplibregl-popup')) return;
+    if (e.originalEvent && e.originalEvent.target.closest('.lieu-pin, .globe-fonds, .globe-pins, .maplibregl-popup')) return;
     if (lieuxPopup) { closeLieuxPopup(); return; }
     const c = { lat: e.lngLat.lat, lng: ((e.lngLat.lng + 540) % 360) - 180 };
     const box = document.createElement('div');
@@ -951,11 +971,12 @@ function renderLieux(main) {
       <button class="btn-add" id="lieu-maps-go" style="background:var(--accent2)" onclick="addLieuFromMapsLink()">AJOUTER</button>
     </div>
   </div>
-  <div class="lieux-split" id="lieux-split">
+  <div class="lieux-split" id="lieux-split" style="--lieux-carte:${(lieuxCarteFrac * 100).toFixed(1)}%${lieuxCarteH ? `;--lieux-carte-h:${lieuxCarteH}px` : ''}">
     <div class="lieux-globe-col">
       <div id="lieux-map" class="lieux-map"></div>
       <div class="lieux-map-hint">Fais tourner le globe et zoome pour t'approcher. Clique sur un pin pour ouvrir le lieu, ou n'importe où sur la carte pour en ajouter un. La recherche trouve tes lieux et n'importe quel endroit du monde.${sansGps.length ? ` ${sansGps.length} lieu${sansGps.length > 1 ? 'x' : ''} sans coordonnées GPS ne ${sansGps.length > 1 ? 'sont' : 'est'} pas sur la carte.` : ''}</div>
     </div>
+    <div class="lieux-poignee" title="Glisse pour agrandir ou rapetisser la carte (double-clic : taille normale)" onpointerdown="lieuxPoigneeDown(event)" ondblclick="lieuxPoigneeReset()"><span></span></div>
     <div id="lieux-list"></div>
   </div>`;
   ajusterLieuxSplit();
@@ -975,6 +996,47 @@ function ajusterLieuxSplit() {
   el.style.height = Math.max(480, window.innerHeight - haut) + 'px';
 }
 window.addEventListener('resize', ajusterLieuxSplit);
+
+// La poignée entre la carte et la liste : on la glisse pour agrandir ou rapetisser la carte
+// (sur le côté sur ordinateur, en dessous sur mobile)
+function lieuxPoigneeDown(ev) {
+  const split = document.getElementById('lieux-split'), carte = document.getElementById('lieux-map');
+  if (!split || !carte) return;
+  ev.preventDefault();
+  const poignee = ev.currentTarget;
+  poignee.setPointerCapture(ev.pointerId);
+  poignee.classList.add('actif');
+  let rendu = 0;
+  const bouge = e => {
+    if (LIEUX_SPLIT_MQ.matches) {
+      const r = split.getBoundingClientRect();
+      lieuxCarteFrac = Math.min(.85, Math.max(.2, (e.clientX - r.left) / r.width));
+      split.style.setProperty('--lieux-carte', (lieuxCarteFrac * 100).toFixed(1) + '%');
+    } else {
+      lieuxCarteH = Math.round(Math.min(window.innerHeight * .9, Math.max(240, e.clientY - carte.getBoundingClientRect().top)));
+      split.style.setProperty('--lieux-carte-h', lieuxCarteH + 'px');
+    }
+    if (!rendu) rendu = requestAnimationFrame(() => { rendu = 0; if (lieuxMap) lieuxMap.resize(); });
+  };
+  const fin = () => {
+    poignee.classList.remove('actif');
+    poignee.removeEventListener('pointermove', bouge);
+    poignee.removeEventListener('pointerup', fin);
+    poignee.removeEventListener('pointercancel', fin);
+    try { localStorage.setItem('lieuxCarteFrac', String(lieuxCarteFrac)); if (lieuxCarteH) localStorage.setItem('lieuxCarteH', String(lieuxCarteH)); } catch {}
+    if (lieuxMap) lieuxMap.resize();
+  };
+  poignee.addEventListener('pointermove', bouge);
+  poignee.addEventListener('pointerup', fin);
+  poignee.addEventListener('pointercancel', fin);
+}
+function lieuxPoigneeReset() {
+  const split = document.getElementById('lieux-split');
+  lieuxCarteFrac = .42; lieuxCarteH = 0;
+  try { localStorage.removeItem('lieuxCarteFrac'); localStorage.removeItem('lieuxCarteH'); } catch {}
+  if (split) { split.style.setProperty('--lieux-carte', '42%'); split.style.removeProperty('--lieux-carte-h'); }
+  if (lieuxMap) lieuxMap.resize();
+}
 
 // Seule la liste est redessinée pendant la frappe : le champ garde le focus et la carte ne bouge pas
 function renderLieuxList() {
