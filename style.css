@@ -942,6 +942,10 @@ body.doc-vue-ouvert > *:not(#doc-vue) { display:none !important; }
 .pj-rp tbody th.pj-rp-phase > a { font-size:12.5px; letter-spacing:.03em; }
 .pj-rp tbody th.pj-rp-phase a:hover { text-decoration:underline; }
 .pj-rp-gens { display:block; font-size:11px; font-weight:400; opacity:.85; margin-top:1px; }
+.pj-rp .pj-gens-btn { float:right; background:none; border:none; color:inherit; font:inherit; font-size:10.5px; letter-spacing:0; opacity:.8; cursor:pointer; padding:1px 0 0 6px; }
+.pj-rp .pj-gens-btn:hover { opacity:1; text-decoration:underline; }
+.pj-gens-liste { background:none; border:none; cursor:pointer; font-family:var(--serif); font-size:13px; color:var(--muted); padding:2px 0; }
+.pj-gens-liste:hover { color:var(--text); }
 .pj-rp-d, .pj-rp-n { background:var(--e); color:var(--t); padding:0 8px !important; font-variant-numeric:tabular-nums; }
 .pj-rp-groupe th.pj-rp-phase, .pj-rp-groupe td { background:#a5a5a5 !important; color:#fff; letter-spacing:.08em; font-weight:500; height:22px; }
 .pj-rp-groupe td.we { background:#bfbfbf !important; }

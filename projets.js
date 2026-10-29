@@ -17,6 +17,7 @@ let pjRetro = null;          // import de rétroplanning en cours : { pid, fichi
 let pjRetroOuvert = false;   // bloc d'import du rétroplanning déplié
 let pjEtapesOuvert = false;  // liste des étapes (à modifier) dépliée
 let pjChapOuverts = new Set(); // étapes « chapitres » (V1, Musique…) dépliées sur leurs sous-étapes
+let pjGensOuverts = new Set(); // étapes dont on a déplié les personnes (calendrier et liste)
 let pjEquipeOuvert = false;  // bloc ÉQUIPE déplié
 let pjBlocFiltres = {};      // filtres et tris des blocs d'un projet (étapes, to-do, équipe, options), par projet
 let pjModifie = null;        // dernier projet modifié (la synchro le garde tant qu'il n'est pas envoyé)
@@ -902,7 +903,7 @@ function pjFriseHtml(p, mode) {
     const titre = esc(pjEtapeNom(e) + ' · ' + pjPeriodeTexte(x.du, x.au) + (qui.length ? ' · ' + qui.map(pjNomPersonne).join(', ') : ''));
     const chap = sous && sous.length ? `<button type="button" class="pj-chap-btn" title="${pjChapOuverts.has(e.id) ? 'Replier' : 'Déplier'} les étapes de ${esc(pjEtapeNom(e))}" onclick="pjChapBasculer(${e.id})">${pjChapOuverts.has(e.id) ? '▾' : '▸'}<small>${sous.length}</small></button>` : '';
     return `<tr class="${sous ? '' : 'pj-rp-sous'}" style="--e:${coul};--t:${txt}">
-      <th class="pj-rp-phase">${chap}<a href="#" onclick="event.preventDefault();pjVoirEtape(${e.id})">${esc(pjEtapeNom(e).toUpperCase())}</a>${qui.length ? `<span class="pj-rp-gens">${qui.map(a => `<a href="#" onclick="event.preventDefault();pjVoirPersonne(${a.id})" title="${esc(a.role || '')}">${esc(pjNomPersonne(a))}</a>`).join(' · ')}</span>` : ''}</th>
+      <th class="pj-rp-phase">${chap}<a href="#" onclick="event.preventDefault();pjVoirEtape(${e.id})">${esc(pjEtapeNom(e).toUpperCase())}</a>${qui.length ? `<button type="button" class="pj-gens-btn" title="${pjGensOuverts.has(e.id) ? 'Cacher' : 'Voir'} les personnes : ${esc(qui.map(pjNomPersonne).join(', '))}" onclick="pjGensBasculer(${e.id})">${pjGensOuverts.has(e.id) ? '▾' : '▸'} ${qui.length} pers.</button>` : ''}${qui.length && pjGensOuverts.has(e.id) ? `<span class="pj-rp-gens">${qui.map(a => `<a href="#" onclick="event.preventDefault();pjVoirPersonne(${a.id})" title="${esc(a.role || '')}">${esc(pjNomPersonne(a))}</a>`).join(' · ')}</span>` : ''}</th>
       <td class="pj-rp-d pj-rp-col">${jj(x.du)}</td><td class="pj-rp-d pj-rp-col">${jj(x.au)}</td><td class="pj-rp-n pj-rp-col">${nb}</td>
       ${jours.map(d => d >= x.du && d <= x.au ? `<td class="pj-rp-j on${jcls(d)}" title="${titre}"></td>` : `<td class="pj-rp-j${jcls(d)}"></td>`).join('')}
     </tr>`;
@@ -1379,7 +1380,13 @@ function pjEtapeGensHtml(e, dans) {
   const sur = eq.filter(a => (a.etapes || []).includes(e.id));
   const toutLeProjet = pjEtapeDates(e) ? eq.filter(a => pjSurToutLeProjet(a) && pjEtapesParDefaut(p, a).some(x => x.id === e.id)) : [];
   const chip = (a, tout) => `<span class="pj-etape-pers${tout ? ' pj-tout' : ''}"${tout ? ' title="Sur tout le projet"' : ''}><a href="#" title="Modifier (rôle, étapes, dates)" onclick="event.preventDefault();pjVoirPersonne(${a.id})">${esc(pjNomPersonne(a))}${a.role ? ` <small>${esc(a.role)}</small>` : ''}</a><button type="button" title="Retirer de l'étape" onclick="pjRetirerDeEtape(${a.id}, ${e.id})">✕</button></span>`;
+  // Replié : juste le nombre de personnes, qu'on déplie pour les voir ou en ajouter
+  const n = sur.length + toutLeProjet.length;
+  const ouv = pjGensOuverts.has(e.id);
+  const btn = `<button type="button" class="pj-gens-btn pj-gens-liste" onclick="pjGensBasculer(${e.id})">${ouv ? '▾' : '▸'} ${n ? n + (n > 1 ? ' personnes' : ' personne') : 'personne'}</button>`;
+  if (!ouv) return `<div class="pj-etape-gens">${btn}${dans || ''}</div>`;
   return `<div class="pj-etape-gens">
+    ${btn}
     ${sur.map(a => chip(a, false)).join('')}
     ${toutLeProjet.map(a => chip(a, true)).join('')}
     <input class="pj-etape-ajout" list="pj-gens-etapes" placeholder="+ personne sur cette étape" onchange="pjEtapeAjouterPersonne(${e.id}, this.value)" onkeydown="if(event.key==='Enter')this.blur()">
@@ -1389,7 +1396,11 @@ function pjEtapeGensHtml(e, dans) {
 
 // Ajoute quelqu'un à une ou plusieurs étapes : s'il est déjà dans l'équipe, on coche
 // les étapes ; sinon il entre dans l'équipe, sur ces étapes seulement
-function pjEtapeAjouterPersonne(eid, v) { pjEtapesAjouterPersonne([eid], v); }
+function pjEtapeAjouterPersonne(eid, v) { pjGensOuverts.add(eid); pjEtapesAjouterPersonne([eid], v); }
+function pjGensBasculer(eid) {
+  if (pjGensOuverts.has(eid)) pjGensOuverts.delete(eid); else pjGensOuverts.add(eid);
+  pjRedessiner();
+}
 function pjEtapesAjouterPersonne(eids, v) {
   const p = pjCur();
   const v2 = String(v || '').trim();
