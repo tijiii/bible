@@ -519,31 +519,41 @@ function renderPdtDoc(main) {
     const tr = e.target.closest && e.target.closest('tr[data-li]');
     if (!tr || !tr.draggable) return;
     pdtGlisse = Number(tr.dataset.li);
+    pdtGlisseVers = null;
     e.dataTransfer.effectAllowed = 'move';
     e.dataTransfer.setData('text/plain', '');
     tr.classList.add('pdt-glisse');
   });
   zone.addEventListener('dragend', () => {
-    pdtGlisse = null;
+    // Certains navigateurs (Safari…) ne déclenchent pas toujours le lâcher : on pose la ligne
+    // là où le trait bleu était affiché
+    if (pdtGlisse != null && pdtGlisseVers != null) {
+      const de = pdtGlisse, vers = pdtGlisseVers;
+      pdtGlisse = pdtGlisseVers = null;
+      return pdtDeplacerVers(de, vers);
+    }
+    pdtGlisse = pdtGlisseVers = null;
     zone.querySelectorAll('tr[data-li]').forEach(tr => { tr.draggable = false; tr.classList.remove('pdt-glisse', 'pdt-vise-haut', 'pdt-vise-bas'); });
   });
   zone.addEventListener('dragover', e => {
     if (pdtGlisse == null) { if (e.target.closest('[data-img]')) e.preventDefault(); return; }
-    const tr = e.target.closest('tr[data-li]');
-    if (!tr) return;
     e.preventDefault();
+    const tr = pdtGlisseCible(zone, e);
+    if (!tr) return;
+    e.dataTransfer.dropEffect = 'move';
     const bas = pdtGlisseDessous(tr, e);
+    pdtGlisseVers = Number(tr.dataset.li) + (bas ? 1 : 0);
     zone.querySelectorAll('.pdt-vise-haut, .pdt-vise-bas').forEach(x => x.classList.remove('pdt-vise-haut', 'pdt-vise-bas'));
     tr.classList.add(bas ? 'pdt-vise-bas' : 'pdt-vise-haut');
   });
   zone.addEventListener('drop', e => {
     if (pdtGlisse != null) {
-      const tr = e.target.closest('tr[data-li]');
       e.preventDefault();
-      if (!tr) return;
+      const tr = pdtGlisseCible(zone, e);
+      if (!tr) { pdtGlisse = pdtGlisseVers = null; return pdtRedessiner(); }
       const bas = pdtGlisseDessous(tr, e);
       const de = pdtGlisse;
-      pdtGlisse = null;
+      pdtGlisse = pdtGlisseVers = null;
       pdtDeplacerVers(de, Number(tr.dataset.li) + (bas ? 1 : 0));
       return;
     }
@@ -901,6 +911,18 @@ function pdtRedimDebut(e, h) {
   document.addEventListener('mouseup', fin);
 }
 
+// La ligne visée par le glisser : celle sous la souris, ou la plus proche
+// (sur une bordure, un saut de page ou entre deux lignes, on ne perd pas le lâcher)
+function pdtGlisseCible(zone, e) {
+  let cible = null, ecart = Infinity;
+  zone.querySelectorAll('tr[data-li]').forEach(tr => {
+    const r = tr.getBoundingClientRect();
+    const d = e.clientY < r.top ? r.top - e.clientY : e.clientY > r.bottom ? e.clientY - r.bottom : 0;
+    if (d < ecart) { ecart = d; cible = tr; }
+  });
+  return cible;
+}
+
 // Où poser la ligne glissée : sur une barre de partie, toujours dessous (dans la partie) ;
 // ailleurs, au-dessus ou au-dessous selon la moitié de la ligne visée (taille réelle, zoom compris)
 function pdtGlisseDessous(tr, e) {
@@ -911,7 +933,7 @@ function pdtGlisseDessous(tr, e) {
 }
 
 // Déplace la ligne i à la place « avant la ligne j » (j = longueur : à la fin)
-let pdtGlisse = null;
+let pdtGlisse = null, pdtGlisseVers = null;
 function pdtDeplacerVers(i, j) {
   const d = pdtCur();
   if (!d || !d.lignes[i] || j === i || j === i + 1) return pdtRedessiner();
