@@ -1122,7 +1122,16 @@ body.doc-vue-ouvert > *:not(#doc-vue) { display:none !important; }
 .pdt-ed-aide { max-width:1100px; margin:10px auto 0; }
 .pdt-ed-zone { overflow-x:auto; padding:14px 12px 40px 150px; margin:0 auto; max-width:1100px; background:#e9e9e7; margin-top:12px; }
 .pdt-ed-zone .pdt-doc { box-shadow:0 1px 6px rgba(0,0,0,.15); margin:0; }
-.pdt-ed-zone.zoome { max-width:none; }
+.pdt-ed-zone.zoome, .pdt-ed-zone:has(.pdt-doc.paysage) { max-width:none; }
+.pdt-ed-outils { position:sticky; top:0; z-index:15; display:flex; flex-wrap:wrap; align-items:center; gap:4px; max-width:1100px; margin:10px auto 0; padding:6px 8px; background:#fff; border:1px solid var(--border); box-shadow:0 1px 4px rgba(0,0,0,.08); }
+.pdt-ed-outils button { font:13px Arial, sans-serif; background:none; border:1px solid transparent; color:#222; min-width:28px; height:28px; padding:0 7px; cursor:pointer; border-radius:3px; }
+.pdt-ed-outils button:hover { background:#f2f2f0; border-color:var(--border); }
+.pdt-ed-outils button.on { background:#111; color:#fff; }
+.pdt-ed-outils .b { font-weight:700; } .pdt-ed-outils .i { font-style:italic; font-family:Georgia, serif; } .pdt-ed-outils .u { text-decoration:underline; }
+.pdt-ed-outils .pastille { min-width:20px; width:20px; height:20px; padding:0; border-radius:50%; background:var(--c); border:2px solid #fff; box-shadow:0 0 0 1px #ccc; }
+.pdt-ed-outils .pastille:hover { background:var(--c); box-shadow:0 0 0 2px #333; }
+.pdt-ed-outils select { font:12px Arial, sans-serif; height:28px; border:1px solid var(--border); background:#fff; padding:0 6px; }
+.pdt-ed-outils .sep { width:1px; height:20px; background:var(--border); margin:0 4px; }
 .pdt-zoom { position:fixed; right:20px; bottom:20px; z-index:20; display:flex; background:#fff; border:1px solid var(--border); box-shadow:0 2px 8px rgba(0,0,0,.15); }
 .pdt-zoom button { font:13px Arial, sans-serif; background:none; border:none; padding:7px 11px; cursor:pointer; color:#222; min-width:34px; }
 .pdt-zoom button + button { border-left:1px solid var(--border); }

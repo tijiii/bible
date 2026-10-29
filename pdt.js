@@ -447,10 +447,23 @@ function renderPdtDoc(main) {
         <button type="button" class="btn-save" onclick="pdtPdf()">CRÉER LE PDF</button>
       </div>
     </div>
-    <p class="field-hint pdt-ed-aide">Clique dans une case pour écrire. Tous les textes se modifient, même les titres. Passe sur un titre de colonne pour ajouter une colonne à gauche ou à droite, ou la retirer ; tire son bord pour changer sa largeur. Passe sur une ligne pour ses outils, dans la marge : ⠿ à glisser pour la déplacer, ajouter dessous, dupliquer, couleur de la lumière, note rouge ou noire, supprimer. Les horaires se calculent avec les durées (15, 1h, 1h30…) ; écris une heure dans la case HORAIRES d'une ligne pour la fixer. Clique sur une image (ou colle-la) pour la changer.</p>
+    <p class="field-hint pdt-ed-aide">Clique dans une case pour écrire. Tous les textes se modifient, même les titres. Sélectionne du texte puis utilise la barre au-dessus (gras, italique, souligné, couleur). Passe sur un titre de colonne pour en ajouter une (+), la déplacer (◂ ▸) ou la retirer (✕) ; tire son bord pour changer sa largeur. Passe sur une ligne pour ses outils dans la marge : ⠿ à glisser pour la déplacer, + ajouter dessous, ⧉ dupliquer, ✕ supprimer. Les horaires se calculent avec les durées (15, 1h, 1h30…) ; écris une heure dans la case HORAIRES d'une ligne pour la fixer. Clique sur une image (ou colle-la) pour la changer.</p>
+    <div class="pdt-ed-outils" onmousedown="if (event.target.closest('button')) event.preventDefault()">
+      <button type="button" class="b" title="Gras (Cmd/Ctrl + B)" onclick="pdtFormat('bold')">B</button>
+      <button type="button" class="i" title="Italique (Cmd/Ctrl + I)" onclick="pdtFormat('italic')">I</button>
+      <button type="button" class="u" title="Souligné (Cmd/Ctrl + U)" onclick="pdtFormat('underline')">U</button>
+      <span class="sep"></span>
+      ${[['#111111', 'Noir'], ['#e00000', 'Rouge'], ['#2f5597', 'Bleu'], ['#2e7d32', 'Vert'], ['#e67e00', 'Orange'], ['#888888', 'Gris']].map(([c, n]) => `<button type="button" class="pastille" style="--c:${c}" title="Texte en ${n.toLowerCase()}" onclick="pdtFormat('foreColor', '${c}')"></button>`).join('')}
+      <button type="button" title="Enlever la mise en forme" onclick="pdtFormat('removeFormat')">⌀</button>
+      <span class="sep"></span>
+      <select title="Couleur de la case lumière de la ligne où tu as cliqué" onchange="pdtFondLumiere(this.value); this.value='-'"><option value="-">FOND LUMIÈRE…</option>${PDT_LUMIERES_CHOIX.map(([v, lab]) => `<option value="${v}">${v ? lab : 'Auto (jour / nuit)'}</option>`).join('')}</select>
+      <span class="sep"></span>
+      <button type="button" class="${d.paysage ? '' : 'on'}" title="Page en hauteur" onclick="pdtPaysage(false)">▯ PORTRAIT</button>
+      <button type="button" class="${d.paysage ? 'on' : ''}" title="Page en largeur : plus de place pour les colonnes et les images" onclick="pdtPaysage(true)">▭ PAYSAGE</button>
+    </div>
     <div class="pdt-ed-zone">
       <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Karla:ital,wght@0,400;0,700;1,400&display=swap">
-      <style>${pdtDocCss(true, true)}</style>
+      <style>${pdtDocCss(true, true, d.paysage)}</style>
       ${pdtDocCorps(d, true)}
     </div>
     <div class="pdt-zoom" title="Zoom sur le document (ou Ctrl + molette, ou pincer le pavé tactile)">
@@ -487,7 +500,13 @@ function renderPdtDoc(main) {
     f.onchange = () => pdtImageFichier(f.files[0], r.dataset.img);
     f.click();
   });
-  zone.addEventListener('paste', e => { const r = e.target.closest('[data-img]'); if (r) pdtImageColle(e, r.dataset.img); });
+  zone.addEventListener('paste', e => {
+    const r = e.target.closest('[data-img]');
+    if (r) return pdtImageColle(e, r.dataset.img);
+    // Dans une case : on colle le texte seul, sans la mise en forme d'ailleurs
+    if (e.target.closest('.ed')) { e.preventDefault(); document.execCommand('insertText', false, (e.clipboardData || window.clipboardData).getData('text/plain')); }
+  });
+  zone.addEventListener('focusin', e => { const tr = e.target.closest('tr[data-li]'); if (tr) pdtLigneActive = (pdtCur().lignes[Number(tr.dataset.li)] || {}).id || null; });
   // Glisser une ligne par sa poignée ⠿ pour la déplacer ; tirer le bord d'une colonne pour la régler
   zone.addEventListener('mousedown', e => {
     const r = e.target.closest('.pdt-redim');
@@ -541,6 +560,7 @@ function pdtEdInput(e) {
     if (!d) return;
     d.textes = d.textes || {};
     d.textes[t.dataset.t] = t.innerText.replace(/\n$/, '');
+    pdtGarderHtml(d, 'textesHtml', t.dataset.t, t);
     pdtChange();
     return;
   }
@@ -549,11 +569,78 @@ function pdtEdInput(e) {
   let v = el.tagName === 'INPUT' ? el.value : el.innerText.replace(/\n$/, '');
   if (!el.dataset.multi) v = v.replace(/\n/g, ' ');
   pdtInput({ value: v, type: '', dataset: el.dataset });
+  if (el.tagName !== 'INPUT') pdtGarderHtml(pdtSource(pdtCur(), el.dataset.l, el.dataset.i), 'html', el.dataset.k, el);
   if (el.dataset.k === 'duree') pdtMajHeuresDoc();
   if (el.dataset.k === 'lumiere') {
     const l = pdtLigne(el.dataset.i), td = el.closest('td'), c = l && pdtLumiere(l);
     if (td) { td.style.background = c ? c[0] : ''; td.style.color = c ? c[1] : ''; }
   }
+}
+
+// ── Mise en forme (gras, italique, souligné, couleur) ───────────────────────
+// Le texte reste dans son champ habituel ; sa version mise en forme est gardée à côté
+// (objet.html[champ]) et n'est utilisée que tant qu'elle correspond au texte.
+function pdtSource(d, l, i) {
+  if (!d) return null;
+  if (!l) return d;
+  if (l === 'lignes') return (d.lignes || []).find(x => String(x.id) === String(i));
+  return (d[l] || [])[Number(i)];
+}
+function pdtHtmlTexte(h) {
+  return String(h).replace(/<br>/g, '\n').replace(/<[^>]+>/g, '')
+    .replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&amp;/g, '&');
+}
+const pdtNorm = t => String(t == null ? '' : t).replace(/\u00a0/g, ' ').replace(/\s+$/, '');
+function pdtHtmlValide(h, v) {
+  return h && pdtNorm(pdtHtmlTexte(h)) === pdtNorm(v) ? h : '';
+}
+// Ne garde que gras, italique, souligné, couleur et retours à la ligne
+function pdtNettoie(html, multi) {
+  const t = document.createElement('template');
+  t.innerHTML = html;
+  const sortie = n => [...n.childNodes].map(c => {
+    if (c.nodeType === 3) return esc(c.textContent);
+    if (c.nodeType !== 1) return '';
+    const tag = c.tagName.toLowerCase(), st = c.style || {};
+    if (tag === 'br') return '<br>';
+    let r = sortie(c);
+    if (tag === 'div' || tag === 'p') return '<br>' + r;
+    const col = (tag === 'font' && c.getAttribute('color')) || st.color;
+    if (col && /^(#[0-9a-f]{3,8}|rgba?\([\d\s.,%]+\)|[a-z]+)$/i.test(col)) r = `<span style="color:${col}">${r}</span>`;
+    if (tag === 'u' || /underline/.test(st.textDecoration || st.textDecorationLine || '')) r = `<u>${r}</u>`;
+    if (tag === 'i' || tag === 'em' || st.fontStyle === 'italic') r = `<i>${r}</i>`;
+    if (tag === 'b' || tag === 'strong' || /bold|[6-9]00/.test(st.fontWeight || '')) r = `<b>${r}</b>`;
+    return r;
+  }).join('');
+  let h = sortie(t.content).replace(/^<br>/, '').replace(/(<br>)+$/, '');
+  if (!multi) h = h.replace(/<br>/g, ' ');
+  return h;
+}
+function pdtGarderHtml(src, cle, k, el) {
+  if (!src || !k) return;
+  const h = pdtNettoie(el.innerHTML, !!el.dataset.multi);
+  if (/<(b|i|u|span)\b/.test(h)) (src[cle] = src[cle] || {})[k] = h;
+  else if (src[cle]) delete src[cle][k];
+}
+function pdtFormat(cmd, val) {
+  const el = document.activeElement;
+  if (!el || !el.closest || !el.closest('.pdt-doc-ed .ed')) return;
+  try { document.execCommand('styleWithCSS', false, false); } catch (e) {}
+  document.execCommand(cmd, false, val);
+}
+// Dernière ligne où l'on a cliqué : pour la couleur de la case lumière
+let pdtLigneActive = null;
+function pdtFondLumiere(v) {
+  const l = pdtLigneActive && pdtLigne(pdtLigneActive);
+  if (!l || l.type !== 'plan') { alert('Clique d\'abord dans une ligne de plan.'); return; }
+  pdtLigneRegler(l.id, 'lumCouleur', v);
+}
+function pdtPaysage(v) {
+  const d = pdtCur();
+  if (!d) return;
+  if (v) d.paysage = true; else delete d.paysage;
+  pdtChange();
+  pdtRedessiner();
 }
 
 // Case HORAIRES d'une ligne quittée : l'heure écrite devient son début fixe (vide : à la suite)
@@ -762,6 +849,16 @@ function pdtColAjouter(pos) {
   d.cols = cols;
   d.textes = d.textes || {};
   if (d.textes['col_x' + n] == null) d.textes['col_x' + n] = 'COLONNE';
+  pdtChange();
+  pdtRedessiner();
+}
+function pdtColDeplacer(k, sens) {
+  const d = pdtCur();
+  if (!d) return;
+  const cols = pdtCols(d).slice(), i = cols.indexOf(k), j = i + sens;
+  if (i < 0 || j < 0 || j >= cols.length) return;
+  [cols[i], cols[j]] = [cols[j], cols[i]];
+  d.cols = cols;
   pdtChange();
   pdtRedessiner();
 }
@@ -1003,21 +1100,23 @@ function pdtDocCorps(d, edit) {
   const T = (k, def) => {
     def = def.replace(/<br\s*\/?>/g, '\n');
     const v = d.textes && d.textes[k] != null ? d.textes[k] : def;
-    return edit ? `<span class="ed" contenteditable="plaintext-only" spellcheck="false" data-t="${k}" data-ph="${esc(def.replace(/\n/g, ' '))}">${esc(v)}</span>`
-      : esc(v).replace(/\n/g, '<br>');
+    const h = pdtHtmlValide((d.textesHtml || {})[k], v);
+    return edit ? `<span class="ed" contenteditable="true" spellcheck="false" data-t="${k}" data-multi="1" data-ph="${esc(def.replace(/\n/g, ' '))}">${h || esc(v)}</span>`
+      : h || esc(v).replace(/\n/g, '<br>');
   };
-  // Une case : modifiable dans l'éditeur, texte simple sinon
-  const ed = (v, k, o = {}) => edit
-    ? `<span class="ed${o.up ? ' up' : ''}${o.tbc ? ' ph-tbc' : ''}" contenteditable="plaintext-only" spellcheck="false" data-k="${k}"${o.l ? ` data-l="${o.l}" data-i="${o.i}"` : ''}${o.multi ? ' data-multi="1"' : ''} data-ph="${esc(o.ph || '')}">${esc(v == null ? '' : v)}</span>`
-    : o.tbc ? pdtTbc(o.up ? up(v) : v) : esc(o.up ? up(v) : v);
+  // Une case : modifiable dans l'éditeur, texte simple sinon. Gras, italique… : gardés à part (html)
+  const fmt = (v, k, o) => pdtHtmlValide(((pdtSource(d, o.l, o.i) || {}).html || {})[k], v);
+  const ed = (v, k, o = {}) => {
+    const h = fmt(v, k, o);
+    return edit
+      ? `<span class="ed${o.up ? ' up' : ''}${o.tbc ? ' ph-tbc' : ''}" contenteditable="true" spellcheck="false" data-k="${k}"${o.l ? ` data-l="${o.l}" data-i="${o.i}"` : ''}${o.multi ? ' data-multi="1"' : ''} data-ph="${esc(o.ph || '')}">${h || esc(v == null ? '' : v)}</span>`
+      : h ? (o.up ? `<span style="text-transform:uppercase">${h}</span>` : h)
+      : o.tbc ? pdtTbc(o.up ? up(v) : v) : esc(o.up ? up(v) : v);
+  };
   const outils = (l, i) => !edit ? '' : `<div class="pdt-outils" contenteditable="false">
       <span class="pdt-poignee" title="Glisser pour déplacer la ligne">⠿</span>
-      <select title="Ajouter une ligne en dessous" onchange="pdtAjouter(this.value, ${i}); this.value=''"><option value="">＋</option><option value="plan">${M.plan === 'PHOTO' ? 'Photo' : 'Plan'}</option><option value="install">Mise en place</option><option value="pause">Pause / battement</option><option value="partie">Partie (décor)</option></select>
-      <button type="button" title="Monter" onclick="pdtDeplacer(${i}, -1)">↑</button>
-      <button type="button" title="Descendre" onclick="pdtDeplacer(${i}, 1)">↓</button>
+      <select title="Ajouter une ligne en dessous" onchange="pdtAjouter(this.value, ${i}); this.value=''"><option value="">+</option><option value="plan">${M.plan === 'PHOTO' ? 'Photo' : 'Plan'}</option><option value="install">Mise en place</option><option value="pause">Pause / battement</option><option value="partie">Partie (décor)</option></select>
       <button type="button" title="Dupliquer la ligne" onclick="pdtCopierLigne(${i})">⧉</button>
-      ${l.type === 'plan' ? `<select title="Couleur de la case lumière" onchange="pdtLigneRegler('${l.id}', 'lumCouleur', this.value)">${PDT_LUMIERES_CHOIX.map(([v, lab]) => `<option value="${v}"${(l.lumCouleur || '') === v ? ' selected' : ''}>${v ? '◐ ' + lab : '◐ Auto'}</option>`).join('')}</select>
-      <button type="button" class="${l.noteNoire ? '' : 'on-rouge'}" title="Note en rouge ou en noir" onclick="pdtNoteRouge('${l.id}', ${l.noteNoire ? 'true' : 'false'}); pdtRedessiner()">A</button>` : ''}
       ${l.type === 'partie' ? `<button type="button" class="${l.hors ? 'on' : ''}" title="Hors plateau (sans horaires)" onclick="pdtLigneRegler('${l.id}', 'hors', ${l.hors ? 'false' : 'true'})">HORS</button>` : ''}
       <button type="button" title="Retirer" onclick="pdtRetirer('lignes', ${i})">✕</button>
     </div>`;
@@ -1047,9 +1146,11 @@ function pdtDocCorps(d, edit) {
   const nc = cols.length;
   const titres = { hh: T('horaires', 'HORAIRES'), du: T('duration', 'DURATION'), num: T('num', M.num), ref: T('reference', 'REFERENCE'), scene: T('scene', M.sceneCol), technique: T('technique', M.techniqueCol), optique: T('optique', M.optiqueCol), lum: T('lighting', 'LIGHTING\nEFFECT'), note: T('notes', 'NOTES /\nÀ PRÉVOIR') };
   const colOutils = (k, j) => !edit ? '' : `<div class="pdt-col-outils" contenteditable="false">
-      <button type="button" title="Ajouter une colonne à gauche" onclick="pdtColAjouter(${j})">+ ◂</button>
+      <button type="button" title="Ajouter une colonne à gauche" onclick="pdtColAjouter(${j})">+</button>
+      ${j ? `<button type="button" title="Déplacer la colonne vers la gauche" onclick="pdtColDeplacer('${k}', -1)">◂</button>` : ''}
       ${PDT_COLS_FIXES.includes(k) ? '' : `<button type="button" title="Retirer cette colonne" onclick="pdtColRetirer('${k}')">✕</button>`}
-      <button type="button" title="Ajouter une colonne à droite" onclick="pdtColAjouter(${j + 1})">▸ +</button>
+      ${j < nc - 1 ? `<button type="button" title="Déplacer la colonne vers la droite" onclick="pdtColDeplacer('${k}', 1)">▸</button>` : ''}
+      <button type="button" title="Ajouter une colonne à droite" onclick="pdtColAjouter(${j + 1})">+</button>
     </div>${j < nc - 1 ? '<span class="pdt-redim" contenteditable="false" title="Tirer pour changer la largeur"></span>' : ''}`;
   const entete = `<tr class="th">
     ${cols.map((k, j) => `<th data-col="${k}">${colOutils(k, j)}${titres[k] || T('col_' + k, '')}</th>`).join('')}
@@ -1106,8 +1207,8 @@ function pdtDocCorps(d, edit) {
       ref: () => `<td class="ref">${avecOutils(ref)}</td>`,
       scene: () => `<td class="txt">${avecOutils(ed(l.scene, 'scene', { ...o, multi: true, ph: M.phScene }))}</td>`,
       technique: () => `<td class="txt">${avecOutils(ed(l.technique, 'technique', { ...o, multi: true, ph: M.phTech }))}</td>`,
-      optique: () => `<td class="opt">${avecOutils(edit ? ed(l.optique, 'optique', { ...o, up: true, multi: true, ph: '35MM' }) : opt.map((v, j) => j ? `<small>${esc(up(v))}</small>` : esc(up(v))).join(''))}</td>`,
-      lum: () => `<td class="lum"${lumStyle}>${avecOutils(edit ? ed(l.lumiere, 'lumiere', { ...o, up: true, multi: true, ph: 'JOUR / NUIT' }) : (lum1 ? esc(up(lum1)) : '') + lumS.map(s => `<small>${esc(up(s))}</small>`).join(''))}</td>`,
+      optique: () => `<td class="opt">${avecOutils(edit || fmt(l.optique, 'optique', o) ? ed(l.optique, 'optique', { ...o, up: true, multi: true, ph: '35MM' }) : opt.map((v, j) => j ? `<small>${esc(up(v))}</small>` : esc(up(v))).join(''))}</td>`,
+      lum: () => `<td class="lum"${lumStyle}>${avecOutils(edit || fmt(l.lumiere, 'lumiere', o) ? ed(l.lumiere, 'lumiere', { ...o, up: true, multi: true, ph: 'JOUR / NUIT' }) : (lum1 ? esc(up(lum1)) : '') + lumS.map(s => `<small>${esc(up(s))}</small>`).join(''))}</td>`,
       note: () => `<td class="note${l.noteNoire ? '' : ' rouge'}">${avecOutils(ed(l.note, 'note', { ...o, multi: true, ph: 'à prévoir…' }))}</td>`
     };
     return `<tr class="plan${l.img || edit ? ' avec-img' : ''}"${edit ? ` data-li="${i}"` : ''}>
@@ -1120,7 +1221,7 @@ function pdtDocCorps(d, edit) {
     : esc(d.dateTexte ? up(d.dateTexte) : pdtDateTexte(d.date)) + (d.lieu ? ' · ' + esc(up(d.lieu)) : '');
   const jours = Math.max(Number(d.jours) || 1, Number(d.jour) || 1);
   const client = d.logo ? `<img src="${esc(d.logo)}" alt="${esc(d.client)}"${edit ? ' title="Logo du client : change-le dans la barre au-dessus"' : ''}>` : ed(d.client, 'client', { up: true, ph: 'CLIENT' });
-  return `<div class="pdt-doc${edit ? ' pdt-doc-ed' : ''}">
+  return `<div class="pdt-doc${edit ? ' pdt-doc-ed' : ''}${d.paysage ? ' paysage' : ''}">
   <div class="tete">
     <img class="widen" src="${base}widen-logo.png" alt="WIDEN">
     <div class="mil">
@@ -1155,11 +1256,13 @@ function pdtDocCorps(d, edit) {
 }
 
 // Styles du document. ecran : aperçu (fond blanc) ; edit : dans la page du site
-function pdtDocCss(ecran, edit) {
-  return `${edit ? '' : `@page { size: A4 portrait; margin: 9mm 8mm; }
+function pdtDocCss(ecran, edit, paysage) {
+  return `${edit ? '' : `@page { size: A4 ${paysage ? 'landscape' : 'portrait'}; margin: 9mm 8mm; }
   body { margin: 0; background: ${ecran ? '#fff' : '#e9e9e7'}; -webkit-print-color-adjust: exact; print-color-adjust: exact; }`}
   .pdt-doc, .pdt-doc * { box-sizing: border-box; }
   .pdt-doc { font-family: 'Karla', Arial, sans-serif; color: #111; width: 210mm; min-height: 297mm; margin: ${ecran ? '0' : '10mm'} auto; background: #fff; padding: 9mm 8mm; font-size: 8px; line-height: 1.25; text-align: left; letter-spacing: normal; }
+  .pdt-doc.paysage { width: 297mm; min-height: 210mm; }
+  .pdt-doc.paysage tr.plan.avec-img td, .pdt-doc.paysage td.ref img { height: 32mm; }
   .pdt-doc .tete { display: grid; grid-template-columns: 1fr 2fr 1fr; align-items: center; margin-bottom: 5mm; }
   .pdt-doc .tete .widen { height: 15px; display: block; }
   .pdt-doc .tete .mil { text-align: center; }
@@ -1223,16 +1326,15 @@ function pdtDocCss(ecran, edit) {
   .pdt-doc-ed .pdt-ref-ed img { width: 100%; height: 100%; object-fit: cover; display: block; }
   .pdt-doc-ed .pdt-ref-ed:hover, .pdt-doc-ed .pdt-ref-ed:focus { box-shadow: inset 0 0 0 1.5px #2f5597; }
   .pdt-doc-ed td { position: relative; }
-  .pdt-doc-ed .pdt-outils { position: absolute; right: calc(100% + 6px); top: 50%; transform: translateY(-50%); display: none; gap: 2px; flex-direction: column; align-items: stretch; z-index: 3; font-size: 11px; font-family: Arial, sans-serif; }
-  .pdt-doc-ed tr.barre .pdt-outils { flex-direction: row; }
-  .pdt-doc-ed .pdt-outils.droite { right: auto; left: calc(100% + 6px); }
-  .pdt-doc-ed tr:hover .pdt-outils, .pdt-doc-ed tr:focus-within .pdt-outils { display: flex; }
-  .pdt-doc-ed .pdt-outils button, .pdt-doc-ed .pdt-outils select { font: 11px Arial, sans-serif; background: #fff; border: 1px solid #ccc; color: #333; padding: 1px 4px; cursor: pointer; min-width: 22px; max-width: 70px; }
+  .pdt-doc-ed .pdt-outils { position: absolute; right: 100%; top: 50%; transform: translateY(-50%); display: flex; gap: 2px; flex-direction: row; align-items: center; z-index: 3; font-size: 10px; font-family: Arial, sans-serif; padding: 6px 6px 6px 10px; visibility: hidden; opacity: 0; transition: opacity .15s, visibility 0s linear .8s; }
+  .pdt-doc-ed .pdt-outils.droite { right: auto; left: 100%; padding: 6px 10px 6px 6px; }
+  .pdt-doc-ed tr:hover .pdt-outils, .pdt-doc-ed tr:focus-within .pdt-outils, .pdt-doc-ed .pdt-outils:hover { visibility: visible; opacity: 1; transition-delay: 0s; }
+  .pdt-doc-ed .pdt-outils button, .pdt-doc-ed .pdt-outils select { font: 10px Arial, sans-serif; background: #fff; border: 1px solid #ccc; color: #333; padding: 0 3px; height: 18px; cursor: pointer; min-width: 18px; max-width: 46px; }
   .pdt-doc-ed .pdt-outils button:hover { border-color: #2f5597; }
   .pdt-doc-ed tr.th th { position: relative; overflow-wrap: anywhere; }
-  .pdt-doc-ed .pdt-col-outils { position: absolute; bottom: calc(100% + 3px); left: 50%; transform: translateX(-50%); display: none; gap: 2px; z-index: 4; white-space: nowrap; }
-  .pdt-doc-ed tr.th th:hover .pdt-col-outils, .pdt-doc-ed tr.th th:focus-within .pdt-col-outils { display: flex; }
-  .pdt-doc-ed .pdt-col-outils button { font: 10px Arial, sans-serif; background: #fff; border: 1px solid #ccc; color: #333; padding: 1px 4px; cursor: pointer; }
+  .pdt-doc-ed .pdt-col-outils { position: absolute; bottom: 100%; left: 50%; transform: translateX(-50%); display: flex; gap: 1px; z-index: 4; white-space: nowrap; padding: 6px 4px 3px; visibility: hidden; opacity: 0; transition: opacity .15s, visibility 0s linear .8s; }
+  .pdt-doc-ed tr.th th:hover .pdt-col-outils, .pdt-doc-ed tr.th th:focus-within .pdt-col-outils, .pdt-doc-ed .pdt-col-outils:hover { visibility: visible; opacity: 1; transition-delay: 0s; }
+  .pdt-doc-ed .pdt-col-outils button { font: 10px Arial, sans-serif; background: #fff; border: 1px solid #ccc; color: #333; padding: 0 3px; height: 16px; min-width: 16px; cursor: pointer; }
   .pdt-doc-ed .pdt-col-outils button:hover { border-color: #2f5597; }
   .pdt-doc-ed .pdt-redim { position: absolute; top: 0; right: -4px; width: 7px; height: 100%; cursor: col-resize; z-index: 3; }
   .pdt-doc-ed .pdt-redim:hover, .pdt-redim-en-cours .pdt-doc-ed .pdt-redim:hover { background: #2f559766; }
@@ -1256,7 +1358,7 @@ function pdtDocHtml(d, ecran) {
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>PDT ${esc([d.titre || d.client, 'J' + (d.jour || 1)].filter(Boolean).join(' ').replace(/[“”"]/g, ''))}</title>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Karla:ital,wght@0,400;0,700;1,400&display=swap">
-<style>${pdtDocCss(ecran, false)}</style></head><body>
+<style>${pdtDocCss(ecran, false, d.paysage)}</style></head><body>
 ${ecran ? '' : '<div class="barre barre-impr" style="position:sticky;top:0;z-index:5;display:flex;gap:12px;align-items:center;justify-content:center;padding:12px;background:#111;color:#fff;font:14px Arial">Vérifie le plan de travail puis <button onclick="window.print()">IMPRIMER / ENREGISTRER EN PDF</button></div>'}
 ${pdtDocCorps(d, false)}
 </body></html>`;
