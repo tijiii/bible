@@ -105,6 +105,7 @@ export async function handleStore(request, env, url) {
     if (!teamOk(request, env, url)) return new Response('Code de l\'équipe requis', { status: 401 });
     if (parts[1] === 't' && parts[2]) return readImage(request, env, `img:t:${parts[2]}`);
     if (parts[1] === 'l' && parts[2] && parts[3]) return readImage(request, env, `img:l:${parts[2]}:${parts[3]}`);
+    if (parts[1] === 'r' && parts[2]) return readImage(request, env, `img:r:${parts[2]}`);
     return new Response('Introuvable', { status: 404 });
   }
 
@@ -164,6 +165,20 @@ export async function handleStore(request, env, url) {
         await env.BIBLE.delete(`img:t:${id}`);
         delete idx.talents[id];
         await env.BIBLE.put(INDEX_KEY, JSON.stringify(idx));
+        return reply({ ok: true }, 200, cors);
+      }
+    }
+
+    // Images de référence des plans de travail (PDT) : une image par plan, sans index
+    if (parts[0] === 'photo' && parts[1] === 'ref') {
+      if (request.method === 'POST' && !parts[2]) {
+        const { bytes, type } = await readBody(request);
+        const id = Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+        await env.BIBLE.put(`img:r:${id}`, bytes, { metadata: { type } });
+        return reply({ ok: true, id }, 200, cors);
+      }
+      if (request.method === 'DELETE' && /^[a-z0-9]+$/.test(parts[2] || '')) {
+        await env.BIBLE.delete(`img:r:${parts[2]}`);
         return reply({ ok: true }, 200, cors);
       }
     }
