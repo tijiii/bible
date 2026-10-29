@@ -144,7 +144,29 @@ async function pdtAjouterDonnees(x, p, ouvrir) {
 
 // PDT déjà préparés, ajoutés une seule fois au projet qui leur correspond dès que la base est chargée
 // (on peut ensuite les modifier ou les supprimer : ils ne reviennent pas)
-const PDT_MODELES = [{ cle: 'simond-avantgarde-2', fichier: 'modeles/pdt-simond-avantgarde.json', projet: /simond/i, deja: /avant.?garde/i }];
+const PDT_MODELES = [{
+  cle: 'simond-avantgarde-3', nom: 'PDT SIMOND « AVANTGARDE »', fichier: 'modeles/pdt-simond-avantgarde.json',
+  projet: /simond/i, deja: /avant.?garde/i,
+  present: d => (d.lignes || []).some(l => l.shot === '5bis') // une ligne qui n'existe que dans ce PDT
+}];
+const pdtModelesDu = p => PDT_MODELES.filter(m => m.projet.test(`${p.client || ''} ${p.nom || ''}`));
+const pdtModelePresent = (m, p) => pdtDuProjet(p.id).some(m.present);
+
+// Bouton « + PDT SIMOND… » : ajoute le modèle au projet et l'ouvre
+async function pdtAjouterModele(cle, pid, ouvrir = true) {
+  const m = PDT_MODELES.find(x => x.cle === cle), p = pjById(pid);
+  if (!m || !p) return;
+  try {
+    const r = await fetch(m.fichier, { cache: 'no-store' });
+    const o = await r.json();
+    await pdtAjouterDonnees(o.pdt || o, p, ouvrir);
+  } catch (e) {
+    console.error(e);
+    if (ouvrir) alert('Le PDT prérempli n\'a pas pu être chargé. Réessaie dans un instant.');
+    throw e;
+  }
+}
+
 let pdtSemis = false;
 async function pdtSemer() {
   if (pdtSemis) return;
@@ -152,26 +174,13 @@ async function pdtSemer() {
   const faits = prodData().pdtModeles || (prodData().pdtModeles = []);
   for (const m of PDT_MODELES) {
     if (faits.includes(m.cle)) continue;
-    const projets = (db.projets || []).filter(p => m.projet.test(`${p.client || ''} ${p.nom || ''}`));
+    const projets = (db.projets || []).filter(p => pdtModelesDu(p).includes(m));
     const p = projets.find(x => m.deja.test(x.nom || '')) || projets[0];
     if (!p) continue;
     faits.push(m.cle);
-    // Déjà importé à la main (un PDT rempli) : on ne le remet pas
-    const vide = d => !(d.lignes || []).some(l => l.scene || l.technique || l.note || l.img);
-    const memes = pdtDuProjet(p.id).filter(d => m.deja.test(d.titre || ''));
-    if (memes.some(d => !vide(d))) { saveDb(); continue; }
-    // Un PDT vide créé en attendant est remplacé par le modèle
-    const vides = new Set(memes.map(d => d.id));
-    if (vides.size) { const l = pdtList(); for (let i = l.length - 1; i >= 0; i--) if (vides.has(l[i].id)) l.splice(i, 1); }
-    try {
-      const r = await fetch(m.fichier, { cache: 'no-store' });
-      const o = await r.json();
-      await pdtAjouterDonnees(o.pdt || o, p, false);
-    } catch (e) {
-      console.error(e);
-      faits.splice(faits.indexOf(m.cle), 1);
-      pdtSemis = false;
-    }
+    if (pdtModelePresent(m, p)) { saveDb(); continue; }
+    try { await pdtAjouterModele(m.cle, p.id, false); }
+    catch (e) { faits.splice(faits.indexOf(m.cle), 1); pdtSemis = false; }
   }
 }
 
@@ -193,7 +202,7 @@ function pjPdtHtml(p) {
     ${siens.length ? `<div class="pj-ts-liste">${siens.map(d => {
       const n = (d.lignes || []).filter(l => l.type === 'plan').length;
       return `<div class="pj-ts-ligne" onclick="pdtOuvrir(${d.id})">
-        <span class="pj-nom"><span class="ch-dot" style="background:${PJ_PISTES.find(x => x[0] === pdtType(d))[2]}"></span>PDT ${pdtType(d) === 'photo' ? 'PHOTO' : 'VIDÉO'} · JOUR ${d.jour || 1} / ${d.jours || 1}</span>
+        <span class="pj-nom"><span class="ch-dot" style="background:${PJ_PISTES.find(x => x[0] === pdtType(d))[2]}"></span>PDT ${pdtType(d) === 'photo' ? 'PHOTO' : 'VIDÉO'} · JOUR ${d.jour || 1} / ${d.jours || 1}${d.titre ? ' · ' + esc(d.titre) : ''}</span>
         <span class="pj-muted">${n} ${pdtType(d) === 'photo' ? 'photo' : 'plan'}${n > 1 ? 's' : ''}${d.lieu ? ' · ' + esc(d.lieu) : ''}</span>
         <span class="pj-muted">${d.date ? esc(tsDateCourte(d.date)) : 'date à compléter'}</span>
       </div>`;
@@ -201,6 +210,7 @@ function pjPdtHtml(p) {
     <div class="ts-add-row">
       <button type="button" class="btn-upload" onclick="pdtNouveau(${p.id}, 'video')">+ PDT VIDÉO</button>
       <button type="button" class="btn-upload" onclick="pdtNouveau(${p.id}, 'photo')">+ PDT PHOTO</button>
+      ${pdtModelesDu(p).filter(m => !pdtModelePresent(m, p)).map(m => `<button type="button" class="btn-upload" onclick="pdtAjouterModele('${m.cle}', ${p.id})">+ ${esc(m.nom)} (PRÉREMPLI)</button>`).join('')}
       <label class="btn-upload">IMPORTER UN PDT<input type="file" accept=".json,application/json" hidden onchange="pdtImporter(this.files[0], ${p.id}); this.value=''"></label>
     </div>
   </section>`;
