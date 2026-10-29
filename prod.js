@@ -40,7 +40,7 @@ function setEspace(e) {
   espace = e === 'projets' || e === 'prod' ? 'projets' : 'bible';
   try { localStorage.setItem('espace', espace); } catch {}
   renderEspaces();
-  if (espace === 'projets') pjGo(pjVue === 'ts' && tsById(tsId) ? 'ts' : pjVue === 'projet' && pjCur() ? 'projet' : 'liste');
+  if (espace === 'projets') pjGo(pjVue === 'ts' && tsById(tsId) ? 'ts' : pjVue === 'pdt' && pdtCur() ? 'pdt' : pjVue === 'projet' && pjCur() ? 'projet' : 'liste');
   else { buildTabs(); render(); window.scrollTo(0, 0); }
 }
 

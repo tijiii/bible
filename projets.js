@@ -5,7 +5,7 @@
 // une même personne est sur deux projets aux mêmes dates.
 // Tout est gardé dans la base partagée, sous db.projets.
 
-let pjVue = 'liste';         // 'liste' | 'projet' | 'ts' (travel sheet ouverte, prod.js)
+let pjVue = 'liste';         // 'liste' | 'projet' | 'ts' (travel sheet ouverte, prod.js) | 'pdt' (plan de travail ouvert, pdt.js)
 let pjTsDepuis = null;       // projet d'où la travel sheet a été ouverte (pour y revenir)
 let pjId = null;             // projet ouvert
 let pjQ = '';                // recherche dans la liste
@@ -407,6 +407,14 @@ function pjRetourTs() {
 }
 
 function buildPjTabs(nav) {
+  if (pjVue === 'pdt' && pdtCur()) {
+    const d = pdtCur(), dest = pjById(d.projetId);
+    nav.style.display = '';
+    nav.innerHTML = `<button class="crumb-back" onclick="pdtRetour()">← ${esc((dest ? pjTitre(dest) : 'PROJETS').toUpperCase())}</button>
+      <span class="crumb-sep">/</span>
+      <span class="crumb-title"><span class="ch-dot" style="background:#111"></span>PDT · SHOOT DAY ${d.jour || 1} / ${d.jours || 1}</span>`;
+    return;
+  }
   if (pjVue === 'ts' && tsById(tsId)) {
     const s = tsById(tsId);
     const dest = (pjTsDepuis && pjById(pjTsDepuis)) || (s.projetId && pjById(s.projetId));
@@ -429,6 +437,7 @@ function renderProjets(main) {
   pjEnDessin = true;
   try {
     if (pjVue === 'ts' && tsById(tsId)) renderTsEditor(main);
+    else if (pjVue === 'pdt' && pdtCur()) renderPdtEditor(main);
     else if (pjVue === 'projet' && pjCur()) renderPjProjet(main);
     else { pjVue = 'liste'; renderPjListe(main); }
   } finally { pjEnDessin = false; }
@@ -768,6 +777,8 @@ function pjPageHtml(p, conflits, choix) {
     ${pjEquipeHtml(p, choix)}
 
     ${tdProjetHtml(p)}
+
+    ${pjPdtHtml(p)}
 
     ${pjTravelHtml(p)}
 
@@ -1662,8 +1673,11 @@ function pjRetirer(liste, id) {
 
 function pjSupprimer() {
   const p = pjCur();
-  if (!p || !confirm('Supprimer le projet « ' + pjTitre(p) + ' » ?' + (p.code ? '\n\nIl vient de PROJETS WIDEN : il reviendra au prochain envoi tant que sa ligne y est.' : ''))) return;
+  const pdts = p ? pdtDuProjet(p.id) : [];
+  if (!p || !confirm('Supprimer le projet « ' + pjTitre(p) + ' » ?' + (pdts.length ? `\n\nSes ${pdts.length} plan(s) de travail seront supprimés aussi.` : '') + (p.code ? '\n\nIl vient de PROJETS WIDEN : il reviendra au prochain envoi tant que sa ligne y est.' : ''))) return;
   db.projets = pjList().filter(x => x.id !== p.id);
+  prodData().pdts = pdtList().filter(d => d.projetId !== p.id);
+  pdts.forEach(d => (d.lignes || []).forEach(l => pdtImageEffacer(l.img)));
   tsList().forEach(s => { if (s.projetId === p.id) delete s.projetId; });   // ses travel sheets restent, sans projet
   clearTimeout(pjSaveTimer); pjSaveTimer = null;
   saveDb();

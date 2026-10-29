@@ -12,6 +12,7 @@ casting-bible/
 ├── data.js      ← données initiales
 ├── app.js       ← logique de l'app
 ├── prod.js      ← travel sheets (dans l'onglet Suivi production)
+├── pdt.js       ← plans de travail / shooting schedules (dans chaque projet)
 └── projets.js   ← onglet Suivi production (suivi des projets)
 ```
 
@@ -208,3 +209,11 @@ Installation (une seule fois) :
 4. Recharger le Google Sheet : un menu « Bible » apparaît. Cliquer « Activer l'envoi automatique » et accepter les autorisations Google.
 
 Les réponses déjà présentes sont envoyées tout de suite, puis chaque nouvelle réponse arrive automatiquement. Une colonne « Bible » indique pour chaque ligne le profil lié ou créé ; vider la case d'une ligne pour la renvoyer.
+
+## Plans de travail (PDT)
+
+Dans la page d'un projet (Suivi production), bloc **PLANS DE TRAVAIL (PDT)** : **+ NOUVEAU PDT** crée le plan de travail d'une journée de tournage, dans le style des shooting schedules Widen. Il reprend du projet le client, le titre, le lieu, la date (jours de tournage du calendrier) et le cast (les gens de l'équipe dont le rôle est athlète, modèle, figuration…). **+ PDT DU JOUR SUIVANT** reprend l'en-tête, les horaires et le cast du jour précédent.
+
+Le formulaire : horaires de la journée (call, ready to shoot, wrap…), cast (call, PAT), puis le déroulé ligne par ligne : **parties** (décor / ambiance), **mises en place**, **plans** (shot #, image de référence, scène, description technique, optique, effet lumière, notes à prévoir) et **pauses** (battement, déjeuner, marge, wrap). Les horaires se calculent tout seuls à partir de l'heure du premier plan et des durées ; un « début fixe » fait repartir d'une heure précise. Une partie « hors plateau » liste des plans sans horaires (post-prod, stock). La case LIGHTING EFFECT se colore toute seule (orange pour le jour, bleu pour la nuit). **CRÉER LE PDF** ouvre le document à imprimer ou enregistrer en PDF.
+
+Les images de référence sont envoyées au serveur Cloudflare (`/store/photo/ref`) ; si l'envoi échoue, une petite copie est gardée dans le PDT.
