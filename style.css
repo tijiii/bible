@@ -659,6 +659,7 @@ body.doc-vue-ouvert > *:not(#doc-vue) { display:none !important; }
 .pj-warn { color:var(--red); font-size:13px; white-space:nowrap; }
 .pj-chip { display:inline-block; max-width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:12px; line-height:1.35; padding:0 6px; color:#fff; background:var(--c, #9a9a96); }
 .pj-statut { display:inline-block; font-size:13px; padding:1px 8px; border:1px solid var(--c); color:var(--c); white-space:nowrap; }
+.pj-encours { display:flex; flex-wrap:wrap; align-items:center; gap:4px 6px; }
 .pj-alertes { margin:14px 24px 0; border:1px solid #b3261e55; background:#fdf3f2; padding:10px 14px; font-size:14px; }
 .pj-alertes-titre { color:var(--red); font-size:13px; letter-spacing:.04em; margin-bottom:4px; }
 .pj-alerte { padding:3px 0; line-height:1.4; }

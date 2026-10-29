@@ -507,14 +507,17 @@ function pjCorpsListe(list) {
       const sp = pjSpan(p);
       const st = pjStatut(p.statut);
       const et = pjEtapesDatees(p);
-      const enCours = et.find(e => e.du <= auj && pjEtapeDates(e).au >= auj) || et.find(e => e.du > auj);
+      // En cours : le statut du projet (la prépa n'est pas dans le rétroplanning) ;
+      // ensuite : la prochaine étape du rétroplanning (sinon celle qui a lieu aujourd'hui)
+      const princ = et.filter(e => !pjParentDe(p, e));
+      const suivante = princ.find(e => e.du > auj) || princ.find(e => pjEtapeDates(e).au >= auj);
       const nb = conflits.filter(c => c.x.p.id === p.id || c.y.p.id === p.id).length;
       const n = (p.equipe || []).filter(a => pjNomPersonne(a)).length;
       return `<div class="pj-tr" onclick="pjGo('projet', ${p.id})">
         <span class="pj-nom"><span class="ch-dot" style="background:${esc(pjCouleur(p))}"></span>${p.code ? `<span class="pj-code">${esc(p.code)}</span>` : ''}${esc(p.nom || 'Sans nom')}${nb ? ` <span class="pj-warn" title="Conflits de dates">⚠ ${nb}</span>` : ''}</span>
         <span class="pj-muted">${esc(p.client || '')}</span>
         <span>${sp ? esc(pjPeriodeTexte(sp.du, sp.au)) : '<span class="pj-muted">pas de dates</span>'}</span>
-        <span>${enCours ? `<span class="pj-chip" style="--c:${pjEtapeType(enCours.type)[2]}">${esc(pjEtapeNom(enCours))}</span> <small class="pj-muted">${esc(pjDateCourte(enCours.du))}</small>` : ''}</span>
+        <span class="pj-encours"><span class="pj-statut" style="--c:${st[2]}">${esc(st[1])}</span>${suivante && !['livre', 'annule'].includes(p.statut) ? ` <small class="pj-muted">puis</small> <span class="pj-chip" style="--c:${pjEtapeType(suivante.type)[2]}">${esc(pjEtapeNom(suivante))}</span> <small class="pj-muted">${esc(pjDateCourte(suivante.du))}</small>` : ''}</span>
         <span class="pj-muted">${n ? n + (n > 1 ? ' personnes' : ' personne') : ''}</span>
         <span><span class="pj-statut" style="--c:${st[2]}">${esc(st[1])}</span></span>
       </div>`;
