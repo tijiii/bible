@@ -1107,9 +1107,9 @@ body.doc-vue-ouvert > *:not(#doc-vue) { display:none !important; }
 .pj-onglet-corps > details > summary::marker, .pj-onglet-corps > details > summary::-webkit-details-marker { display:none; content:''; }
 @media (max-width:640px) { .pj-onglets { gap:16px; } .pj-onglets button { font-size:13px; } }
 .pj-onglet-corps > .pj-repli > summary h3::before { display:none; }
-.pj-onglet-corps .pj-sous-bloc:not(.pj-retro) { margin-top:0; border-top:none; padding-top:0; }
-.pj-onglet-corps .pj-sous-bloc:not(.pj-retro) > summary { cursor:default; }
-.pj-onglet-corps .pj-sous-bloc:not(.pj-retro) > summary::before { display:none; }
+.pj-onglet-corps .pj-sous-bloc:not(.pj-retro):not(.pj-cal-etapes) { margin-top:0; border-top:none; padding-top:0; }
+.pj-onglet-corps .pj-sous-bloc:not(.pj-retro):not(.pj-cal-etapes) > summary { cursor:default; }
+.pj-onglet-corps .pj-sous-bloc:not(.pj-retro):not(.pj-cal-etapes) > summary::before { display:none; }
 .pdt-editor .pdt-pied { margin-top:14px; }
 
 /* ── PDT : modifier sur le document ── */

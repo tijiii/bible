@@ -16,6 +16,7 @@ let pjMois = '';             // mois affiché dans le calendrier du projet ('AAA
 let pjRetro = null;          // import de rétroplanning en cours : { pid, fichier, enCours, msg, etapes }
 let pjRetroOuvert = false;   // bloc d'import du rétroplanning déplié
 let pjEtapesOuvert = false;  // liste des étapes (à modifier) dépliée
+let pjCalEtapesOuvert = false;  // la même, en menu déroulant sous le calendrier
 let pjChapOuverts = new Set(); // étapes « chapitres » (V1, Musique…) dépliées sur leurs sous-étapes
 let pjGensOuverts = new Set(); // étapes dont on a déplié les personnes (calendrier et liste)
 let pjEquipeOuvert = false;  // bloc ÉQUIPE déplié
@@ -392,7 +393,7 @@ function pjMien(c, p) { return c.x.p.id === p.id ? c.x : c.y; }
 function pjGo(vue, id) {
   if (vue === 'ts' && pjVue !== 'ts') pjTsDepuis = pjVue === 'projet' && pjCur() ? pjId : null;
   pjVue = vue;
-  if (id !== undefined && id !== pjId) { pjId = id; pjOnglet = 'calendrier'; pjMois = ''; pjRetroOuvert = false; pjEtapesOuvert = false; pjEtSel = new Set(); pjEqSel = new Set(); pjEquipeOuvert = false; tdOuvert = false; tdFaitesOuvert = false; pjAffOuvert = new Set(); if (pjRetro && !pjRetro.enCours) pjRetro = null; }
+  if (id !== undefined && id !== pjId) { pjId = id; pjOnglet = 'calendrier'; pjMois = ''; pjRetroOuvert = false; pjEtapesOuvert = false; pjCalEtapesOuvert = false; pjEtSel = new Set(); pjEqSel = new Set(); pjEquipeOuvert = false; tdOuvert = false; tdFaitesOuvert = false; pjAffOuvert = new Set(); if (pjRetro && !pjRetro.enCours) pjRetro = null; }
   buildTabs();
   render();
   window.scrollTo(0, 0);
@@ -784,7 +785,7 @@ function pjSetOnglet(k) {
 
 // Dans un onglet, les blocs repliables restent ouverts : cliquer sur leur titre ne les replie pas
 document.addEventListener('click', e => {
-  const s = e.target.closest && e.target.closest('.pj-onglet-corps > details > summary, .pj-onglet-corps .pj-sous-bloc:not(.pj-retro) > summary');
+  const s = e.target.closest && e.target.closest('.pj-onglet-corps > details > summary, .pj-onglet-corps .pj-sous-bloc:not(.pj-retro):not(.pj-cal-etapes) > summary');
   if (s && !e.target.closest('select, button, input, a, label')) e.preventDefault();
 }, true);
 
@@ -804,6 +805,7 @@ function pjOngletCorpsHtml(p, choix) {
     default: return `<section class="ts-bloc pj-cal-bloc${pjBF(p).calPlein ? ' pj-cal-plein' : ''}">
       <h3>CALENDRIER ${pjCalVuesHtml(p)}</h3>
       ${pjBF(p).calVue === 'mois' ? pjCalendrierHtml(p) : pjFriseHtml(p, pjBF(p).calVue === 'postprod' ? 'postprod' : 'global')}
+  ${pjEtapesBlocHtml(p, true)}
     </section>`;
   }
 }
@@ -1006,11 +1008,12 @@ function pjChipHtml(e) {
 }
 
 // La liste des étapes à modifier, repliée une fois qu'il y en a (le calendrier suffit pour lire)
-function pjEtapesBlocHtml(p) {
+function pjEtapesBlocHtml(p, sousCal) {
   const tout = pjEtapesDatees(p).concat((p.etapes || []).filter(e => !pjEtapeDates(e)));
   const toutes = tout.filter(e => pjEtapeVisible(p, e));
   const filtre = toutes.length !== tout.length;
-  const ouvert = pjEtapesOuvert || !tout.length;
+  const ouvert = sousCal ? pjCalEtapesOuvert : (pjEtapesOuvert || !tout.length);
+  const flag = sousCal ? 'pjCalEtapesOuvert' : 'pjEtapesOuvert';
   // Les sous-étapes sont rangées sous leur chapitre (V1, Musique…), qu'on déplie
   const chapitres = pjChapitres(toutes);
   const groupes = [['', 'COMMUN']].concat(PJ_PISTES.map(x => [x[0], x[1].toUpperCase()]))
@@ -1028,7 +1031,7 @@ function pjEtapesBlocHtml(p) {
   };
   const chaps = pjChoixChapitres(p, null);
   const dans = chaps.some(x => String(x.id) === String(pjBF(p).ajDans)) ? String(pjBF(p).ajDans) : '';
-  return `<details class="pj-sous-bloc"${ouvert ? ' open' : ''} ontoggle="if(this.open!==${ouvert})pjEtapesOuvert=this.open">
+  return `<details class="pj-sous-bloc${sousCal ? ' pj-cal-etapes' : ''}"${ouvert ? ' open' : ''} ontoggle="if(this.open!==${ouvert})${flag}=this.open">
     <summary><span class="pj-sous-titre">ÉTAPES</span> <small class="pj-muted">${tout.length ? `${filtre ? toutes.length + ' sur ' + tout.length : tout.length}${pjEtFiltresHtml(p) ? '' : ' · modifier les dates, ajouter une étape'}` : 'aucune pour le moment'}</small>${pjEtFiltresHtml(p)}</summary>
     <datalist id="pj-gens-etapes">${pjEtapesChoixHtml(p)}</datalist>
     ${pjEtSelBarreHtml(p, toutes)}
