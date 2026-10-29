@@ -22,6 +22,7 @@ let pjEquipeOuvert = false;  // bloc ÉQUIPE déplié
 let pjBlocFiltres = {};      // filtres et tris des blocs d'un projet (étapes, to-do, équipe, options), par projet
 let pjModifie = null;        // dernier projet modifié (la synchro le garde tant qu'il n'est pas envoyé)
 let pjEnDessin = false;      // la page est en train d'être remplacée (le champ quitté envoie « change »)
+let pjOnglet = 'calendrier'; // onglet ouvert dans la page du projet (voir PJ_ONGLETS)
 
 const PJ_STATUTS = [
   ['devis', 'En discussion', '#9a9a96'],
@@ -391,7 +392,7 @@ function pjMien(c, p) { return c.x.p.id === p.id ? c.x : c.y; }
 function pjGo(vue, id) {
   if (vue === 'ts' && pjVue !== 'ts') pjTsDepuis = pjVue === 'projet' && pjCur() ? pjId : null;
   pjVue = vue;
-  if (id !== undefined && id !== pjId) { pjId = id; pjMois = ''; pjRetroOuvert = false; pjEtapesOuvert = false; pjEtSel = new Set(); pjEqSel = new Set(); pjEquipeOuvert = false; tdOuvert = false; tdFaitesOuvert = false; pjAffOuvert = new Set(); if (pjRetro && !pjRetro.enCours) pjRetro = null; }
+  if (id !== undefined && id !== pjId) { pjId = id; pjOnglet = 'calendrier'; pjMois = ''; pjRetroOuvert = false; pjEtapesOuvert = false; pjEtSel = new Set(); pjEqSel = new Set(); pjEquipeOuvert = false; tdOuvert = false; tdFaitesOuvert = false; pjAffOuvert = new Set(); if (pjRetro && !pjRetro.enCours) pjRetro = null; }
   buildTabs();
   render();
   window.scrollTo(0, 0);
@@ -659,6 +660,8 @@ function pjNouveau() {
   pjList().push(p);
   saveDb();
   pjGo('projet', p.id);
+  pjOnglet = 'infos';   // un nouveau projet commence par son nom et son client
+  render();
   const n = document.querySelector('.pj-page [data-k="nom"]');
   if (n) n.focus();
 }
@@ -753,10 +756,73 @@ function renderPjProjet(main) {
   main.innerHTML = pjPageHtml(p, conflits, choix);
 }
 
+// La page d'un projet est rangée en onglets : on arrive sur le calendrier,
+// le reste (étapes à modifier et import du rétroplanning, équipe, to-do, PDT,
+// travel sheets, infos) est à un clic.
+const PJ_ONGLETS = [
+  ['calendrier', 'CALENDRIER'], ['retro', 'ÉTAPES'], ['equipe', 'ÉQUIPE'], ['todo', 'TO-DO'],
+  ['pdt', 'PDT'], ['travel', 'TRAVEL SHEETS'], ['infos', 'INFOS & NOTES'],
+];
+
+function pjOngletsHtml(p) {
+  const nEt = (p.etapes || []).length;
+  const nEq = (p.equipe || []).filter(a => pjNomPersonne(a)).length;
+  const nConf = pjConflitsDe(p).length;
+  const nTd = tdTaches(p).filter(t => !t.fait).length;
+  const nPdt = pdtDuProjet(p.id).length;
+  const nTs = tsList().filter(s => s.projetId === p.id).length;
+  const compte = { retro: nEt, equipe: nEq, todo: nTd, pdt: nPdt, travel: nTs };
+  return `<nav class="pj-onglets" role="tablist">${PJ_ONGLETS.map(([k, lab]) => `<button type="button" role="tab" class="${pjOnglet === k ? 'on' : ''}" aria-selected="${pjOnglet === k}" onclick="pjSetOnglet('${k}')">${lab}${compte[k] ? ` <small>${compte[k]}</small>` : ''}${k === 'equipe' && nConf ? ' <span class="pj-warn">⚠</span>' : ''}</button>`).join('')}</nav>`;
+}
+
+function pjSetOnglet(k) {
+  pjOnglet = PJ_ONGLETS.some(o => o[0] === k) ? k : 'calendrier';
+  pjRedessiner();
+  const nav = document.querySelector('.pj-onglets');
+  if (nav && nav.getBoundingClientRect().top < 0) nav.scrollIntoView({ block: 'start' });
+}
+
+// Dans un onglet, les blocs repliables restent ouverts : cliquer sur leur titre ne les replie pas
+document.addEventListener('click', e => {
+  const s = e.target.closest && e.target.closest('.pj-onglet-corps > details > summary, .pj-onglet-corps .pj-sous-bloc:not(.pj-retro) > summary');
+  if (s && !e.target.closest('select, button, input, a, label')) e.preventDefault();
+}, true);
+
+function pjOngletCorpsHtml(p, choix) {
+  switch (pjOnglet) {
+    case 'retro':
+      pjEtapesOuvert = true;
+      return `<section class="ts-bloc">
+      ${pjEtapesBlocHtml(p)}
+      ${pjRetroBlocHtml(p)}
+    </section>`;
+    case 'equipe': pjEquipeOuvert = true; return pjEquipeHtml(p, choix);
+    case 'todo': tdOuvert = true; return tdProjetHtml(p);
+    case 'pdt': return pjPdtHtml(p);
+    case 'travel': return pjTravelHtml(p);
+    case 'infos': return pjInfosHtml(p);
+    default: return `<section class="ts-bloc pj-cal-bloc${pjBF(p).calPlein ? ' pj-cal-plein' : ''}">
+      <h3>CALENDRIER ${pjCalVuesHtml(p)}</h3>
+      ${pjBF(p).calVue === 'mois' ? pjCalendrierHtml(p) : pjFriseHtml(p, pjBF(p).calVue === 'postprod' ? 'postprod' : 'global')}
+    </section>`;
+  }
+}
+
 function pjPageHtml(p, conflits, choix) {
   return `<div class="pj-page">
     ${pjAlertesHtml(conflits, p)}
-    <section class="ts-bloc">
+    ${pjOngletsHtml(p)}
+    <div class="pj-onglet-corps">${pjOngletCorpsHtml(p, choix)}</div>
+    ${pjOnglet === 'infos' ? '' : `<div class="ts-actions">
+      <div class="spacer"></div>
+      <button type="button" class="btn-save" onclick="pjGo('liste')">TERMINÉ</button>
+    </div>`}
+  </div>`;
+}
+
+// Onglet INFOS & NOTES : nom, client, statut, couleur, ce qui vient de PROJETS WIDEN, notes
+function pjInfosHtml(p) {
+  return `<section class="ts-bloc">
       <h3>PROJET</h3>
       <div class="ts-grid pj-grid-infos">
         ${pjField('NOM DU PROJET', 'nom', p.nom, { ph: 'ex : IKKS FW26', change: true })}
@@ -767,21 +833,6 @@ function pjPageHtml(p, conflits, choix) {
       ${pjInfosTableauHtml(p)}
     </section>
 
-    <section class="ts-bloc pj-cal-bloc${pjBF(p).calPlein ? ' pj-cal-plein' : ''}">
-      <h3>CALENDRIER ${pjCalVuesHtml(p)}</h3>
-      ${pjBF(p).calVue === 'mois' ? pjCalendrierHtml(p) : pjFriseHtml(p, pjBF(p).calVue === 'postprod' ? 'postprod' : 'global')}
-      ${pjEtapesBlocHtml(p)}
-      ${pjRetroBlocHtml(p)}
-    </section>
-
-    ${pjEquipeHtml(p, choix)}
-
-    ${tdProjetHtml(p)}
-
-    ${pjPdtHtml(p)}
-
-    ${pjTravelHtml(p)}
-
     <section class="ts-bloc">
       <h3>NOTES</h3>
       ${pjField('', 'notes', p.notes, { textarea: true, rows: 4, full: true, ph: 'Infos utiles, liens (devis, Dropbox, rétroplanning)…' })}
@@ -791,8 +842,7 @@ function pjPageHtml(p, conflits, choix) {
       <button type="button" class="btn-del" onclick="pjSupprimer()">✕ SUPPRIMER LE PROJET</button>
       <div class="spacer"></div>
       <button type="button" class="btn-save" onclick="pjGo('liste')">TERMINÉ</button>
-    </div>
-  </div>`;
+    </div>`;
 }
 
 // L'équipe, repliable (fermée dès qu'il y a du monde : le résumé donne les noms)
@@ -942,6 +992,7 @@ function pjVoirEtape(eid) {
   const p = pjCur();
   if (p) pjBF(p).calPlein = false;
   pjEtapesOuvert = true;
+  pjOnglet = 'retro';
   pjRedessiner();
   const el = document.getElementById('pj-et-' + eid);
   if (el) { el.scrollIntoView({ behavior: 'smooth', block: 'center' }); el.classList.add('pj-flash'); setTimeout(() => el.classList.remove('pj-flash'), 1600); }
@@ -1050,6 +1101,7 @@ function pjVoirPersonne(aid) {
   const p = pjCur();
   if (p) pjBF(p).calPlein = false;
   pjEquipeOuvert = true;
+  pjOnglet = 'equipe';
   pjAffOuvert.add(aid);
   pjRedessiner();
   const el = document.getElementById('pj-aff-' + aid);
