@@ -511,6 +511,8 @@ function renderPdtDoc(main) {
   zone.addEventListener('mousedown', e => {
     const r = e.target.closest('.pdt-redim');
     if (r) return pdtRedimDebut(e, r);
+    const rl = e.target.closest('.pdt-redim-l');
+    if (rl) return pdtHautDebut(e, rl);
     const p = e.target.closest('.pdt-poignee');
     if (p) p.closest('tr').draggable = true;
   });
@@ -911,6 +913,36 @@ function pdtRedimDebut(e, h) {
   document.addEventListener('mouseup', fin);
 }
 
+// Tirer le bas d'une ligne pour la rendre plus haute ou plus serrée (double-clic : hauteur normale)
+function pdtHautDebut(e, h) {
+  e.preventDefault();
+  const tr = h.closest('tr[data-li]'), d = pdtCur();
+  const l = tr && d && d.lignes[Number(tr.dataset.li)];
+  if (!l) return;
+  if (e.detail > 1) { delete l.haut; pdtChange(); return pdtRedessiner(); }
+  const doc = tr.closest('.pdt-doc');
+  const mmParPx = (doc.classList.contains('paysage') ? 297 : 210) / doc.getBoundingClientRect().width;
+  const y0 = e.clientY, h0 = tr.getBoundingClientRect().height;
+  let mm = null;
+  document.body.classList.add('pdt-redim-h-en-cours');
+  const bouge = ev => {
+    mm = Math.max(3, Math.round((h0 + ev.clientY - y0) * mmParPx * 2) / 2);
+    tr.setAttribute('data-h', '');
+    tr.style.setProperty('--h', mm + 'mm');
+  };
+  const fin = () => {
+    document.removeEventListener('mousemove', bouge);
+    document.removeEventListener('mouseup', fin);
+    document.body.classList.remove('pdt-redim-h-en-cours');
+    if (mm == null) return;
+    l.haut = mm;
+    pdtChange();
+    pdtRedessiner();
+  };
+  document.addEventListener('mousemove', bouge);
+  document.addEventListener('mouseup', fin);
+}
+
 // La ligne visée par le glisser : celle sous la souris, ou la plus proche
 // (sur une bordure, un saut de page ou entre deux lignes, on ne perd pas le lâcher)
 function pdtGlisseCible(zone, e) {
@@ -1196,7 +1228,16 @@ function pdtDocCorps(d, edit) {
   const entete = `<tr class="th">
     ${cols.map((k, j) => `<th data-col="${k}">${colOutils(k, j)}${titres[k] || T('col_' + k, '')}</th>`).join('')}
   </tr>`;
-  const corps = lignes.map((l, i) => {
+  // Hauteur réglée à la main (l.haut, en mm) ; en édition, une poignée au bas de chaque case la règle
+  const poigneeH = '<span class="pdt-redim-l" contenteditable="false" title="Tirer pour changer la hauteur de la ligne (double-clic : hauteur normale)"></span>';
+  const rangee = (l, html) => {
+    const k = html.lastIndexOf('<tr');
+    let tr = html.slice(k);
+    if (l.haut) tr = tr.replace('<tr', `<tr data-h style="--h:${Number(l.haut)}mm"`);
+    if (edit) tr = tr.replace(/<\/td>/g, poigneeH + '</td>');
+    return html.slice(0, k) + tr;
+  };
+  const corps = lignes.map((l, i) => rangee(l, (() => {
     const x = h[l.id] || {};
     const o = { l: 'lignes', i: l.id };
     if (l.type === 'partie') {
@@ -1255,7 +1296,7 @@ function pdtDocCorps(d, edit) {
     return `<tr class="plan${l.img || edit ? ' avec-img' : ''}"${edit ? ` data-li="${i}"` : ''}>
       ${cols.map(k => cases[k] ? cases[k]() : `<td class="txt">${avecOutils(ed(l['x_' + k], 'x_' + k, { ...o, multi: true }))}</td>`).join('')}
     </tr>`;
-  }).join('');
+  })())).join('');
 
   const date = edit
     ? `${ed(d.dateTexte, 'dateTexte', { up: true, ph: pdtDateTexte(d.date) })}<label class="pdt-ed-date" title="Choisir la date du tournage">📅<input type="date" data-k="date" value="${esc(d.date || '')}" onclick="try{this.showPicker()}catch(e){}" onchange="pdtInput(this); pdtRedessiner()"></label> · ${ed(d.lieu, 'lieu', { up: true, ph: 'LIEU' })}`
@@ -1337,6 +1378,8 @@ function pdtDocCss(ecran, edit, paysage) {
   .pdt-doc tr.plan td { height: 15mm; }
   .pdt-doc tr.plan.avec-img td { height: 25mm; }
   .pdt-doc tr.plan, .pdt-doc tr.install, .pdt-doc tr.barre { break-inside: avoid; page-break-inside: avoid; }
+  .pdt-doc tr[data-h] > td { height: var(--h) !important; }
+  .pdt-doc tr[data-h] td.ref img, .pdt-doc-ed tr[data-h] .pdt-ref-ed { height: var(--h) !important; }
   .pdt-doc td.shot { font-weight: 700; font-size: 10px; }
   .pdt-doc td.ref { padding: 0; }
   .pdt-doc td.ref img { width: 100%; height: 25mm; object-fit: cover; display: block; }
@@ -1385,6 +1428,9 @@ function pdtDocCss(ecran, edit, paysage) {
   .pdt-doc-ed .pdt-redim { position: absolute; top: 0; right: -4px; width: 7px; height: 100%; cursor: col-resize; z-index: 3; }
   .pdt-doc-ed .pdt-redim:hover, .pdt-redim-en-cours .pdt-doc-ed .pdt-redim:hover { background: #2f559766; }
   .pdt-redim-en-cours, .pdt-redim-en-cours * { cursor: col-resize !important; user-select: none; }
+  .pdt-doc-ed .pdt-redim-l { position: absolute; left: 0; right: 0; bottom: -3px; height: 6px; cursor: row-resize; z-index: 2; }
+  .pdt-doc-ed tr:hover > td > .pdt-redim-l:hover, .pdt-redim-h-en-cours .pdt-doc-ed .pdt-redim-l:hover { background: #2f559766; }
+  .pdt-redim-h-en-cours, .pdt-redim-h-en-cours * { cursor: row-resize !important; user-select: none; }
   .pdt-doc-ed .pdt-poignee { cursor: grab; text-align: center; font-size: 14px; line-height: 1; color: #555; background: #fff; border: 1px solid #ccc; padding: 1px 4px; user-select: none; }
   .pdt-doc-ed tr.pdt-glisse { opacity: .4; }
   .pdt-doc-ed tr.pdt-vise-haut > td { box-shadow: inset 0 3px 0 #2f5597; }
