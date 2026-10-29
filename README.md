@@ -222,4 +222,4 @@ Les images de référence sont envoyées au serveur Cloudflare (`/store/photo/re
 
 ## Page d'un projet
 
-La page d'un projet s'ouvre sur son **CALENDRIER** (rétroplanning, post-prod ou mois). Le reste est rangé dans des onglets en haut : **ÉTAPES** (modifier les étapes, importer un rétroplanning), **ÉQUIPE**, **TO-DO**, **PDT**, **TRAVEL SHEETS** et **INFOS & NOTES** (nom, client, statut, couleur, notes, supprimer le projet). Un nouveau projet s'ouvre sur INFOS & NOTES pour écrire son nom.
+La page d'un projet s'ouvre sur son **CALENDRIER** (rétroplanning, post-prod ou mois). Le reste est rangé dans des onglets en haut : **ÉTAPES** (modifier les étapes, importer un rétroplanning), **ÉQUIPE**, **TO-DO**, **PDT**, **TRAVEL SHEETS** et **INFOS & NOTES** (nom, client, statut, couleur, notes, supprimer le projet). Un nouveau projet s'ouvre sur INFOS & NOTES pour écrire son nom. Sous le calendrier, un menu déroulant **ÉTAPES** (fermé par défaut) permet aussi de modifier et d'ajouter des étapes sans changer d'onglet.
