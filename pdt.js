@@ -7,7 +7,10 @@
 
 let pdtId = null;             // PDT ouvert
 
-const PDT_HORAIRES_DEFAUT = ['CALL ÉQUIPE', 'CALL AGENCE / CLIENT', 'READY TO SHOOT', 'DÉJ', 'WRAP'];
+const PDT_HORAIRES_DEFAUT = ['PAT', 'REPAS', 'WRAP'];
+// Tableau de l'équipe en haut à gauche : colonnes de base (on peut en ajouter, retirer, déplacer)
+const PDT_EQ_COLS = ['nom', 'role', 'call', 'pat'];
+const PDT_EQ_TITRES = { nom: ['cast', 'TEAM'], role: ['role', 'ROLE'], call: ['call', 'CALL'], pat: ['pat', 'PAT'] };
 const PDT_PAUSES = ['BATTEMENT', 'DÉJEUNER', 'DÎNER', 'PAUSE', 'MARGE', 'WRAP'];
 // Couleur de la case LIGHTING EFFECT : [fond, texte]
 const PDT_LUMIERES = {
@@ -927,6 +930,40 @@ function pdtLargeurs(d) {
   const t = ws.reduce((a, b) => a + b, 0);
   return ws.map(w => Math.round(w / t * 10000) / 100);
 }
+// Colonnes du tableau de l'équipe (en haut à gauche)
+function pdtEqCols(d) { return Array.isArray(d.eqCols) && d.eqCols.length ? d.eqCols : PDT_EQ_COLS; }
+function pdtEqColAjouter(pos) {
+  const d = pdtCur();
+  if (!d) return;
+  const cols = pdtEqCols(d).slice();
+  let n = 1;
+  while (cols.includes('x' + n)) n++;
+  cols.splice(pos, 0, 'x' + n);
+  d.eqCols = cols;
+  pdtChange();
+  pdtRedessiner();
+}
+function pdtEqColDeplacer(k, sens) {
+  const d = pdtCur();
+  if (!d) return;
+  const cols = pdtEqCols(d).slice(), i = cols.indexOf(k), j = i + sens;
+  if (i < 0 || j < 0 || j >= cols.length) return;
+  [cols[i], cols[j]] = [cols[j], cols[i]];
+  d.eqCols = cols;
+  pdtChange();
+  pdtRedessiner();
+}
+function pdtEqColRetirer(k) {
+  const d = pdtCur();
+  if (!d) return;
+  const cols = pdtEqCols(d).filter(x => x !== k);
+  if (!cols.length) return;
+  if ((d.cast || []).some(c => c[k === 'nom' ? 'nom' : PDT_EQ_TITRES[k] ? k : 'x_' + k]) && !confirm('Retirer cette colonne et ce qu\'elle contient ?')) return;
+  d.eqCols = cols;
+  pdtChange();
+  pdtRedessiner();
+}
+
 function pdtColAjouter(pos) {
   const d = pdtCur();
   if (!d) return;
@@ -1242,8 +1279,8 @@ function pdtDocCorps(d, edit) {
   const h = pdtHoraires(d);
   const lignes = d.lignes || [];
   const premier = lignes.find(l => l.type !== 'partie' && h[l.id] && h[l.id].du != null);
-  // READY TO SHOOT et WRAP vides : l'heure du premier plan et celle de la fin
-  const auto = lab => /ready/i.test(lab) && premier ? pdtHh(h[premier.id].du) : /wrap/i.test(lab) && h.fin != null ? pdtHh(h.fin) : '';
+  // READY TO SHOOT (ou PAT) et WRAP vides : l'heure du premier plan et celle de la fin
+  const auto = lab => /ready|^\s*pat\b/i.test(lab) && premier ? pdtHh(h[premier.id].du) : /wrap/i.test(lab) && h.fin != null ? pdtHh(h.fin) : '';
   const up = v => String(v == null ? '' : v).toUpperCase();
   // Les textes fixes du modèle (titres de colonnes, SHOOT DAY…) : modifiables, gardés dans d.textes
   const T = (k, def) => {
@@ -1273,22 +1310,42 @@ function pdtDocCorps(d, edit) {
   // En-tête : horaires de la journée à gauche, cast à droite
   const horaires = edit ? d.horaires || [] : (d.horaires || []).filter(x => x.label || x.heure);
   const cast = edit ? d.cast || [] : (d.cast || []).filter(x => x.nom || x.role);
-  const nHaut = Math.max(horaires.length, cast.length + 1);
-  const haut = [];
   const x0 = { up: true };
-  for (let i = 0; i < nHaut; i++) {
-    const x = horaires[i];
-    const c = i === 0 ? null : cast[i - 1];
-    const oh = { l: 'horaires', i };
-    const oc = { l: 'cast', i: i - 1 };
-    haut.push(`<tr>
-      <td class="hh">${x ? `${edit ? `<div class="pdt-outils" contenteditable="false"><button type="button" title="Retirer" onclick="pdtRetirer('horaires', ${i})">✕</button></div>` : ''}${ed(x.heure || (edit ? '' : auto(x.label)), 'heure', { ...oh, tbc: true, ph: auto(x.label) || 'TBC' })}` : ''}</td>
-      <td class="lab">${x ? ed(x.label, 'label', { ...oh, ...x0, ph: 'QUOI' }) : ''}</td>
-      ${i === 0 ? `<th>${T('cast', 'CASTING')}</th><th>${T('role', 'ROLE')}</th><th>${T('call', 'CALL')}</th><th>${T('pat', 'PAT')}</th>`
-        : c ? `<td class="c">${ed(c.nom, 'nom', { ...oc, up: true, tbc: true, ph: 'TBC' })}</td><td class="c b">${ed(c.role, 'role', { ...oc, up: true, ph: 'RÔLE' })}</td><td class="c">${ed(c.call, 'call', { ...oc, tbc: true, ph: 'TBC' })}</td><td class="c pat">${ed(c.pat, 'pat', { ...oc, tbc: true, ph: 'TBC' })}${edit ? `<div class="pdt-outils droite" contenteditable="false"><button type="button" title="Retirer" onclick="pdtRetirer('cast', ${i - 1})">✕</button></div>` : ''}</td>`
-          : '<td></td><td></td><td></td><td></td>'}
-    </tr>`);
-  }
+  // À gauche, l'équipe (TEAM, ROLE, CALL, PAT… colonnes au choix) ; à droite, les horaires du jour
+  const eqCols = pdtEqCols(d);
+  const eqTitre = k => PDT_EQ_TITRES[k] ? T(PDT_EQ_TITRES[k][0], PDT_EQ_TITRES[k][1]) : T('eqcol_' + k, 'COLONNE');
+  const eqOutils = (k, j) => !edit ? '' : `<div class="pdt-col-outils" contenteditable="false">
+      <button type="button" title="Ajouter une colonne à gauche" onclick="pdtEqColAjouter(${j})">+</button>
+      ${j ? `<button type="button" title="Déplacer la colonne vers la gauche" onclick="pdtEqColDeplacer('${k}', -1)">◂</button>` : ''}
+      ${eqCols.length > 1 ? `<button type="button" title="Retirer cette colonne" onclick="pdtEqColRetirer('${k}')">✕</button>` : ''}
+      ${j < eqCols.length - 1 ? `<button type="button" title="Déplacer la colonne vers la droite" onclick="pdtEqColDeplacer('${k}', 1)">▸</button>` : ''}
+      <button type="button" title="Ajouter une colonne à droite" onclick="pdtEqColAjouter(${j + 1})">+</button>
+    </div>`;
+  const eqCase = (c, k, oc) => k === 'nom' ? `<td class="c">${ed(c.nom, 'nom', { ...oc, up: true, tbc: true, ph: 'TBC' })}</td>`
+    : k === 'role' ? `<td class="c b">${ed(c.role, 'role', { ...oc, up: true, ph: 'RÔLE' })}</td>`
+    : k === 'call' || k === 'pat' ? `<td class="c${k === 'pat' ? ' pat' : ''}">${ed(c[k], k, { ...oc, tbc: true, ph: 'TBC' })}</td>`
+    : `<td class="c">${ed(c['x_' + k], 'x_' + k, { ...oc, multi: true })}</td>`;
+  const eqLignes = cast.map((c, i) => {
+    const oc = { l: 'cast', i };
+    const cases = eqCols.map(k => eqCase(c, k, oc));
+    if (edit) cases[cases.length - 1] = cases[cases.length - 1].replace(/<\/td>$/, `<div class="pdt-outils droite" contenteditable="false"><button type="button" title="Retirer" onclick="pdtRetirer('cast', ${i})">✕</button></div></td>`);
+    return `<tr>${cases.join('')}</tr>`;
+  });
+  const eqTable = `<table class="haut eq">
+    <colgroup>${eqCols.map(k => `<col style="width:${(k === 'nom' || k === 'role' ? 2 : 1) / eqCols.reduce((t, x) => t + (x === 'nom' || x === 'role' ? 2 : 1), 0) * 100}%">`).join('')}</colgroup>
+    <tr>${eqCols.map((k, j) => `<th data-eqcol="${k}">${eqOutils(k, j)}${eqTitre(k)}</th>`).join('')}</tr>
+    ${eqLignes.join('')}
+    ${edit ? `<tr class="pdt-ajout-haut"><td colspan="${eqCols.length}"><button type="button" onclick="pdtAjouterSimple('cast')">+ personne</button></td></tr>` : ''}
+  </table>`;
+  const horTable = `<table class="haut hor">
+    <colgroup><col style="width:58%"><col style="width:42%"></colgroup>
+    ${horaires.map((x, i) => {
+      const oh = { l: 'horaires', i };
+      return `<tr><td class="lab">${ed(x.label, 'label', { ...oh, ...x0, ph: 'QUOI' })}</td>
+        <td class="hh">${ed(x.heure || (edit ? '' : auto(x.label)), 'heure', { ...oh, tbc: true, ph: auto(x.label) || 'TBC' })}${edit ? `<div class="pdt-outils droite" contenteditable="false"><button type="button" title="Retirer" onclick="pdtRetirer('horaires', ${i})">✕</button></div>` : ''}</td></tr>`;
+    }).join('')}
+    ${edit ? `<tr class="pdt-ajout-haut"><td colspan="2"><button type="button" onclick="pdtAjouterSimple('horaires')">+ horaire</button></td></tr>` : ''}
+  </table>`;
 
   // Colonnes du tableau : celles du modèle (qu'on peut retirer) et celles ajoutées (x…)
   const cols = pdtCols(d);
@@ -1390,12 +1447,11 @@ function pdtDocCorps(d, edit) {
     </div>
     <div class="cl">${client}</div>
   </div>
-  <table class="haut">
-    <colgroup><col style="width:10%"><col style="width:30%"><col style="width:21%"><col style="width:17%"><col style="width:9%"><col style="width:13%"></colgroup>
-    ${haut.join('')}
-    ${edit ? `<tr class="pdt-ajout-haut"><td colspan="2"><button type="button" onclick="pdtAjouterSimple('horaires')">+ horaire</button></td><td colspan="4"><button type="button" onclick="pdtAjouterSimple('cast')">+ cast</button></td></tr>` : ''}
-    <tr class="noir"><td colspan="6"></td></tr>
-    <tr class="prepa"><td>${edit ? ed(d.prepaHeure, 'prepaHeure', { ph: d.debut ? 'TBC-' + d.debut : 'TBC' }) : pdtTbc(d.prepaHeure || (d.debut ? 'TBC-' + d.debut : ''))}</td><td colspan="5">${ed(d.prepaTexte, 'prepaTexte', { up: true, ph: 'PRÉPA…' })}</td></tr>
+  <div class="haut-2">${eqTable}${horTable}</div>
+  <table class="haut prepa-t">
+    <colgroup><col style="width:10%"><col style="width:90%"></colgroup>
+    <tr class="noir"><td colspan="2"></td></tr>
+    <tr class="prepa"><td>${edit ? ed(d.prepaHeure, 'prepaHeure', { ph: d.debut ? 'TBC-' + d.debut : 'TBC' }) : pdtTbc(d.prepaHeure || (d.debut ? 'TBC-' + d.debut : ''))}</td><td>${ed(d.prepaTexte, 'prepaTexte', { up: true, ph: 'PRÉPA…' })}</td></tr>
   </table>
   <table class="plan-t">
     <colgroup>${pdtLargeurs(d).map(w => `<col style="width:${w}%">`).join('')}</colgroup>
@@ -1440,6 +1496,11 @@ function pdtDocCss(ecran, edit, paysage) {
   .pdt-doc th { font-weight: 700; }
   .pdt-doc .haut td, .pdt-doc .haut th { height: 15px; }
   .pdt-doc .haut .lab { text-align: left; font-weight: 400; }
+  .pdt-doc .haut-2 { display: flex; gap: 6mm; align-items: flex-start; }
+  .pdt-doc .haut-2 table.eq { flex: 1 1 64%; width: auto; }
+  .pdt-doc .haut-2 table.hor { flex: 0 0 30%; width: auto; }
+  .pdt-doc .haut.hor .lab { font-weight: 700; }
+  .pdt-doc table.prepa-t { margin-top: 4mm; }
   .pdt-doc .hh { font-weight: 700; white-space: nowrap; }
   .pdt-doc .b { font-weight: 700; }
   .pdt-doc .tbc { color: #c00000; font-weight: 700; }
@@ -1476,6 +1537,7 @@ function pdtDocCss(ecran, edit, paysage) {
   .pdt-doc-ed .ed.up { text-transform: uppercase; }
   .pdt-doc-ed .ed.up:empty::before { text-transform: none; }
   .pdt-doc-ed th .ed[data-t] { white-space: pre-wrap; }
+  .pdt-doc-ed .eq th { position: relative; }
   .pdt-doc-ed td.txt .ed, .pdt-doc-ed td.note .ed, .pdt-doc-ed td.opt .ed, .pdt-doc-ed td.lum .ed { white-space: pre-wrap; }
   .pdt-doc-ed td.lum .ed, .pdt-doc-ed td.opt .ed { font-size: 5.5px; }
   .pdt-doc-ed td.lum .ed::first-line, .pdt-doc-ed td.opt .ed::first-line { font-size: 8px; }
@@ -1498,7 +1560,7 @@ function pdtDocCss(ecran, edit, paysage) {
   .pdt-doc-ed .pdt-outils button:hover { border-color: #2f5597; }
   .pdt-doc-ed tr.th th { position: relative; overflow-wrap: anywhere; }
   .pdt-doc-ed .pdt-col-outils { position: absolute; bottom: 100%; left: 50%; transform: translateX(-50%); display: flex; gap: 1px; z-index: 4; white-space: nowrap; padding: 6px 4px 3px; visibility: hidden; opacity: 0; transition: opacity .15s, visibility 0s linear .8s; }
-  .pdt-doc-ed tr.th th:hover .pdt-col-outils, .pdt-doc-ed tr.th th:focus-within .pdt-col-outils, .pdt-doc-ed .pdt-col-outils:hover { visibility: visible; opacity: 1; transition-delay: 0s; }
+  .pdt-doc-ed tr.th th:hover .pdt-col-outils, .pdt-doc-ed tr.th th:focus-within .pdt-col-outils, .pdt-doc-ed .eq th:hover .pdt-col-outils, .pdt-doc-ed .eq th:focus-within .pdt-col-outils, .pdt-doc-ed .pdt-col-outils:hover { visibility: visible; opacity: 1; transition-delay: 0s; }
   .pdt-doc-ed .pdt-col-outils button { font: 10px Arial, sans-serif; background: #fff; border: 1px solid #ccc; color: #333; padding: 0 3px; height: 16px; min-width: 16px; cursor: pointer; }
   .pdt-doc-ed .pdt-col-outils button:hover { border-color: #2f5597; }
   .pdt-doc-ed .pdt-redim { position: absolute; top: 0; right: -4px; width: 7px; height: 100%; cursor: col-resize; z-index: 3; }
