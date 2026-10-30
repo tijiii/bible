@@ -622,6 +622,8 @@ function pdtNettoie(html, multi) {
     if (tag === 'u' || /underline/.test(st.textDecoration || st.textDecorationLine || '')) r = `<u>${r}</u>`;
     if (tag === 'i' || tag === 'em' || st.fontStyle === 'italic') r = `<i>${r}</i>`;
     if (tag === 'b' || tag === 'strong' || /bold|[6-9]00/.test(st.fontWeight || '')) r = `<b>${r}</b>`;
+    // Gras retiré dans une case grasse par défaut (n°, titres, barres) : on le garde aussi
+    else if (/normal|[1-5]00/.test(st.fontWeight || '')) r = `<span style="font-weight:400">${r}</span>`;
     return r;
   }).join('');
   let h = sortie(t.content).replace(/^<br>/, '').replace(/(<br>)+$/, '');
@@ -639,7 +641,21 @@ function pdtFormat(cmd, val) {
   if (!el || !el.closest || !el.closest('.pdt-doc-ed .ed')) return;
   try { document.execCommand('styleWithCSS', false, false); } catch (e) {}
   document.execCommand(cmd, false, val);
+  pdtEtatFormat();
 }
+// Les boutons B / I / U restent allumés quand le texte sélectionné est en gras, italique, souligné
+function pdtEtatFormat() {
+  const barre = document.querySelector('.pdt-ed-outils');
+  if (!barre) return;
+  const el = document.activeElement, dedans = !!(el && el.closest && el.closest('.pdt-doc-ed .ed'));
+  [['b', 'bold'], ['i', 'italic'], ['u', 'underline']].forEach(([c, cmd]) => {
+    const btn = barre.querySelector('button.' + c);
+    let on = false;
+    try { on = dedans && document.queryCommandState(cmd); } catch (e) {}
+    if (btn) btn.classList.toggle('on', on);
+  });
+}
+document.addEventListener('selectionchange', pdtEtatFormat);
 // Dernière ligne où l'on a cliqué : pour la couleur de la case lumière
 let pdtLigneActive = null;
 function pdtFondLumiere(v) {
