@@ -7,7 +7,7 @@
 
 let pdtId = null;             // PDT ouvert
 
-const PDT_HORAIRES_DEFAUT = ['CALL ÉQUIPE', 'CALL AGENCE/CLIENTS', 'READY TO SHOOT', 'DÉJEUNER', 'WRAP'];
+const PDT_HORAIRES_DEFAUT = ['CALL ÉQUIPE', 'CALL AGENCE / CLIENT', 'READY TO SHOOT', 'DÉJ', 'WRAP'];
 const PDT_PAUSES = ['BATTEMENT', 'DÉJEUNER', 'DÎNER', 'PAUSE', 'MARGE', 'WRAP'];
 // Couleur de la case LIGHTING EFFECT : [fond, texte]
 const PDT_LUMIERES = {
@@ -1284,7 +1284,7 @@ function pdtDocCorps(d, edit) {
     haut.push(`<tr>
       <td class="hh">${x ? `${edit ? `<div class="pdt-outils" contenteditable="false"><button type="button" title="Retirer" onclick="pdtRetirer('horaires', ${i})">✕</button></div>` : ''}${ed(x.heure || (edit ? '' : auto(x.label)), 'heure', { ...oh, tbc: true, ph: auto(x.label) || 'TBC' })}` : ''}</td>
       <td class="lab">${x ? ed(x.label, 'label', { ...oh, ...x0, ph: 'QUOI' }) : ''}</td>
-      ${i === 0 ? `<th>${T('cast', 'CAST')}</th><th>${T('role', 'ROLE')}</th><th>${T('call', 'CALL')}</th><th>${T('pat', 'PAT')}</th>`
+      ${i === 0 ? `<th>${T('cast', 'CASTING')}</th><th>${T('role', 'ROLE')}</th><th>${T('call', 'CALL')}</th><th>${T('pat', 'PAT')}</th>`
         : c ? `<td class="c">${ed(c.nom, 'nom', { ...oc, up: true, tbc: true, ph: 'TBC' })}</td><td class="c b">${ed(c.role, 'role', { ...oc, up: true, ph: 'RÔLE' })}</td><td class="c">${ed(c.call, 'call', { ...oc, tbc: true, ph: 'TBC' })}</td><td class="c pat">${ed(c.pat, 'pat', { ...oc, tbc: true, ph: 'TBC' })}${edit ? `<div class="pdt-outils droite" contenteditable="false"><button type="button" title="Retirer" onclick="pdtRetirer('cast', ${i - 1})">✕</button></div>` : ''}</td>`
           : '<td></td><td></td><td></td><td></td>'}
     </tr>`);
