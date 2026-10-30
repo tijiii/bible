@@ -525,7 +525,7 @@ function renderPdtDoc(main) {
       <button type="button" class="${d.paysage ? 'on' : ''}" title="Page en largeur : plus de place pour les colonnes et les images" onclick="pdtPaysage(true)">▭ PAYSAGE</button>
     </div>
     <div class="pdt-ed-zone">
-      <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Karla:ital,wght@0,400;0,700;1,400&display=swap">
+      <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Karla:ital,wght@0,400;0,700;1,400;1,700&display=swap">
       <style>${pdtDocCss(true, true, d.paysage)}</style>
       ${pdtDocCorps(d, true)}
     </div>
@@ -1587,7 +1587,7 @@ function pdtDocHtml(d, ecran) {
   return `<!DOCTYPE html><html lang="fr"><head><meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>PDT ${esc([d.titre || d.client, 'J' + (d.jour || 1)].filter(Boolean).join(' ').replace(/[“”"]/g, ''))}</title>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Karla:ital,wght@0,400;0,700;1,400&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Karla:ital,wght@0,400;0,700;1,400;1,700&display=swap">
 <style>${pdtDocCss(ecran, false, d.paysage)}</style></head><body>
 ${ecran ? '' : '<div class="barre barre-impr" style="position:sticky;top:0;z-index:5;display:flex;gap:12px;align-items:center;justify-content:center;padding:12px;background:#111;color:#fff;font:14px Arial">Vérifie le plan de travail puis <button onclick="window.print()">IMPRIMER / ENREGISTRER EN PDF</button></div>'}
 ${pdtDocCorps(d, false)}
