@@ -574,6 +574,8 @@ function renderPdtDoc(main) {
   zone.addEventListener('mousedown', e => {
     const r = e.target.closest('.pdt-redim');
     if (r) return pdtRedimDebut(e, r);
+    const sp = e.target.closest('.pdt-redim-split');
+    if (sp) return pdtSplitDebut(e, sp);
     const rl = e.target.closest('.pdt-redim-l');
     if (rl) return pdtHautDebut(e, rl);
     const p = e.target.closest('.pdt-poignee');
@@ -930,6 +932,35 @@ function pdtLargeurs(d) {
   const t = ws.reduce((a, b) => a + b, 0);
   return ws.map(w => Math.round(w / t * 10000) / 100);
 }
+// Largeurs des colonnes de l'équipe (TEAM et ROLE plus larges par défaut), en % du tableau
+function pdtEqLargeurs(d) {
+  const ws = pdtEqCols(d).map(k => Number((d.eqLargeurs || {})[k]) || (k === 'nom' || k === 'role' ? 2 : 1) * 10);
+  const t = ws.reduce((a, b) => a + b, 0);
+  return ws.map(w => Math.round(w / t * 10000) / 100);
+}
+// Part du libellé dans le tableau des horaires (le reste pour l'heure)
+function pdtHorLab(d) { return Math.min(85, Math.max(15, Number(d.horLab) || 58)); }
+// Tirer la séparation entre l'équipe et les horaires
+function pdtSplitDebut(e, h) {
+  e.preventDefault();
+  const d = pdtCur(), boite = h.parentElement, eq = boite.querySelector('table.eq');
+  if (!d || !eq) return;
+  if (e.detail > 1) { delete d.eqPart; pdtChange(); return pdtRedessiner(); }
+  const bw = boite.getBoundingClientRect().width, x0 = e.clientX, p0 = eq.getBoundingClientRect().width / bw * 100;
+  let p = null;
+  document.body.classList.add('pdt-redim-en-cours');
+  const bouge = ev => { p = Math.round(Math.min(88, Math.max(25, p0 + (ev.clientX - x0) / bw * 100)) * 10) / 10; eq.style.flexBasis = p + '%'; };
+  const fin = () => {
+    document.removeEventListener('mousemove', bouge);
+    document.removeEventListener('mouseup', fin);
+    document.body.classList.remove('pdt-redim-en-cours');
+    if (p == null) return;
+    d.eqPart = p;
+    pdtChange();
+  };
+  document.addEventListener('mousemove', bouge);
+  document.addEventListener('mouseup', fin);
+}
 // Colonnes du tableau de l'équipe (en haut à gauche)
 function pdtEqCols(d) { return Array.isArray(d.eqCols) && d.eqCols.length ? d.eqCols : PDT_EQ_COLS; }
 function pdtEqColAjouter(pos) {
@@ -999,11 +1030,17 @@ function pdtColRetirer(k) {
 // Tirer le bord droit d'un titre de colonne : elle s'élargit, sa voisine de droite rétrécit
 function pdtRedimDebut(e, h) {
   e.preventDefault();
-  const d = pdtCur(), th = h.closest('th'), table = th.closest('table');
+  const d = pdtCur(), th = h.closest('th, td'), table = th.closest('table');
+  const sorte = table.classList.contains('eq') ? 'eq' : table.classList.contains('hor') ? 'hor' : 'plan';
   const cols = table.querySelectorAll('col');
   const j = th.cellIndex;
   const tw = table.getBoundingClientRect().width;
-  const ws = pdtLargeurs(d);
+  const ws = sorte === 'eq' ? pdtEqLargeurs(d) : sorte === 'hor' ? [pdtHorLab(d), 100 - pdtHorLab(d)] : pdtLargeurs(d);
+  if (e.detail > 1 && sorte !== 'plan') {   // double-clic : largeurs par défaut
+    if (sorte === 'eq') delete d.eqLargeurs; else delete d.horLab;
+    pdtChange();
+    return pdtRedessiner();
+  }
   const x0 = e.clientX, a0 = ws[j], b0 = ws[j + 1];
   document.body.classList.add('pdt-redim-en-cours');
   const bouge = ev => {
@@ -1018,8 +1055,9 @@ function pdtRedimDebut(e, h) {
     document.removeEventListener('mousemove', bouge);
     document.removeEventListener('mouseup', fin);
     document.body.classList.remove('pdt-redim-en-cours');
-    d.largeurs = {};
-    pdtCols(d).forEach((k, i) => { d.largeurs[k] = ws[i]; });
+    if (sorte === 'eq') { d.eqLargeurs = {}; pdtEqCols(d).forEach((k, i) => { d.eqLargeurs[k] = ws[i]; }); }
+    else if (sorte === 'hor') d.horLab = ws[0];
+    else { d.largeurs = {}; pdtCols(d).forEach((k, i) => { d.largeurs[k] = ws[i]; }); }
     pdtChange();
   };
   document.addEventListener('mousemove', bouge);
@@ -1029,8 +1067,8 @@ function pdtRedimDebut(e, h) {
 // Tirer le bas d'une ligne pour la rendre plus haute ou plus serrée (double-clic : hauteur normale)
 function pdtHautDebut(e, h) {
   e.preventDefault();
-  const tr = h.closest('tr[data-li]'), d = pdtCur();
-  const l = tr && d && d.lignes[Number(tr.dataset.li)];
+  const tr = h.closest('tr[data-li], tr[data-hl]'), d = pdtCur();
+  const l = tr && d && (tr.dataset.hl ? (d[tr.dataset.hl] || [])[Number(tr.dataset.hi)] : d.lignes[Number(tr.dataset.li)]);
   if (!l) return;
   if (e.detail > 1) { delete l.haut; pdtChange(); return pdtRedessiner(); }
   const doc = tr.closest('.pdt-doc');
@@ -1325,24 +1363,31 @@ function pdtDocCorps(d, edit) {
     : k === 'role' ? `<td class="c b">${ed(c.role, 'role', { ...oc, up: true, ph: 'RÔLE' })}</td>`
     : k === 'call' || k === 'pat' ? `<td class="c${k === 'pat' ? ' pat' : ''}">${ed(c[k], k, { ...oc, tbc: true, ph: 'TBC' })}</td>`
     : `<td class="c">${ed(c['x_' + k], 'x_' + k, { ...oc, multi: true })}</td>`;
+  // Hauteur réglée à la main d'une ligne de l'en-tête (x.haut, en mm), comme pour les plans
+  const hautLigne = (x, liste, i, tr) => {
+    if (x.haut) tr = tr.replace('<tr', `<tr data-h style="--h:${Number(x.haut)}mm"`);
+    if (edit) tr = tr.replace('<tr', `<tr data-hl="${liste}" data-hi="${i}"`).replace(/<\/td>/g, '<span class="pdt-redim-l" contenteditable="false" title="Tirer pour changer la hauteur de la ligne (double-clic : hauteur normale)"></span></td>');
+    return tr;
+  };
   const eqLignes = cast.map((c, i) => {
     const oc = { l: 'cast', i };
     const cases = eqCols.map(k => eqCase(c, k, oc));
     if (edit) cases[cases.length - 1] = cases[cases.length - 1].replace(/<\/td>$/, `<div class="pdt-outils droite" contenteditable="false"><button type="button" title="Retirer" onclick="pdtRetirer('cast', ${i})">✕</button></div></td>`);
-    return `<tr>${cases.join('')}</tr>`;
+    return hautLigne(c, 'cast', i, `<tr>${cases.join('')}</tr>`);
   });
-  const eqTable = `<table class="haut eq">
-    <colgroup>${eqCols.map(k => `<col style="width:${(k === 'nom' || k === 'role' ? 2 : 1) / eqCols.reduce((t, x) => t + (x === 'nom' || x === 'role' ? 2 : 1), 0) * 100}%">`).join('')}</colgroup>
-    <tr>${eqCols.map((k, j) => `<th data-eqcol="${k}">${eqOutils(k, j)}${eqTitre(k)}</th>`).join('')}</tr>
+  const eqWs = pdtEqLargeurs(d);
+  const eqTable = `<table class="haut eq"${d.eqPart ? ` style="flex-basis:${Number(d.eqPart)}%"` : ''}>
+    <colgroup>${eqWs.map(w => `<col style="width:${w}%">`).join('')}</colgroup>
+    <tr>${eqCols.map((k, j) => `<th data-eqcol="${k}">${eqOutils(k, j)}${eqTitre(k)}${edit && j < eqCols.length - 1 ? '<span class="pdt-redim" contenteditable="false" title="Tirer pour changer la largeur"></span>' : ''}</th>`).join('')}</tr>
     ${eqLignes.join('')}
     ${edit ? `<tr class="pdt-ajout-haut"><td colspan="${eqCols.length}"><button type="button" onclick="pdtAjouterSimple('cast')">+ personne</button></td></tr>` : ''}
   </table>`;
   const horTable = `<table class="haut hor">
-    <colgroup><col style="width:58%"><col style="width:42%"></colgroup>
+    <colgroup><col style="width:${pdtHorLab(d)}%"><col style="width:${100 - pdtHorLab(d)}%"></colgroup>
     ${horaires.map((x, i) => {
       const oh = { l: 'horaires', i };
-      return `<tr><td class="lab">${ed(x.label, 'label', { ...oh, ...x0, ph: 'QUOI' })}</td>
-        <td class="hh">${ed(x.heure || (edit ? '' : auto(x.label)), 'heure', { ...oh, tbc: true, ph: auto(x.label) || 'TBC' })}${edit ? `<div class="pdt-outils droite" contenteditable="false"><button type="button" title="Retirer" onclick="pdtRetirer('horaires', ${i})">✕</button></div>` : ''}</td></tr>`;
+      return hautLigne(x, 'horaires', i, `<tr><td class="lab">${ed(x.label, 'label', { ...oh, ...x0, ph: 'QUOI' })}${edit ? '<span class="pdt-redim" contenteditable="false" title="Tirer pour changer la largeur"></span>' : ''}</td>
+        <td class="hh">${ed(x.heure || (edit ? '' : auto(x.label)), 'heure', { ...oh, tbc: true, ph: auto(x.label) || 'TBC' })}${edit ? `<div class="pdt-outils droite" contenteditable="false"><button type="button" title="Retirer" onclick="pdtRetirer('horaires', ${i})">✕</button></div>` : ''}</td></tr>`);
     }).join('')}
     ${edit ? `<tr class="pdt-ajout-haut"><td colspan="2"><button type="button" onclick="pdtAjouterSimple('horaires')">+ horaire</button></td></tr>` : ''}
   </table>`;
@@ -1447,7 +1492,7 @@ function pdtDocCorps(d, edit) {
     </div>
     <div class="cl">${client}</div>
   </div>
-  <div class="haut-2">${eqTable}${horTable}</div>
+  <div class="haut-2">${eqTable}${edit ? '<span class="pdt-redim-split" title="Tirer pour partager la largeur entre l\'équipe et les horaires (double-clic : par défaut)"></span>' : '<span class="pdt-split-vide"></span>'}${horTable}</div>
   <table class="haut prepa-t">
     <colgroup><col style="width:10%"><col style="width:90%"></colgroup>
     <tr class="noir"><td colspan="2"></td></tr>
@@ -1496,9 +1541,13 @@ function pdtDocCss(ecran, edit, paysage) {
   .pdt-doc th { font-weight: 700; }
   .pdt-doc .haut td, .pdt-doc .haut th { height: 15px; }
   .pdt-doc .haut .lab { text-align: left; font-weight: 400; }
-  .pdt-doc .haut-2 { display: flex; gap: 6mm; align-items: flex-start; }
-  .pdt-doc .haut-2 table.eq { flex: 1 1 64%; width: auto; }
-  .pdt-doc .haut-2 table.hor { flex: 0 0 30%; width: auto; }
+  .pdt-doc .haut-2 { display: flex; align-items: flex-start; }
+  .pdt-doc .haut-2 table.eq { flex: 0 0 64%; width: auto; }
+  .pdt-doc .haut-2 table.hor { flex: 1 1 0; width: auto; }
+  .pdt-doc .pdt-redim-split, .pdt-doc .pdt-split-vide { flex: 0 0 6mm; align-self: stretch; }
+  .pdt-doc-ed .pdt-redim-split { cursor: col-resize; }
+  .pdt-doc-ed .pdt-redim-split:hover { background: linear-gradient(90deg, transparent 45%, #2f559766 45%, #2f559766 55%, transparent 55%); }
+  .pdt-doc-ed .haut td.lab { position: relative; }
   .pdt-doc .haut.hor .lab { font-weight: 700; }
   .pdt-doc table.prepa-t { margin-top: 4mm; }
   .pdt-doc .hh { font-weight: 700; white-space: nowrap; }
