@@ -272,9 +272,65 @@ function pdtReprendre(d) {
   if (i >= 0) list[i] = d; else list.push(d);
 }
 
+// ── Annuler / rétablir (Cmd/Ctrl + Z, Cmd/Ctrl + Maj + Z) ─────────────────────
+// On garde des copies du PDT ouvert ; les frappes rapprochées (moins de 0,7 s) ne font qu'une étape.
+// Copie sans JSON : les longs textes (images en data:) sont partagés, pas dupliqués.
+const pdtClone = v => Array.isArray(v) ? v.map(pdtClone)
+  : v && typeof v === 'object' ? Object.fromEntries(Object.entries(v).map(([k, x]) => [k, pdtClone(x)])) : v;
+let pdtHist = { id: null, avant: [], apres: [], etat: null, timer: null };
+let pdtSansHist = false;
+function pdtHistPret() {
+  const d = pdtCur();
+  if (d && pdtHist.id !== d.id) {
+    clearTimeout(pdtHist.timer);
+    pdtHist = { id: d.id, avant: [], apres: [], etat: pdtClone(d), timer: null };
+  }
+  return d;
+}
+function pdtHistNote() {
+  if (!pdtHistPret()) return;
+  if (!pdtHist.timer) {
+    pdtHist.avant.push(pdtHist.etat);
+    if (pdtHist.avant.length > 80) pdtHist.avant.shift();
+    pdtHist.apres = [];
+  }
+  clearTimeout(pdtHist.timer);
+  pdtHist.timer = setTimeout(() => { pdtHist.timer = null; const d = pdtCur(); if (d && d.id === pdtHist.id) pdtHist.etat = pdtClone(d); }, 700);
+  pdtMajBoutonsHist();
+}
+function pdtAnnuler(sens) {   // -1 : annuler, 1 : rétablir
+  const d = pdtHistPret();
+  if (!d) return;
+  clearTimeout(pdtHist.timer); pdtHist.timer = null;
+  const de = sens < 0 ? pdtHist.avant : pdtHist.apres, vers = sens < 0 ? pdtHist.apres : pdtHist.avant;
+  if (!de.length) return;
+  vers.push(pdtClone(d));
+  const s = de.pop();
+  Object.keys(d).forEach(k => delete d[k]);
+  Object.assign(d, pdtClone(s));
+  pdtHist.etat = pdtClone(d);
+  pdtSansHist = true;
+  pdtChange();
+  pdtSansHist = false;
+  pdtRedessiner();
+}
+function pdtMajBoutonsHist() {
+  const a = document.querySelector('.pdt-ed-outils .annuler'), r = document.querySelector('.pdt-ed-outils .retablir');
+  if (a) a.disabled = !pdtHist.avant.length;
+  if (r) r.disabled = !pdtHist.apres.length;
+}
+document.addEventListener('keydown', e => {
+  if (!(e.metaKey || e.ctrlKey) || e.altKey || !document.querySelector('.pdt-editor')) return;
+  const k = e.key.toLowerCase();
+  if (k !== 'z' && k !== 'y') return;
+  e.preventDefault();
+  pdtAnnuler(k === 'y' || e.shiftKey ? 1 : -1);
+}, true);
+
 function pdtChange() {
   const d = pdtCur();
   if (!d) return;
+  if (!pdtSansHist) pdtHistNote();
   d.maj = Date.now();
   clearTimeout(pdtSaveTimer);
   pdtSaveTimer = setTimeout(() => { pdtSaveTimer = null; saveDb(); }, 900);
@@ -339,6 +395,7 @@ function pdtSetMode(m) {
 }
 
 function renderPdtEditor(main) {
+  pdtHistPret();
   if (pdtMode !== 'form') { renderPdtDoc(main); return; }
   const d = pdtCur();
   const p = pjById(d.projetId);
@@ -449,6 +506,9 @@ function renderPdtDoc(main) {
     </div>
     <p class="field-hint pdt-ed-aide">Clique dans une case pour écrire. Tous les textes se modifient, même les titres. Sélectionne du texte puis utilise la barre au-dessus (gras, italique, souligné, couleur). Passe sur un titre de colonne pour en ajouter une (+), la déplacer (◂ ▸) ou la retirer (✕) ; tire son bord pour changer sa largeur. Passe sur une ligne pour ses outils dans la marge : ⠿ à glisser pour la déplacer, + ajouter dessous, ⧉ dupliquer, ✕ supprimer. Les horaires se calculent avec les durées (15, 1h, 1h30…) ; écris une heure dans la case HORAIRES d'une ligne pour la fixer. Clique sur une image (ou colle-la) pour la changer.</p>
     <div class="pdt-ed-outils" onmousedown="if (event.target.closest('button')) event.preventDefault()">
+      <button type="button" class="annuler" title="Annuler (Cmd/Ctrl + Z)" onclick="pdtAnnuler(-1)"${pdtHist.avant.length ? '' : ' disabled'}>↶</button>
+      <button type="button" class="retablir" title="Rétablir (Cmd/Ctrl + Maj + Z)" onclick="pdtAnnuler(1)"${pdtHist.apres.length ? '' : ' disabled'}>↷</button>
+      <span class="sep"></span>
       <button type="button" class="b" title="Gras (Cmd/Ctrl + B)" onclick="pdtFormat('bold')">B</button>
       <button type="button" class="i" title="Italique (Cmd/Ctrl + I)" onclick="pdtFormat('italic')">I</button>
       <button type="button" class="u" title="Souligné (Cmd/Ctrl + U)" onclick="pdtFormat('underline')">U</button>
