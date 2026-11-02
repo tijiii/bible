@@ -69,9 +69,12 @@ const pdtType = d => d && d.type === 'photo' ? 'photo' : 'video';
 // Les mots qui changent entre un PDT vidéo et un PDT photo (formulaire et PDF)
 const PDT_MOTS = {
   video: { plan: 'PLAN', num: 'SHOT #', scene: 'SCÈNE', sceneCol: 'SCENE', technique: 'DESCRIPTION TECHNIQUE', techniqueCol: 'DESCRIPTION<br>TECHNIQUE', optique: 'CAMÉRA / OPTIQUE', optiqueCol: 'CAMERA<br>-<br>LENS', phScene: 'Ce qu\'on voit dans le plan…', phTech: 'Plan large fixe' },
-  photo: { plan: 'PHOTO', num: 'PHOTO #', scene: 'DESCRIPTION', sceneCol: 'DESCRIPTION', technique: 'CADRAGE / SET', techniqueCol: 'CADRAGE<br>/ SET', optique: 'OPTIQUE', optiqueCol: 'OPTIQUE', phScene: 'Ce qu\'on voit sur la photo…', phTech: 'Plein pied, fond studio' },
+  photo: { plan: 'PHOTO', num: 'NB PHOTOS', scene: 'DESCRIPTION', sceneCol: 'DESCRIPTION', technique: 'CADRAGE / SET', techniqueCol: 'CADRAGE<br>/ SET', optique: 'OPTIQUE', optiqueCol: 'OPTIQUE', phScene: 'Ce qu\'on voit sur la photo…', phTech: 'Plein pied, fond studio' },
 };
 const pdtMots = d => PDT_MOTS[pdtType(d)];
+// PDT photo : la case PHOTO # donne le nombre de photos à sortir ; « 5-10 » compte pour 10
+const pdtNbPhotos = v => Math.max(0, ...(String(v == null ? '' : v).match(/\d+/g) || []).map(Number));
+const pdtTotalPhotos = d => (d.lignes || []).reduce((t, l) => t + (l.type === 'plan' ? pdtNbPhotos(l.shot) : 0), 0);
 
 // Nouveau PDT vidéo ou photo. S'il y en a déjà un du même type, il reprend son
 // en-tête, ses horaires et son cast, et prend le jour de tournage suivant.
@@ -203,7 +206,8 @@ function pjPdtHtml(p) {
   return `<section class="ts-bloc">
     <h3>PLANS DE TRAVAIL (PDT)${siens.length ? ` <small class="pj-muted">· ${siens.length}</small>` : ''}</h3>
     ${siens.length ? `<div class="pj-ts-liste">${siens.map(d => {
-      const n = (d.lignes || []).filter(l => l.type === 'plan').length;
+      // PDT photo : le nombre de photos à sortir (somme des PHOTO #) ; vidéo : le nombre de plans
+      const n = pdtType(d) === 'photo' ? pdtTotalPhotos(d) : (d.lignes || []).filter(l => l.type === 'plan').length;
       return `<div class="pj-ts-ligne" onclick="pdtOuvrir(${d.id})">
         <span class="pj-nom"><span class="ch-dot" style="background:${PJ_PISTES.find(x => x[0] === pdtType(d))[2]}"></span>PDT ${pdtType(d) === 'photo' ? 'PHOTO' : 'VIDÉO'} · JOUR ${d.jour || 1} / ${d.jours || 1}${d.titre ? ' · ' + esc(d.titre) : ''}</span>
         <span class="pj-muted">${n} ${pdtType(d) === 'photo' ? 'photo' : 'plan'}${n > 1 ? 's' : ''}${d.lieu ? ' · ' + esc(d.lieu) : ''}</span>
@@ -648,6 +652,7 @@ function pdtEdInput(e) {
   pdtInput({ value: v, type: '', dataset: el.dataset });
   if (el.tagName !== 'INPUT') pdtGarderHtml(pdtSource(pdtCur(), el.dataset.l, el.dataset.i), 'html', el.dataset.k, el);
   if (el.dataset.k === 'duree') pdtMajHeuresDoc();
+  if (el.dataset.k === 'shot') document.querySelectorAll('[data-total-photos]').forEach(x => { x.textContent = pdtTotalPhotos(pdtCur()); });
   if (el.dataset.k === 'lumiere') {
     const l = pdtLigne(el.dataset.i), td = el.closest('td'), c = l && pdtLumiere(l);
     if (td) { td.style.background = c ? c[0] : ''; td.style.color = c ? c[1] : ''; }
@@ -1502,6 +1507,13 @@ function pdtDocCorps(d, edit) {
     <colgroup>${pdtLargeurs(d).map(w => `<col style="width:${w}%">`).join('')}</colgroup>
     <thead>${entete}</thead>
     <tbody>${corps}</tbody>
+    ${pdtType(d) === 'photo' ? (() => {
+      // Total des photos sous la colonne PHOTO #
+      const j = cols.indexOf('num');
+      const total = `<span data-total-photos>${pdtTotalPhotos(d)}</span>`;
+      return `<tfoot><tr class="total">${j < 0 ? `<td colspan="${nc}">${T('totalPhotos', 'TOTAL PHOTOS')} : ${total}</td>`
+        : `${j ? `<td colspan="${j}" class="lab-total">${T('totalPhotos', 'TOTAL PHOTOS')}</td>` : ''}<td class="shot">${total}</td>${nc - j - 1 ? `<td colspan="${nc - j - 1}"></td>` : ''}`}</tr></tfoot>`;
+    })() : ''}
   </table>
   ${edit ? `<div class="pdt-ajout-bas">
       <button type="button" onclick="pdtAjouter('partie')">+ PARTIE (DÉCOR)</button>
@@ -1567,6 +1579,8 @@ function pdtDocCss(ecran, edit, paysage) {
   .pdt-doc tr[data-h] > td { height: var(--h) !important; }
   .pdt-doc tr[data-h] td.ref img, .pdt-doc-ed tr[data-h] .pdt-ref-ed { height: var(--h) !important; }
   .pdt-doc td.shot { font-weight: 700; font-size: 10px; }
+  .pdt-doc tr.total td { background: #d9d9d9; font-weight: 700; height: 15px; border-top: 1.2pt solid #111; }
+  .pdt-doc tr.total td.lab-total { text-align: right; padding-right: 6px; }
   .pdt-doc td.ref { padding: 0; }
   .pdt-doc td.ref img { width: 100%; height: 25mm; object-fit: cover; display: block; }
   .pdt-doc td.txt { font-size: 7px; white-space: pre-line; }
