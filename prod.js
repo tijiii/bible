@@ -33,7 +33,7 @@ function renderEspaces() {
     <button type="button" class="${espace === 'projets' ? 'on' : ''}" onclick="setEspace('projets')">SUIVI PRODUCTION</button>`;
   document.body.classList.toggle('espace-prod', espace === 'projets');
   const brand = document.querySelector('.hdr-brand');
-  if (brand) brand.textContent = espace === 'projets' ? 'SUIVI PRODUCTION' : 'CASTING BIBLE';
+  if (brand) brand.textContent = espace === 'projets' ? 'SUIVI PRODUCTION' : 'WIDEN INTERNE';
 }
 
 function setEspace(e) {
