@@ -137,13 +137,17 @@ async function pdtAjouterDonnees(x, p, ouvrir) {
   else if (!document.querySelector('.pdt-editor, .ts-editor') && !(typeof pjEnEdition === 'function' && pjEnEdition())) render();
   let n = 0;
   for (const l of d.lignes) {
-    if (!/^data:image\//.test(l.img || '')) continue;
-    try {
-      const blob = dataUrlToBlob(l.img);
-      const res = await storeFetch('/photo/ref', { method: 'POST', headers: { 'Content-Type': blob.type }, body: blob });
-      l.img = 'r:' + res.id;
-      n++;
-    } catch (e) { console.error(e); } // l'image reste dans le PDT
+    const imgs = pdtImgs(l);
+    for (let j = 0; j < imgs.length; j++) {
+      if (!/^data:image\//.test(imgs[j])) continue;
+      try {
+        const blob = dataUrlToBlob(imgs[j]);
+        const res = await storeFetch('/photo/ref', { method: 'POST', headers: { 'Content-Type': blob.type }, body: blob });
+        imgs[j] = 'r:' + res.id;
+        n++;
+      } catch (e) { console.error(e); } // l'image reste dans le PDT
+    }
+    pdtImgsMettre(l, imgs);
   }
   if (n) { d.maj = Date.now(); saveDb(); if (pdtCur() === d) pdtRedessiner(); }
 }
@@ -560,16 +564,20 @@ function renderPdtDoc(main) {
     if (el && e.key === 'Enter' && !el.dataset.multi) { e.preventDefault(); el.blur(); }
   });
   zone.addEventListener('click', e => {
+    const x = e.target.closest('[data-img-x]');
+    if (x) { e.stopPropagation(); return pdtImageRetirer(x.dataset.imgX, Number(x.dataset.imgI)); }
     const r = e.target.closest('[data-img]');
     if (!r) return;
+    // Sur une image : on la remplace ; ailleurs dans la case (ou +) : on en ajoute
+    const j = r.dataset.imgI != null ? Number(r.dataset.imgI) : null;
     const f = document.createElement('input');
-    f.type = 'file'; f.accept = 'image/*';
-    f.onchange = () => pdtImageFichier(f.files[0], r.dataset.img);
+    f.type = 'file'; f.accept = 'image/*'; f.multiple = true;
+    f.onchange = () => pdtImageFichiers([...f.files], r.dataset.img, j);
     f.click();
   });
   zone.addEventListener('paste', e => {
     const r = e.target.closest('[data-img]');
-    if (r) return pdtImageColle(e, r.dataset.img);
+    if (r) return pdtImageColle(e, r.dataset.img, r.dataset.imgI != null ? Number(r.dataset.imgI) : null);
     // Dans une case : on colle le texte seul, sans la mise en forme d'ailleurs
     if (e.target.closest('.ed')) { e.preventDefault(); document.execCommand('insertText', false, (e.clipboardData || window.clipboardData).getData('text/plain')); }
   });
@@ -629,7 +637,7 @@ function renderPdtDoc(main) {
       return;
     }
     const r = e.target.closest('[data-img]');
-    if (r) pdtImageDepose(e, r.dataset.img);
+    if (r) pdtImageDepose(e, r.dataset.img, r.dataset.imgI != null ? Number(r.dataset.imgI) : null);
   });
 }
 
@@ -821,9 +829,11 @@ function pdtLigneHtml(l, i, h, n) {
     <div class="pdt-plan-corps">
       <div class="pdt-ref" ondragover="event.preventDefault()" ondrop="pdtImageDepose(event, '${l.id}')">
         ${l.img ? `<img src="${esc(pdtImgSrc(l.img))}" alt="">` : `<span>${l.imgEnvoi ? 'ENVOI…' : 'RÉFÉRENCE'}</span>`}
+        ${pdtImgs(l).length > 1 ? `<span class="field-hint">+ ${pdtImgs(l).length - 1} autre(s) image(s)</span>` : ''}
         <div class="pdt-ref-btns">
-          <label class="export-lien">${l.img ? 'changer' : 'image'}<input type="file" accept="image/*" hidden onchange="pdtImageFichier(this.files[0], '${l.id}')"></label>
-          ${l.img ? `<button type="button" class="export-lien" onclick="pdtImageRetirer('${l.id}')">retirer</button>` : ''}
+          <label class="export-lien">${l.img ? 'changer' : 'image'}<input type="file" accept="image/*" hidden onchange="pdtImageFichier(this.files[0], '${l.id}', ${l.img ? 0 : 'null'})"></label>
+          ${l.img ? `<label class="export-lien">ajouter<input type="file" accept="image/*" multiple hidden onchange="pdtImageFichiers([...this.files], '${l.id}')"></label>` : ''}
+          ${l.img ? `<button type="button" class="export-lien" onclick="pdtImageRetirer('${l.id}', 0)">retirer</button>` : ''}
         </div>
         <input class="pdt-ref-colle" placeholder="ou colle l'image ici" onpaste="pdtImageColle(event, '${l.id}')" onkeydown="if(event.key==='Enter'){event.preventDefault();pdtImageLien(this.value, '${l.id}')}">
       </div>
@@ -889,7 +899,7 @@ function pdtRetirer(liste, i) {
   const l = d[liste][i];
   if (liste === 'lignes' && l && (l.scene || l.img) && !confirm('Retirer ce plan ?')) return;
   d[liste].splice(i, 1);
-  if (l && l.img) pdtImageEffacer(l.img);
+  if (liste === 'lignes') pdtImgs(l).forEach(pdtImageEffacer);
   pdtChange();
   pdtRedessiner();
 }
@@ -1166,7 +1176,7 @@ function pdtSupprimer() {
   const d = pdtCur();
   if (!d || !confirm('Supprimer ce plan de travail ?')) return;
   prodData().pdts = pdtList().filter(x => x.id !== d.id);
-  (d.lignes || []).forEach(l => { if (l.img) pdtImageEffacer(l.img); });
+  (d.lignes || []).forEach(l => pdtImgs(l).forEach(pdtImageEffacer));
   clearTimeout(pdtSaveTimer); pdtSaveTimer = null;
   saveDb();
   pdtRetour();
@@ -1225,65 +1235,98 @@ function pdtImgSrc(v) {
 
 function pdtLigne(id) { const d = pdtCur(); return d && (d.lignes || []).find(l => l.id === id); }
 
-async function pdtImageMettre(id, lire) {
+// Plusieurs images par plan : l.img (la première, comme avant) et l.imgs (les suivantes)
+const pdtImgs = l => l ? [l.img, ...(Array.isArray(l.imgs) ? l.imgs : [])].filter(Boolean) : [];
+function pdtImgsMettre(l, arr) {
+  arr = arr.filter(Boolean);
+  if (arr[0]) l.img = arr[0]; else delete l.img;
+  if (arr.length > 1) l.imgs = arr.slice(1); else delete l.imgs;
+}
+// Grille des images dans la case : le nombre de colonnes qui donne des vignettes
+// proches du 4/3 selon la taille de la case (4 → 2×2 ; 3 → 2 en haut, 1 en bas…)
+function pdtImgCols(n, w, h) {
+  if (n <= 1) return 1;
+  let best = 1, score = Infinity;
+  for (let c = 1; c <= n; c++) {
+    const r = Math.ceil(n / c);
+    const sc = Math.abs(Math.log((w / c) / (h / r) / (4 / 3))) + 0.12 * (c * r - n);
+    if (sc < score) { score = sc; best = c; }
+  }
+  return best;
+}
+
+// j : l'image à remplacer ; null : une image de plus
+async function pdtImageMettre(id, lire, j = null) {
   const d = pdtCur(), l = pdtLigne(id);
   if (!l) return;
-  const avant = l.img;
   l.imgEnvoi = true;
   pdtRedessiner();
   try {
     const grande = await lire(1000);
+    let v;
     try {
       const blob = dataUrlToBlob(grande);
       const r = await storeFetch('/photo/ref', { method: 'POST', headers: { 'Content-Type': blob.type }, body: blob });
-      l.img = 'r:' + r.id;
+      v = 'r:' + r.id;
     } catch (e) {
       console.error(e);
-      l.img = await lire(420);
+      v = await lire(420);
     }
-    pdtImageEffacer(avant);
+    pdtImagePoser(l, v, j);
   } catch (e) { alert('Impossible de lire cette image.'); }
   delete l.imgEnvoi;
   if (pdtCur() === d) { pdtChange(); pdtRedessiner(); }
 }
+function pdtImagePoser(l, v, j) {
+  const imgs = pdtImgs(l);
+  const avant = j != null && j < imgs.length ? imgs[j] : null;
+  if (avant != null) imgs[j] = v; else imgs.push(v);
+  pdtImgsMettre(l, imgs);
+  pdtImageEffacer(avant);
+}
 
-function pdtImageFichier(f, id) {
+function pdtImageFichier(f, id, j = null) {
   if (!f || !/^image\//.test(f.type)) return;
-  pdtImageMettre(id, w => compressImage(f, w));
+  return pdtImageMettre(id, w => compressImage(f, w), j);
+}
+// Plusieurs fichiers : le premier remplace l'image visée (s'il y en a une), les autres s'ajoutent
+async function pdtImageFichiers(fs, id, j = null) {
+  fs = (fs || []).filter(f => f && /^image\//.test(f.type));
+  for (let k = 0; k < fs.length; k++) await pdtImageFichier(fs[k], id, k ? null : j);
 }
 
-function pdtImageDepose(e, id) {
+function pdtImageDepose(e, id, j = null) {
   e.preventDefault();
-  const f = [...(e.dataTransfer.files || [])].find(x => /^image\//.test(x.type));
-  if (f) return pdtImageFichier(f, id);
+  const fs = [...(e.dataTransfer.files || [])].filter(x => /^image\//.test(x.type));
+  if (fs.length) return pdtImageFichiers(fs, id, j);
   const t = e.dataTransfer.getData('text/uri-list') || e.dataTransfer.getData('text/plain');
-  if (t) pdtImageLien(t, id);
+  if (t) pdtImageLien(t, id, j);
 }
 
-function pdtImageColle(e, id) {
-  const f = [...(e.clipboardData.files || [])].find(x => /^image\//.test(x.type));
-  if (f) { e.preventDefault(); pdtImageFichier(f, id); return; }
+function pdtImageColle(e, id, j = null) {
+  const fs = [...(e.clipboardData.files || [])].filter(x => /^image\//.test(x.type));
+  if (fs.length) { e.preventDefault(); pdtImageFichiers(fs, id, j); return; }
   const t = e.clipboardData.getData('text').trim();
-  if (/^https?:\/\//i.test(t)) { e.preventDefault(); pdtImageLien(t, id); }
+  if (/^https?:\/\//i.test(t)) { e.preventDefault(); pdtImageLien(t, id, j); }
 }
 
 // Un lien d'image est gardé tel quel (Google Drive converti en lien direct)
-function pdtImageLien(url, id) {
+function pdtImageLien(url, id, j = null) {
   url = String(url || '').trim();
   const l = pdtLigne(id);
   if (!l || !/^https?:\/\//i.test(url)) return;
-  const avant = l.img;
-  l.img = normalizePhotoUrl(url);
-  pdtImageEffacer(avant);
+  pdtImagePoser(l, normalizePhotoUrl(url), j);
   pdtChange();
   pdtRedessiner();
 }
 
-function pdtImageRetirer(id) {
+// j : l'image à retirer (la première par défaut)
+function pdtImageRetirer(id, j = 0) {
   const l = pdtLigne(id);
   if (!l) return;
-  const avant = l.img;
-  delete l.img;
+  const imgs = pdtImgs(l);
+  const [avant] = imgs.splice(Number(j) || 0, 1);
+  pdtImgsMettre(l, imgs);
   pdtImageEffacer(avant);
   pdtChange();
   pdtRedessiner();
@@ -1292,7 +1335,7 @@ function pdtImageRetirer(id) {
 // Efface l'image du serveur si plus aucun PDT ne s'en sert
 function pdtImageEffacer(v) {
   if (!/^r:/.test(v || '')) return;
-  if (pdtList().some(d => (d.lignes || []).some(l => l.img === v))) return;
+  if (pdtList().some(d => (d.lignes || []).some(l => pdtImgs(l).includes(v)))) return;
   storeFetch('/photo/ref/' + encodeURIComponent(v.slice(2)), { method: 'DELETE' }).catch(e => console.error(e));
 }
 
@@ -1328,8 +1371,10 @@ function pdtDocCorps(d, edit) {
   // Les textes fixes du modèle (titres de colonnes, SHOOT DAY…) : modifiables, gardés dans d.textes
   const T = (k, def) => {
     def = def.replace(/<br\s*\/?>/g, '\n');
-    const v = d.textes && d.textes[k] != null ? d.textes[k] : def;
-    const h = pdtHtmlValide((d.textesHtml || {})[k], v);
+    // L'ancien titre « PHOTO # » (gardé tel quel dans un PDT déjà modifié) devient NB PHOTOS
+    const vieux = k === 'num' && pdtType(d) === 'photo' && d.textes && /^\s*(PHOTO|SHOT)\s*#\s*$/i.test(d.textes.num || '');
+    const v = d.textes && d.textes[k] != null && !vieux ? d.textes[k] : def;
+    const h = vieux ? '' : pdtHtmlValide((d.textesHtml || {})[k], v);
     return edit ? `<span class="ed" contenteditable="true" spellcheck="false" data-t="${k}" data-multi="1" data-ph="${esc(def.replace(/\n/g, ' '))}">${h || esc(v)}</span>`
       : h || esc(v).replace(/\n/g, '<br>');
   };
@@ -1399,6 +1444,7 @@ function pdtDocCorps(d, edit) {
 
   // Colonnes du tableau : celles du modèle (qu'on peut retirer) et celles ajoutées (x…)
   const cols = pdtCols(d);
+  const largRef = pdtLargeurs(d)[cols.indexOf('ref')] || PDT_COLS_LARG.ref;
   const nc = cols.length;
   const titres = { hh: T('horaires', 'HORAIRES'), du: T('duration', 'DURATION'), num: T('num', M.num), ref: T('reference', 'REFERENCE'), scene: T('scene', M.sceneCol), technique: T('technique', M.techniqueCol), optique: T('optique', M.optiqueCol), lum: T('lighting', 'LIGHTING\nEFFECT'), note: T('notes', 'NOTES /\nÀ PRÉVOIR') };
   const colOutils = (k, j) => !edit ? '' : `<div class="pdt-col-outils" contenteditable="false">
@@ -1462,9 +1508,16 @@ function pdtDocCorps(d, edit) {
     const lumStyle = lum ? ` style="background:${lum[0]};color:${lum[1]}"` : '';
     const [lum1, ...lumS] = pdtLignes(l.lumiere);
     const opt = pdtLignes(l.optique);
+    // Les images du plan en grille, selon la taille de la case
+    const imgs = pdtImgs(l);
+    const nImg = imgs.length + (edit && l.imgEnvoi ? 1 : 0);
+    const cImg = pdtImgCols(nImg, (d.paysage ? 281 : 194) * largRef / 100, Number(l.haut) || (d.paysage ? 32 : 25));
+    const grille = nImg ? `<div class="pdt-imgs${nImg > 1 ? ' multi' : ''}" style="--c:${cImg};--r:${Math.ceil(nImg / cImg)}">${imgs.map((v, j) => edit
+      ? `<span class="pdt-im" data-img="${l.id}" data-img-i="${j}" title="Clique pour changer cette image"><img src="${esc(pdtImgSrc(v))}" alt=""><button type="button" class="pdt-im-x" data-img-x="${l.id}" data-img-i="${j}" title="Retirer cette image">×</button></span>`
+      : `<span class="pdt-im"><img src="${esc(pdtImgSrc(v))}" alt=""></span>`).join('')}${edit && l.imgEnvoi ? '<span class="pdt-im pdt-im-envoi">ENVOI…</span>' : ''}</div>` : '';
     const ref = edit
-      ? `<div class="pdt-ref-ed" tabindex="0" data-img="${l.id}" title="Clique pour choisir une image, ou colle / glisse une image ici">${l.img ? `<img src="${esc(pdtImgSrc(l.img))}" alt="">` : `<span>${l.imgEnvoi ? 'ENVOI…' : '+ IMAGE'}</span>`}</div>`
-      : l.img ? `<img src="${esc(pdtImgSrc(l.img))}" alt="">` : '';
+      ? `<div class="pdt-ref-ed" tabindex="0" data-img="${l.id}" title="Clique pour ajouter une image, ou colle / glisse une ou plusieurs images ici">${grille || '<span>+ IMAGE</span>'}${imgs.length ? '<span class="pdt-im-plus" title="Ajouter une image">+</span>' : ''}</div>`
+      : grille;
     const cases = {
       hh: () => `<td class="hh">${avecOutils(heure)}</td>`,
       du: () => `<td class="du">${avecOutils(duree)}</td>`,
@@ -1476,7 +1529,7 @@ function pdtDocCorps(d, edit) {
       lum: () => `<td class="lum"${lumStyle}>${avecOutils(edit || fmt(l.lumiere, 'lumiere', o) ? ed(l.lumiere, 'lumiere', { ...o, up: true, multi: true, ph: 'JOUR / NUIT' }) : (lum1 ? esc(up(lum1)) : '') + lumS.map(s => `<small>${esc(up(s))}</small>`).join(''))}</td>`,
       note: () => `<td class="note${l.noteNoire ? '' : ' rouge'}">${avecOutils(ed(l.note, 'note', { ...o, multi: true, ph: 'à prévoir…' }))}</td>`
     };
-    return `<tr class="plan${l.img || edit ? ' avec-img' : ''}"${edit ? ` data-li="${i}"` : ''}>
+    return `<tr class="plan${imgs.length || edit ? ' avec-img' : ''}"${edit ? ` data-li="${i}"` : ''}>
       ${cols.map(k => cases[k] ? cases[k]() : `<td class="txt">${avecOutils(ed(l['x_' + k], 'x_' + k, { ...o, multi: true }))}</td>`).join('')}
     </tr>`;
   })())).join('');
@@ -1538,7 +1591,7 @@ function pdtDocCss(ecran, edit, paysage) {
   .pdt-doc, .pdt-doc * { box-sizing: border-box; }
   .pdt-doc { font-family: 'Karla', Arial, sans-serif; color: #111; width: 210mm; min-height: 297mm; margin: ${ecran ? '0' : '10mm'} auto; background: #fff; padding: 9mm 8mm; font-size: 8px; line-height: 1.25; text-align: left; letter-spacing: normal; }
   .pdt-doc.paysage { width: 297mm; min-height: 210mm; }
-  .pdt-doc.paysage tr.plan.avec-img td, .pdt-doc.paysage td.ref img { height: 32mm; }
+  .pdt-doc.paysage tr.plan.avec-img td, .pdt-doc.paysage td.ref .pdt-imgs { height: 32mm; }
   .pdt-doc .tete { display: grid; grid-template-columns: 1fr 2fr 1fr; align-items: center; margin-bottom: 5mm; }
   .pdt-doc .tete .widen { height: 15px; display: block; }
   .pdt-doc .tete .mil { text-align: center; }
@@ -1577,12 +1630,15 @@ function pdtDocCss(ecran, edit, paysage) {
   .pdt-doc tr.plan.avec-img td { height: 25mm; }
   .pdt-doc tr.plan, .pdt-doc tr.install, .pdt-doc tr.barre { break-inside: avoid; page-break-inside: avoid; }
   .pdt-doc tr[data-h] > td { height: var(--h) !important; }
-  .pdt-doc tr[data-h] td.ref img, .pdt-doc-ed tr[data-h] .pdt-ref-ed { height: var(--h) !important; }
+  .pdt-doc tr[data-h] td.ref .pdt-imgs, .pdt-doc-ed tr[data-h] .pdt-ref-ed { height: var(--h) !important; }
   .pdt-doc td.shot { font-weight: 700; font-size: 10px; }
   .pdt-doc tr.total td { background: #d9d9d9; font-weight: 700; height: 15px; border-top: 1.2pt solid #111; }
   .pdt-doc tr.total td.lab-total { text-align: right; padding-right: 6px; }
   .pdt-doc td.ref { padding: 0; }
-  .pdt-doc td.ref img { width: 100%; height: 25mm; object-fit: cover; display: block; }
+  .pdt-doc td.ref .pdt-imgs { display: flex; flex-wrap: wrap; justify-content: center; align-content: flex-start; width: 100%; height: 25mm; }
+  .pdt-doc .pdt-im { flex: 0 0 calc(100% / var(--c)); height: calc(100% / var(--r)); overflow: hidden; position: relative; }
+  .pdt-doc .pdt-imgs.multi .pdt-im { padding: .3mm; }
+  .pdt-doc .pdt-im img { width: 100%; height: 100%; object-fit: cover; display: block; }
   .pdt-doc td.txt { font-size: 7px; white-space: pre-line; }
   .pdt-doc td.opt, .pdt-doc td.lum { font-size: 8px; }
   .pdt-doc td small { display: block; font-size: 5.5px; margin-top: 3px; }
@@ -1613,7 +1669,14 @@ function pdtDocCss(ecran, edit, paysage) {
   .pdt-doc-ed td.du { white-space: nowrap; }
   .pdt-doc-ed td.du > .ed { display: inline-block; min-height: 0; }
   .pdt-doc-ed .pdt-ref-ed { width: 100%; height: 25mm; display: flex; align-items: center; justify-content: center; cursor: pointer; outline: none; color: #999; font-size: 7px; letter-spacing: .05em; }
-  .pdt-doc-ed .pdt-ref-ed img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .pdt-doc-ed .pdt-ref-ed { position: relative; }
+  .pdt-doc-ed .pdt-ref-ed .pdt-imgs { height: 100% !important; }
+  .pdt-doc-ed .pdt-im-envoi { display: flex; align-items: center; justify-content: center; background: #f3f3f3; }
+  .pdt-doc-ed .pdt-im:hover img { outline: 1.5px solid #2f5597; outline-offset: -1.5px; }
+  .pdt-doc-ed .pdt-im-x { position: absolute; top: 1px; right: 1px; width: 13px; height: 13px; padding: 0; border: 0; border-radius: 50%; background: rgba(0,0,0,.65); color: #fff; font-size: 10px; line-height: 13px; cursor: pointer; display: none; }
+  .pdt-doc-ed .pdt-im:hover .pdt-im-x { display: block; }
+  .pdt-doc-ed .pdt-im-plus { position: absolute; left: 2px; bottom: 2px; width: 15px; height: 15px; border-radius: 50%; background: #2f5597; color: #fff; font-size: 13px; line-height: 15px; text-align: center; display: none; }
+  .pdt-doc-ed .pdt-ref-ed:hover .pdt-im-plus, .pdt-doc-ed .pdt-ref-ed:focus .pdt-im-plus { display: block; }
   .pdt-doc-ed .pdt-ref-ed:hover, .pdt-doc-ed .pdt-ref-ed:focus { box-shadow: inset 0 0 0 1.5px #2f5597; }
   .pdt-doc-ed td { position: relative; }
   .pdt-doc-ed .pdt-outils { position: absolute; right: 100%; top: 50%; transform: translateY(-50%); display: flex; gap: 2px; flex-direction: row; align-items: center; z-index: 3; font-size: 10px; font-family: Arial, sans-serif; padding: 6px 6px 6px 10px; visibility: hidden; opacity: 0; transition: opacity .15s, visibility 0s linear .8s; }
