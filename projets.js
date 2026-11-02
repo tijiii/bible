@@ -1732,7 +1732,7 @@ function pjSupprimer() {
   if (!p || !confirm('Supprimer le projet « ' + pjTitre(p) + ' » ?' + (pdts.length ? `\n\nSes ${pdts.length} plan(s) de travail seront supprimés aussi.` : '') + (p.code ? '\n\nIl vient de PROJETS WIDEN : il reviendra au prochain envoi tant que sa ligne y est.' : ''))) return;
   db.projets = pjList().filter(x => x.id !== p.id);
   prodData().pdts = pdtList().filter(d => d.projetId !== p.id);
-  pdts.forEach(d => (d.lignes || []).forEach(l => pdtImageEffacer(l.img)));
+  pdts.forEach(d => (d.lignes || []).forEach(l => pdtImgs(l).forEach(pdtImageEffacer)));
   tsList().forEach(s => { if (s.projetId === p.id) delete s.projetId; });   // ses travel sheets restent, sans projet
   clearTimeout(pjSaveTimer); pjSaveTimer = null;
   saveDb();
