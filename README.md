@@ -1,4 +1,4 @@
-# Casting Bible
+# Widen Interne
 
 App de gestion de talents pour la production outdoor. Aucun serveur requis.
 
