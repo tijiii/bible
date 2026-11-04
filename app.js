@@ -724,6 +724,61 @@ let lieuxCarteFrac = (() => { try { const v = parseFloat(localStorage.getItem('l
 let lieuxCarteH = (() => { try { const v = parseInt(localStorage.getItem('lieuxCarteH'), 10); return v >= 240 ? v : 0; } catch { return 0; } })();
 let lieuxFond = (() => { try { return localStorage.getItem('lieuxFond') === 'satellite' ? 'satellite' : 'plan'; } catch { return 'plan'; } })();
 
+// Relief 3D des montagnes (comme Strava) : altitudes gratuites et sans clé
+// (AWS Terrain Tiles, format « terrarium »). Le terrain soulève la carte,
+// l'ombrage dessine les pentes. Activé par défaut, bouton 3D pour l'enlever.
+const RELIEF_TUILES = {
+  type: 'raster-dem', encoding: 'terrarium', tileSize: 256, maxzoom: 15,
+  tiles: ['https://elevation-tiles-prod.s3.amazonaws.com/terrarium/{z}/{x}/{y}.png'],
+  attribution: 'Relief © Mapzen, AWS Terrain Tiles',
+};
+const RELIEF_EXAGERATION = 1.4;
+let lieuxRelief = (() => { try { return localStorage.getItem('lieuxRelief') !== '0'; } catch { return true; } })();
+
+// À appeler à chaque chargement de style (le changement de fond efface tout)
+function appliquerRelief(map) {
+  try {
+    if (!map.getSource('relief')) map.addSource('relief', RELIEF_TUILES);
+    if (!map.getSource('relief-ombre')) map.addSource('relief-ombre', RELIEF_TUILES);
+    if (!map.getLayer('relief-ombre')) {
+      // Sous les noms et les routes du plan, pour qu'ils restent lisibles
+      const avant = (map.getStyle().layers || []).find(c => c.type === 'symbol');
+      map.addLayer({
+        id: 'relief-ombre', type: 'hillshade', source: 'relief-ombre',
+        paint: {
+          'hillshade-exaggeration': lieuxFond === 'satellite' ? 0.25 : 0.45,
+          'hillshade-shadow-color': '#3d3527', 'hillshade-highlight-color': '#ffffff',
+        },
+      }, avant && avant.id);
+    }
+    map.setLayoutProperty('relief-ombre', 'visibility', lieuxRelief ? 'visible' : 'none');
+    map.setTerrain(lieuxRelief ? { source: 'relief', exaggeration: RELIEF_EXAGERATION } : null);
+  } catch (e) { console.error(e); }
+}
+
+function setLieuxRelief(on) {
+  lieuxRelief = on;
+  try { localStorage.setItem('lieuxRelief', on ? '1' : '0'); } catch {}
+  document.querySelectorAll('.globe-fonds .relief').forEach(b => b.classList.toggle('on', on));
+  [lieuxMap, lieuFicheMap].forEach(m => {
+    if (!m || !m.isStyleLoaded()) return;
+    appliquerRelief(m);
+    // On penche la carte pour voir les montagnes (seulement assez près du sol)
+    if (on && m.getZoom() >= 8 && m.getPitch() < 30) m.easeTo({ pitch: 60, duration: 900 });
+    if (!on && m.getPitch() > 0) m.easeTo({ pitch: 0, duration: 600 });
+  });
+}
+
+function boutonRelief() {
+  const b = document.createElement('button');
+  b.type = 'button';
+  b.className = 'relief' + (lieuxRelief ? ' on' : '');
+  b.title = 'Relief 3D des montagnes';
+  b.textContent = '3D';
+  b.onclick = e => { e.stopPropagation(); setLieuxRelief(!lieuxRelief); };
+  return b;
+}
+
 function closeLieuxPopup() {
   if (lieuxPopup) { lieuxPopup.remove(); lieuxPopup = null; }
 }
@@ -737,7 +792,7 @@ function openLieuxPopup(lngLat, box) {
 function setLieuxFond(fond) {
   lieuxFond = fond;
   try { localStorage.setItem('lieuxFond', fond); } catch {}
-  document.querySelectorAll('.globe-fonds button').forEach(b => b.classList.toggle('on', b.dataset.fond === fond));
+  document.querySelectorAll('.globe-fonds [data-fond]').forEach(b => b.classList.toggle('on', b.dataset.fond === fond));
   if (lieuxMap) lieuxMap.setStyle(LIEUX_FONDS[fond]);
   if (lieuFicheMap) lieuFicheMap.setStyle(LIEUX_FONDS[fond]);
 }
@@ -859,6 +914,7 @@ function initLieuxMap(list) {
   map.on('style.load', () => {
     map.setProjection({ type: 'globe' });
     try { map.setSky({ 'atmosphere-blend': ['interpolate', ['linear'], ['zoom'], 0, 1, 5, 1, 7, 0] }); } catch {}
+    appliquerRelief(map);
   });
 
   const fonds = document.createElement('div');
@@ -868,6 +924,7 @@ function initLieuxMap(list) {
     b.classList.toggle('on', b.dataset.fond === lieuxFond);
     b.onclick = e => { e.stopPropagation(); setLieuxFond(b.dataset.fond); };
   });
+  fonds.appendChild(boutonRelief());
   el.appendChild(fonds);
 
   // Afficher / masquer les pins
@@ -1542,7 +1599,7 @@ function initLieuFicheMap(l) {
   try {
     map = new maplibregl.Map({
       container: el, style: LIEUX_FONDS[lieuxFond], center: [c.lng, c.lat], zoom: 13,
-      attributionControl: { compact: true }, maxPitch: 75,
+      pitch: lieuxRelief ? 60 : 0, attributionControl: { compact: true }, maxPitch: 75,
     });
   } catch (e) { console.error(e); el.outerHTML = lieuGoogleMapHtml(`${c.lat},${c.lng}`); return; }
   lieuFicheMap = map;
@@ -1551,6 +1608,7 @@ function initLieuFicheMap(l) {
   map.on('style.load', () => {
     map.setProjection({ type: 'globe' });
     try { map.setSky({ 'atmosphere-blend': ['interpolate', ['linear'], ['zoom'], 0, 1, 5, 1, 7, 0] }); } catch {}
+    appliquerRelief(map);
   });
 
   const barre = document.createElement('div');
@@ -1560,7 +1618,8 @@ function initLieuFicheMap(l) {
     b.classList.toggle('on', b.dataset.fond === lieuxFond);
     b.onclick = e => { e.stopPropagation(); setLieuxFond(b.dataset.fond); };
   });
-  barre.querySelector('.recentrer').onclick = e => { e.stopPropagation(); map.flyTo({ center: [c.lng, c.lat], zoom: 13, bearing: 0, pitch: 0, duration: 1200 }); };
+  barre.querySelector('.recentrer').before(boutonRelief());
+  barre.querySelector('.recentrer').onclick = e => { e.stopPropagation(); map.flyTo({ center: [c.lng, c.lat], zoom: 13, bearing: 0, pitch: lieuxRelief ? 60 : 0, duration: 1200 }); };
   el.appendChild(barre);
 
   // Les autres lieux, en plus petit
