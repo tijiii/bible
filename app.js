@@ -769,6 +769,50 @@ function setLieuxRelief(on) {
   });
 }
 
+// Pencher et tourner la carte sans clic droit (pratique au trackpad) :
+// des boutons à maintenir appuyés, et ⌥ Option (Alt) + glisser deux doigts.
+function ajouterCommandes3D(map) {
+  // Vitesse en degrés par seconde quand on maintient le bouton (pente, rotation)
+  const VITESSE = { pencher: [50, 0], redresser: [-50, 0], gauche: [0, -70], droite: [0, 70] };
+  const bouger = (dp, db) => map.jumpTo({
+    pitch: Math.max(0, Math.min(map.getMaxPitch(), map.getPitch() + dp)),
+    bearing: map.getBearing() + db,
+  });
+  const div = document.createElement('div');
+  div.className = 'maplibregl-ctrl maplibregl-ctrl-group commandes-3d';
+  div.innerHTML = `<button type="button" data-k="pencher" title="Pencher la carte">⤓</button>
+    <button type="button" data-k="redresser" title="Redresser la carte">⤒</button>
+    <button type="button" data-k="gauche" title="Tourner vers la gauche">↺</button>
+    <button type="button" data-k="droite" title="Tourner vers la droite">↻</button>`;
+  div.querySelectorAll('button').forEach(b => {
+    let anim = null;
+    const stop = () => { if (anim) cancelAnimationFrame(anim); anim = null; };
+    b.addEventListener('pointerdown', e => {
+      e.preventDefault(); e.stopPropagation();
+      stop();
+      const [vp, vb] = VITESSE[b.dataset.k];
+      bouger(vp * 0.15, vb * 0.15); // un clic simple fait déjà un petit pas
+      let avant = performance.now() + 150;
+      const pas = t => {
+        const dt = Math.max(0, (t - avant) / 1000); avant = Math.max(avant, t);
+        if (dt) bouger(vp * dt, vb * dt);
+        anim = requestAnimationFrame(pas);
+      };
+      anim = requestAnimationFrame(pas);
+    });
+    ['pointerup', 'pointerleave', 'pointercancel'].forEach(ev => b.addEventListener(ev, stop));
+    b.addEventListener('click', e => e.stopPropagation());
+  });
+  map.addControl({ onAdd: () => div, onRemove: () => div.remove() }, 'top-right');
+
+  // ⌥ + deux doigts : haut / bas penche, gauche / droite tourne (sans ⌥, le zoom reste normal)
+  map.getContainer().addEventListener('wheel', e => {
+    if (!e.altKey) return;
+    e.preventDefault(); e.stopPropagation();
+    bouger(-e.deltaY * 0.3, e.deltaX * 0.4);
+  }, { capture: true, passive: false });
+}
+
 function boutonRelief() {
   const b = document.createElement('button');
   b.type = 'button';
@@ -909,6 +953,7 @@ function initLieuxMap(list) {
   } catch (e) { console.error(e); return indispo(); }
   lieuxMap = map;
   map.addControl(new maplibregl.NavigationControl({ visualizePitch: true }), 'top-right');
+  ajouterCommandes3D(map);
 
   // Globe et halo d'atmosphère (à remettre à chaque changement de fond)
   map.on('style.load', () => {
@@ -1604,6 +1649,7 @@ function initLieuFicheMap(l) {
   } catch (e) { console.error(e); el.outerHTML = lieuGoogleMapHtml(`${c.lat},${c.lng}`); return; }
   lieuFicheMap = map;
   map.addControl(new maplibregl.NavigationControl({ visualizePitch: true }), 'top-right');
+  ajouterCommandes3D(map);
   map.addControl(new maplibregl.FullscreenControl(), 'top-right');
   map.on('style.load', () => {
     map.setProjection({ type: 'globe' });

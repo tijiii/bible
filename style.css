@@ -1139,3 +1139,6 @@ body.doc-vue-ouvert > *:not(#doc-vue) { display:none !important; }
 .pdt-zoom .pdt-zoom-val { min-width:62px; }
 @media (max-width:900px) { .pdt-ed-zone { padding-left:110px; padding-right:110px; } .pdt-ed-page { padding:12px 10px 40px; } }
 .pdt-ed-outils button:disabled { opacity:.3; cursor:default; background:none; border-color:transparent; }
+
+/* Boutons pencher / tourner de la carte 3D */
+.commandes-3d button { font-size:16px; line-height:1; color:#111; touch-action:none; user-select:none; -webkit-user-select:none; }
