@@ -25,19 +25,128 @@ function setSyncStatus(state) {
 const TEAM_CODE_KEY = 'teamCode';
 function teamCode() { try { return localStorage.getItem(TEAM_CODE_KEY) || ''; } catch (e) { return ''; } }
 
+// ── COMPTES ──────────────────────────────────────────────────────────────────
+// Dès que l'équipe a des comptes (nom + mot de passe, gardés par le serveur),
+// il faut se connecter : le serveur donne un jeton, gardé sur l'appareil.
+const SESSION_KEY = 'session';
+function sessionJeton() { try { return localStorage.getItem(SESSION_KEY) || ''; } catch (e) { return ''; } }
+function sessionCompte() {
+  try { return sessionJeton() ? JSON.parse(localStorage.getItem('compte') || 'null') : null; } catch (e) { return null; }
+}
+function sessionGarder(jeton, compte) {
+  try {
+    localStorage.setItem(SESSION_KEY, jeton);
+    if (compte) localStorage.setItem('compte', JSON.stringify({ id: compte.id, nom: compte.nom }));
+    if (compte) localStorage.setItem('moi', compte.nom);
+  } catch (e) {}
+}
+function sessionOublier() {
+  try { localStorage.removeItem(SESSION_KEY); localStorage.removeItem('compte'); localStorage.removeItem('moi'); } catch (e) {}
+}
+
+// Les comptes de l'équipe (null tant qu'on ne sait pas ; [] = pas encore de comptes)
+let comptesEquipe = null;
+try { comptesEquipe = JSON.parse(localStorage.getItem('comptesEquipe') || 'null'); } catch (e) {}
+function comptesActifs() { return Array.isArray(comptesEquipe) && comptesEquipe.length > 0; }
+function comptesRetenir(liste) {
+  comptesEquipe = Array.isArray(liste) ? liste : [];
+  try { localStorage.setItem('comptesEquipe', JSON.stringify(comptesEquipe)); } catch (e) {}
+}
+async function chargerComptes() {
+  try {
+    const res = await fetch(SERVER_URL + '/auth/comptes');
+    if (res.status === 404) { comptesRetenir([]); return; } // serveur pas encore à jour
+    if (res.ok) comptesRetenir((await res.json()).comptes);
+  } catch (e) { /* hors ligne : on garde la liste connue */ }
+}
+
+// Demande au serveur des comptes (connexion, création…), avec le jeton et le code
+async function authFetch(path, options = {}) {
+  const res = await fetch(SERVER_URL + '/auth' + path, { ...options, headers: { ...enTetesAcces(), 'Content-Type': 'application/json', ...(options.headers || {}) } });
+  const corps = await res.json().catch(() => ({}));
+  if (!res.ok) { const e = new Error(corps.error || ('Serveur ' + res.status)); e.status = res.status; throw e; }
+  return corps;
+}
+
+function enTetesAcces() {
+  const h = {};
+  const code = teamCode(), jeton = sessionJeton();
+  if (code) h['X-Team-Code'] = code;
+  if (jeton) h['X-Session'] = jeton;
+  return h;
+}
+
 // Toutes les demandes au serveur Cloudflare passent par ici
 async function serverFetch(url, options = {}) {
-  const code = teamCode();
-  const opts = code ? { ...options, headers: { ...(options.headers || {}), 'X-Team-Code': code } } : options;
+  const opts = { ...options, headers: { ...(options.headers || {}), ...enTetesAcces() } };
   const res = await fetch(url, opts);
-  if (res.status === 401) demanderCodeEquipe(!!code);
+  if (res.status === 401) {
+    const corps = await res.clone().json().catch(() => ({}));
+    if (corps.login) { if (sessionJeton()) sessionOublier(); demanderConnexion(); }
+    else demanderCodeEquipe(!!teamCode());
+  }
   return res;
 }
 
-// Les images s'affichent dans des <img> : le code va dans l'adresse
+// Les images s'affichent dans des <img> : le code et le jeton vont dans l'adresse
 function avecCodeImage(url) {
-  const code = teamCode();
-  return code ? url + (url.includes('?') ? '&' : '?') + 'k=' + encodeURIComponent(code) : url;
+  const code = teamCode(), jeton = sessionJeton();
+  const q = [code && 'k=' + encodeURIComponent(code), jeton && 's=' + encodeURIComponent(jeton)].filter(Boolean);
+  return q.length ? url + (url.includes('?') ? '&' : '?') + q.join('&') : url;
+}
+
+// Écran de connexion : choisir son nom, taper son mot de passe
+async function demanderConnexion() {
+  if (document.getElementById('connexion-bg')) return;
+  setSyncStatus('error');
+  const bg = document.createElement('div');
+  bg.className = 'modal-bg';
+  bg.id = 'connexion-bg';
+  bg.style.display = 'flex';
+  document.body.appendChild(bg);
+  await chargerComptes();
+  const noms = (comptesEquipe || []).map(c => c.nom);
+  let dernier = '';
+  try { dernier = localStorage.getItem('dernierCompte') || ''; } catch (e) {}
+  bg.innerHTML = `<div class="modal team-code-modal">
+    <div class="modal-hdr"><span class="modal-title">CONNEXION</span></div>
+    <div class="modal-body">
+      <p class="field-hint">La bible est réservée à l'équipe Widen. Connecte-toi une fois : tu restes connecté sur cet appareil.</p>
+      <div class="field full"><label>Qui es-tu ?</label>
+        <select id="cx-nom">${noms.length ? '' : '<option value="">(aucun compte)</option>'}${noms.map(n => `<option${n === dernier ? ' selected' : ''}>${esc(n)}</option>`).join('')}</select></div>
+      <div class="field full"><label>Mot de passe</label><input id="cx-mdp" type="password" autocomplete="current-password"
+        onkeydown="if(event.key==='Enter')validerConnexion()"></div>
+      <p class="field-hint td-mdp-msg" id="cx-msg"></p>
+      <p class="field-hint">Pas encore de compte, ou mot de passe oublié : demande à quelqu'un de l'équipe (menu sous son nom → COMPTES DE L'ÉQUIPE).</p>
+    </div>
+    <div class="modal-footer"><div class="spacer"></div><button class="btn-save" id="cx-ok" onclick="validerConnexion()">SE CONNECTER</button></div>
+  </div>`;
+  setTimeout(() => { const i = document.getElementById('cx-mdp'); if (i) i.focus(); }, 0);
+}
+
+async function validerConnexion() {
+  const nom = (document.getElementById('cx-nom') || {}).value || '';
+  const mdp = (document.getElementById('cx-mdp') || {}).value || '';
+  const msg = document.getElementById('cx-msg');
+  const b = document.getElementById('cx-ok');
+  if (!nom || !mdp) { if (msg) msg.textContent = 'Choisis ton nom et tape ton mot de passe.'; return; }
+  if (b) b.disabled = true;
+  try {
+    const r = await authFetch('/connexion', { method: 'POST', body: JSON.stringify({ nom, mdp }) });
+    sessionGarder(r.jeton, r);
+    try { localStorage.setItem('dernierCompte', r.nom); } catch (e) {}
+    location.reload();
+  } catch (e) {
+    if (msg) msg.textContent = e.message;
+    const i = document.getElementById('cx-mdp');
+    if (i) { i.value = ''; i.focus(); }
+    if (b) b.disabled = false;
+  }
+}
+
+function seDeconnecter() {
+  sessionOublier();
+  location.reload();
 }
 
 function demanderCodeEquipe(refuse) {
@@ -72,7 +181,7 @@ async function storeFetch(path, options = {}) {
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
     const e = new Error('Serveur ' + res.status + ' ' + (err?.error || ''));
-    if (res.status === 401) e.team = true;
+    if (res.status === 401) { if (err && err.login) e.login = true; else e.team = true; }
     throw e;
   }
   return res.json();
@@ -98,6 +207,7 @@ function hasLocalCache() {
 // ── INITIALISATION AU CHARGEMENT ─────────────────────────────────────────────
 async function initRemoteSync() {
   setSyncStatus('syncing');
+  await chargerComptes();
   try {
     const remote = await fetchRemoteDb();
     if (remote) {
@@ -118,7 +228,7 @@ async function initRemoteSync() {
   } catch (e) {
     console.error(e);
     setSyncStatus('error');
-    if (!e.team) alert("Impossible de se connecter à la base partagée. Vérifie ta connexion internet.\n\n" + e.message);
+    if (!e.team && !e.login) alert("Impossible de se connecter à la base partagée. Vérifie ta connexion internet.\n\n" + e.message);
   }
   buildTabs();
   render();
@@ -179,7 +289,7 @@ async function saveDbRemote() {
   } catch (e) {
     console.error(e);
     setSyncStatus('error');
-    if (!e.team) alert("La sauvegarde en ligne a échoué. Tes changements restent sur cet appareil mais ne sont pas encore partagés avec l'équipe.\n\n" + e.message);
+    if (!e.team && !e.login) alert("La sauvegarde en ligne a échoué. Tes changements restent sur cet appareil mais ne sont pas encore partagés avec l'équipe.\n\n" + e.message);
   }
 }
 

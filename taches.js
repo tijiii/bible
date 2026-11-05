@@ -38,11 +38,17 @@ let tdOuvert = false;        // bloc TO-DO d'un projet déplié
 let tdBandeauFerme = false;  // bandeau « pour toi » fermé pour cette visite
 
 // ── Qui est sur cet appareil ─────────────────────────────────────────────────
-// Les seules personnes qui peuvent se connecter
+// L'équipe d'avant les comptes. Dès que l'équipe a des comptes (sync.js,
+// COMPTES DE L'ÉQUIPE dans le menu sous son nom), ce sont eux qui comptent.
 const TD_EQUIPE = ['Théo Ledru', 'Tom Grandjean', 'Félicie Corby', 'Jonas Rouyer', 'Célian Durand', 'Philippine Monnier'];
-function tdMembre(nom) { return TD_EQUIPE.find(n => pjNorm(n) === pjNorm(nom)) || ''; }
-// Un nom gardé qui n'est plus dans l'équipe ne compte plus : on redemande
-function tdMoi() { try { return tdMembre(localStorage.getItem('moi')); } catch { return ''; } }
+function tdEquipe() { return comptesActifs() ? comptesEquipe.map(c => c.nom) : TD_EQUIPE.slice(); }
+function tdMembre(nom) { return tdEquipe().find(n => pjNorm(n) === pjNorm(nom)) || ''; }
+// Avec les comptes : la personne connectée. Sinon, le nom choisi sur l'appareil
+// (un nom qui n'est plus dans l'équipe ne compte plus : on redemande).
+function tdMoi() {
+  if (comptesActifs()) { const c = sessionCompte(); return c ? c.nom : ''; }
+  try { return tdMembre(localStorage.getItem('moi')); } catch { return ''; }
+}
 // Choisir un profil : s'il a un mot de passe, on le demande d'abord
 function tdChoisir(nom) {
   nom = tdMembre(nom);
@@ -61,9 +67,10 @@ function tdSetMoi(nom) {
 function tdEstMoi(nom) { const m = tdMoi(); return !!m && pjNorm(nom) === pjNorm(m); }
 
 // Les gens de Widen
-function tdWiden() { return TD_EQUIPE.slice(); }
+function tdWiden() { return tdEquipe(); }
 
 function tdOuvrirQui() {
+  if (comptesActifs()) { if (!tdMoi()) demanderConnexion(); return; }
   tdFermerQui();
   const moi = tdMoi();
   const el = document.createElement('div');
@@ -90,7 +97,7 @@ function tdFermerQui() { document.querySelectorAll('.td-qui-bg').forEach(x => x.
 function tdProfils() { const p = prodData(); if (!p.profils || typeof p.profils !== 'object') p.profils = {}; return p.profils; }
 function tdProfil(nom) { return tdProfils()[pjNorm(nom)] || null; }
 // Les noms proposés : l'équipe, et rien d'autre
-function tdNomsProfils() { return TD_EQUIPE.slice(); }
+function tdNomsProfils() { return tdEquipe(); }
 async function tdHacher(mdp, sel) {
   if (!window.crypto || !crypto.subtle) throw new Error('Ce navigateur ne permet pas les mots de passe (page non sécurisée).');
   const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(sel + ':' + mdp));
@@ -190,11 +197,17 @@ function tdMenu(ev) {
   const n = tdUrgentes().length;
   const m = document.createElement('div');
   m.className = 'td-menu';
-  m.innerHTML = `<div class="td-menu-qui">${a ? '🔒 ' : ''}${esc(moi)}</div>
+  if (comptesActifs()) m.innerHTML = `<div class="td-menu-qui">${esc(moi)}</div>
+    <button type="button" onclick="tdMenuFermer();tdMesTachesVoir()">MES TÂCHES${n ? ` <span class="td-badge">${n}</span>` : ''}</button>
+    <button type="button" onclick="tdMenuFermer();tdOuvrirMonMdp()">CHANGER MON MOT DE PASSE</button>
+    <button type="button" onclick="tdMenuFermer();tdOuvrirComptes()">COMPTES DE L'ÉQUIPE</button>
+    <button type="button" onclick="tdMenuFermer();seDeconnecter()">SE DÉCONNECTER</button>`;
+  else m.innerHTML = `<div class="td-menu-qui">${a ? '🔒 ' : ''}${esc(moi)}</div>
     <button type="button" onclick="tdMenuFermer();tdMesTachesVoir()">MES TÂCHES${n ? ` <span class="td-badge">${n}</span>` : ''}</button>
     <button type="button" onclick="tdMenuFermer();tdOuvrirQui()">CHANGER DE PROFIL</button>
     <button type="button" onclick="tdMenuFermer();tdOuvrirGererMdp()">${a ? 'CHANGER LE MOT DE PASSE' : 'AJOUTER UN MOT DE PASSE'}</button>
     ${Object.values(tdProfils()).some(p => p.hash && !tdEstMoi(p.nom)) ? '<button type="button" onclick="tdMenuFermer();tdOuvrirProteges()">PROFILS PROTÉGÉS</button>' : ''}
+    <button type="button" onclick="tdMenuFermer();tdOuvrirComptes()">CRÉER LES COMPTES</button>
     <button type="button" onclick="tdMenuFermer();tdSetMoi('')">SE DÉCONNECTER</button>`;
   const r = b.getBoundingClientRect();
   m.style.top = (r.bottom + window.scrollY + 6) + 'px';
@@ -204,6 +217,97 @@ function tdMenu(ev) {
   m.style.left = Math.max(8, Math.min(r.right - w, W - w - 8)) + 'px';
   setTimeout(() => document.addEventListener('click', tdMenuFermer, { once: true }), 0);
 }
+// ── Comptes de l'équipe ──────────────────────────────────────────────────────
+// Ajouter quelqu'un (nom + mot de passe), lui remettre un mot de passe, le retirer.
+// Les comptes sont gardés par le serveur (worker/src/auth.js), pas dans la base.
+function tdIdCompte(nom) { const c = (comptesEquipe || []).find(x => pjNorm(x.nom) === pjNorm(nom)); return c ? c.id : ''; }
+function tdOuvrirComptes(msg) {
+  const actifs = comptesActifs();
+  const moi = tdMoi();
+  const comptes = comptesEquipe || [];
+  // Les gens de l'équipe d'avant qui n'ont pas encore de compte
+  const sans = TD_EQUIPE.filter(n => !comptes.some(c => pjNorm(c.nom) === pjNorm(n)));
+  const prerempli = actifs ? '' : (moi || '');
+  tdModale('Comptes de l\'équipe', `
+    ${actifs ? '' : `<p class="field-hint">Chaque personne aura son nom et son mot de passe. <strong>Dès que le premier compte est créé, il faudra se connecter pour ouvrir la bible</strong>, sur tous les appareils. Commence par le tien : tu seras connecté tout de suite.</p>`}
+    ${comptes.length ? `<div class="td-comptes">${comptes.map(c => `<div class="td-protege"><span>${esc(c.nom)}${pjNorm(c.nom) === pjNorm(moi) ? ' <small class="pj-muted">(toi)</small>' : ''}</span>
+      ${pjNorm(c.nom) === pjNorm(moi) ? '' : `<span class="td-compte-actions"><button type="button" class="btn-edit-inline" data-id="${esc(c.id)}" data-n="${esc(c.nom)}" onclick="tdOuvrirResetMdp(this.dataset.id, this.dataset.n)">NOUVEAU MOT DE PASSE</button><button type="button" class="btn-edit-inline" data-id="${esc(c.id)}" data-n="${esc(c.nom)}" onclick="tdSupprimerCompte(this.dataset.id, this.dataset.n)">RETIRER</button></span>`}</div>`).join('')}</div>` : ''}
+    <div class="td-compte-ajout">
+      <label class="field-hint">${actifs ? 'Ajouter quelqu\'un' : 'Ton compte'}</label>
+      <div class="td-mdp-champs">
+        <input type="text" id="td-c-nom" placeholder="Prénom Nom" autocomplete="off" value="${esc(prerempli)}">
+        <input type="password" id="td-c-mdp" placeholder="Mot de passe (6 caractères au moins)" autocomplete="new-password" onkeydown="if(event.key==='Enter')tdCreerCompte()">
+      </div>
+      ${sans.length ? `<div class="td-qui-noms td-compte-sugg">${sans.map(n => `<button type="button" class="btn-upload" data-n="${esc(n)}" onclick="document.getElementById('td-c-nom').value=this.dataset.n;document.getElementById('td-c-mdp').focus()">${esc(n)}</button>`).join('')}</div>` : ''}
+      <p class="field-hint">${actifs ? 'Donne ce mot de passe à la personne : elle pourra le changer depuis le menu sous son nom.' : ''}</p>
+    </div>
+    <p class="field-hint td-mdp-msg" id="td-mdp-msg"${msg ? ' style="color:var(--accent)"' : ''}>${msg ? esc(msg) : ''}</p>
+    <div class="ts-add-row"><span class="spacer"></span><button type="button" class="btn-save" id="td-c-ok" onclick="tdCreerCompte()">${actifs ? 'AJOUTER' : 'CRÉER MON COMPTE'}</button></div>`);
+  // Le nom est déjà là : on va droit au mot de passe
+  if (prerempli) setTimeout(() => { const i = document.getElementById('td-c-mdp'); if (i) i.focus(); }, 60);
+}
+function tdDire(t) { const m = document.getElementById('td-mdp-msg'); if (m) m.textContent = t; }
+async function tdCreerCompte() {
+  const nom = ((document.getElementById('td-c-nom') || {}).value || '').trim();
+  const mdp = (document.getElementById('td-c-mdp') || {}).value || '';
+  if (!nom) { tdDire('Écris le prénom et le nom.'); return; }
+  if (mdp.length < 6) { tdDire('Le mot de passe doit faire 6 caractères au moins.'); return; }
+  const b = document.getElementById('td-c-ok'); if (b) b.disabled = true;
+  try {
+    const r = await authFetch('/comptes', { method: 'POST', body: JSON.stringify({ nom, mdp }) });
+    comptesRetenir(r.comptes);
+    // Le premier compte : on est connecté tout de suite, et la bible le demande désormais
+    if (r.jeton) { sessionGarder(r.jeton, r); location.reload(); return; }
+    tdOuvrirComptes(nom + ' peut maintenant se connecter.');
+  } catch (e) { tdDire(e.message); if (b) b.disabled = false; }
+}
+function tdOuvrirResetMdp(id, nom) {
+  tdModale('Nouveau mot de passe', `<p class="field-hint">Pour ${esc(nom)}, en cas d'oubli. Ses appareils seront déconnectés : donne-lui le nouveau.</p>
+    <div class="td-mdp-champs"><input type="password" id="td-r-mdp" placeholder="Nouveau mot de passe" autocomplete="new-password" data-id="${esc(id)}" data-n="${esc(nom)}" onkeydown="if(event.key==='Enter')tdResetMdp()"></div>
+    <p class="field-hint td-mdp-msg" id="td-mdp-msg"></p>
+    <div class="ts-add-row"><button type="button" class="btn-cancel" onclick="tdOuvrirComptes()">← RETOUR</button><span class="spacer"></span><button type="button" class="btn-save" onclick="tdResetMdp()">ENREGISTRER</button></div>`);
+}
+async function tdResetMdp() {
+  const i = document.getElementById('td-r-mdp');
+  if (!i) return;
+  if (i.value.length < 6) { tdDire('Le mot de passe doit faire 6 caractères au moins.'); return; }
+  try {
+    await authFetch('/comptes/' + encodeURIComponent(i.dataset.id), { method: 'PUT', body: JSON.stringify({ mdp: i.value }) });
+    tdOuvrirComptes('Nouveau mot de passe enregistré pour ' + i.dataset.n + '.');
+  } catch (e) { tdDire(e.message); }
+}
+async function tdSupprimerCompte(id, nom) {
+  if (!confirm('Retirer le compte de ' + nom + ' ? Cette personne ne pourra plus ouvrir la bible.')) return;
+  try {
+    const r = await authFetch('/comptes/' + encodeURIComponent(id), { method: 'DELETE' });
+    comptesRetenir(r.comptes);
+    tdOuvrirComptes(nom + ' n\'a plus de compte.');
+  } catch (e) { tdDire(e.message); }
+}
+function tdOuvrirMonMdp() {
+  tdModale('Changer mon mot de passe', `
+    <div class="td-mdp-champs">
+      <input type="password" id="td-mdp-ancien" placeholder="Mot de passe actuel" autocomplete="current-password">
+      <input type="password" id="td-mdp-nouveau" placeholder="Nouveau mot de passe" autocomplete="new-password">
+      <input type="password" id="td-mdp-encore" placeholder="Encore une fois" autocomplete="new-password" onkeydown="if(event.key==='Enter')tdChangerMonMdp()">
+    </div>
+    <p class="field-hint">Tes autres appareils seront déconnectés.</p>
+    <p class="field-hint td-mdp-msg" id="td-mdp-msg"></p>
+    <div class="ts-add-row"><span class="spacer"></span><button type="button" class="btn-save" onclick="tdChangerMonMdp()">ENREGISTRER</button></div>`);
+}
+async function tdChangerMonMdp() {
+  const v = id => (document.getElementById(id) || {}).value || '';
+  const c = sessionCompte();
+  if (!c) return;
+  if (v('td-mdp-nouveau').length < 6) { tdDire('Le mot de passe doit faire 6 caractères au moins.'); return; }
+  if (v('td-mdp-nouveau') !== v('td-mdp-encore')) { tdDire('Les deux mots de passe ne sont pas pareils.'); return; }
+  try {
+    const r = await authFetch('/comptes/' + encodeURIComponent(c.id), { method: 'PUT', body: JSON.stringify({ ancien: v('td-mdp-ancien'), mdp: v('td-mdp-nouveau') }) });
+    if (r.jeton) sessionGarder(r.jeton, c);
+    tdModale('Mot de passe changé', `<p>C'est enregistré.</p><div class="ts-add-row"><span class="spacer"></span><button type="button" class="btn-save" onclick="tdFermerQui()">OK</button></div>`);
+  } catch (e) { tdDire(e.message); }
+}
+
 // Les profils protégés des autres : retirer un mot de passe oublié
 function tdOuvrirProteges() {
   const l = Object.values(tdProfils()).filter(p => p.hash && !tdEstMoi(p.nom));
@@ -226,7 +330,7 @@ function tdMesTachesVoir() {
 
 // À l'arrivée sur le site : on demande qui c'est (une fois par visite tant qu'on n'a pas répondu)
 function tdAccueil() {
-  if (!tdMoi()) {
+  if (!tdMoi() && !comptesActifs()) {
     let deja = false;
     try { deja = sessionStorage.getItem('quiDemande') === '1'; sessionStorage.setItem('quiDemande', '1'); } catch {}
     if (!deja) tdOuvrirQui();

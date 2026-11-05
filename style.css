@@ -920,6 +920,9 @@ body.doc-vue-ouvert > *:not(#doc-vue) { display:none !important; }
 .td-mdp-champs { display:flex; flex-direction:column; gap:8px; margin:10px 0; }
 .td-mdp-champs input { background:#fff; border:1px solid var(--border); padding:8px 10px; font-family:var(--serif); font-size:15px; outline:none; }
 .td-mdp-msg { color:var(--red); min-height:1em; }
+.td-compte-actions { display:flex; gap:6px; flex-wrap:wrap; justify-content:flex-end; }
+.td-compte-ajout { margin-top:14px; }
+.td-compte-sugg { margin:4px 0 6px; }
 .td-protege { display:flex; justify-content:space-between; align-items:center; gap:8px; padding:8px 0; border-bottom:1px solid var(--border); }
 
 /* Grand calendrier : vues MOIS / GLOBAL / POST-PROD, en frise */

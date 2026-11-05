@@ -18,6 +18,12 @@
 // Code de l'équipe (secret TEAM_CODE) : quand il est défini, le site doit
 // l'envoyer (en-tête X-Team-Code, ou « ?k= » pour les images) pour lire ou
 // écrire quoi que ce soit. Sans ce secret, rien ne change.
+//
+// Comptes (auth.js) : dès qu'un compte existe, il faut être connecté (jeton dans
+// l'en-tête X-Session, ou « ?s= » pour les images) ; le code de l'équipe ne
+// suffit plus.
+
+import { ilYaDesComptes, compteDuJeton } from './auth.js';
 
 const DB_KEY = 'db';
 const INDEX_KEY = 'photos';
@@ -25,19 +31,19 @@ const DB_CACHE_SECONDS = 10;
 const MAX_IMAGE_BYTES = 8 * 1024 * 1024;
 const BACKUP_DAYS = 30;
 
-function storeCors(origin, env) {
+export function storeCors(origin, env) {
   const allowed = (env.ALLOWED_ORIGINS || 'https://tijiii.github.io').split(',').map(s => s.trim());
   const ok = allowed.includes(origin) || allowed.includes('*');
   return {
     'Access-Control-Allow-Origin': ok ? origin : allowed[0],
     'Access-Control-Allow-Methods': 'GET, PUT, POST, DELETE, OPTIONS',
-    'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Photo-Source, X-Team-Code',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Photo-Source, X-Team-Code, X-Session',
     'Vary': 'Origin',
     ok,
   };
 }
 
-function reply(body, status, cors, extra = {}) {
+export function reply(body, status, cors, extra = {}) {
   const { ok, ...headers } = cors;
   return new Response(body === null || typeof body === 'string' ? body : JSON.stringify(body), {
     status,
@@ -57,6 +63,15 @@ export function teamOk(request, env, url) {
 }
 
 export const TEAM_REFUS = { error: 'Code de l\'équipe manquant ou faux.', team: true };
+export const LOGIN_REFUS = { error: 'Connecte-toi pour ouvrir la bible.', login: true };
+
+// Le refus à renvoyer (ou null si c'est bon) : clé du script, compte connecté,
+// ou, tant qu'il n'y a aucun compte, le code de l'équipe
+export async function refusAcces(request, env, url) {
+  if (hasKey(request, env)) return null;
+  if (await ilYaDesComptes(env)) return (await compteDuJeton(request, env, url)) ? null : LOGIN_REFUS;
+  return teamOk(request, env, url) ? null : TEAM_REFUS;
+}
 
 async function readIndex(env) {
   const idx = await env.BIBLE.get(INDEX_KEY, 'json');
@@ -102,7 +117,7 @@ export async function handleStore(request, env, url) {
 
   // Les images s'affichent dans des <img>, sans origine : le code de l'équipe est dans l'adresse.
   if (request.method === 'GET' && parts[0] === 'img') {
-    if (!teamOk(request, env, url)) return new Response('Code de l\'équipe requis', { status: 401 });
+    if (await refusAcces(request, env, url)) return new Response('Connexion requise', { status: 401 });
     if (parts[1] === 't' && parts[2]) return readImage(request, env, `img:t:${parts[2]}`);
     if (parts[1] === 'l' && parts[2] && parts[3]) return readImage(request, env, `img:l:${parts[2]}:${parts[3]}`);
     if (parts[1] === 'r' && parts[2]) return readImage(request, env, `img:r:${parts[2]}`);
@@ -110,7 +125,8 @@ export async function handleStore(request, env, url) {
   }
 
   if (!cors.ok && !hasKey(request, env)) return reply({ error: 'Origine non autorisée' }, 403, cors);
-  if (!teamOk(request, env, url)) return reply(TEAM_REFUS, 401, cors);
+  const refus = await refusAcces(request, env, url);
+  if (refus) return reply(refus, 401, cors);
 
   try {
     if (parts[0] === 'db' && request.method === 'GET') {
