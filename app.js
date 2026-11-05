@@ -904,6 +904,7 @@ function groupLieux(list, zoom) {
 function hideLieuxHover() { if (lieuxHoverPopup) { lieuxHoverPopup.remove(); lieuxHoverPopup = null; } }
 
 function renderLieuxPins(map, list) {
+  if (typeof simu !== 'undefined' && simu && simu.map === map) return; // pas de pins pendant le simulateur
   lieuxMarkers.forEach(m => m.remove());
   lieuxMarkers = [];
   hideLieuxHover();
@@ -965,6 +966,7 @@ function initLieuxMap(list) {
   const el = document.getElementById('lieux-map');
   closeLieuxPopup();
   if (lieuxMap) {
+    if (typeof simu !== 'undefined' && simu && simu.map === lieuxMap) quitterSimulateur();
     lieuxMapView = { center: lieuxMap.getCenter(), zoom: lieuxMap.getZoom(), bearing: lieuxMap.getBearing(), pitch: lieuxMap.getPitch() };
     lieuxMap.remove(); lieuxMap = null;
   }
@@ -1005,6 +1007,7 @@ function initLieuxMap(list) {
     b.onclick = e => { e.stopPropagation(); setLieuxFond(b.dataset.fond); };
   });
   fonds.appendChild(boutonRelief());
+  if (typeof boutonsSimulateur === 'function') fonds.appendChild(boutonsSimulateur(map));
   el.appendChild(fonds);
 
   // Afficher / masquer les pins
@@ -1719,8 +1722,10 @@ function lieuGoogleMapHtml(q) {
 // directement sur le site, à la souris comme au doigt. Les autres lieux y sont
 // aussi : un clic dessus ouvre leur fiche.
 let lieuFicheMap = null;
+let lieuFicheMarkers = []; // pins de la carte de la fiche (retirés pendant le simulateur)
 
 function closeLieuFicheMap() {
+  if (lieuFicheMap && typeof simu !== 'undefined' && simu && simu.map === lieuFicheMap) quitterSimulateur();
   if (lieuFicheMap) { lieuFicheMap.remove(); lieuFicheMap = null; }
 }
 
@@ -1738,6 +1743,7 @@ function initLieuFicheMap(l) {
     });
   } catch (e) { console.error(e); el.outerHTML = lieuGoogleMapHtml(`${c.lat},${c.lng}`); return; }
   lieuFicheMap = map;
+  lieuFicheMarkers = [];
   map.addControl(new maplibregl.NavigationControl({ visualizePitch: true }), 'top-right');
   ajouterCommandes3D(map);
   map.addControl(new maplibregl.FullscreenControl(), 'top-right');
@@ -1755,6 +1761,7 @@ function initLieuFicheMap(l) {
     b.onclick = e => { e.stopPropagation(); setLieuxFond(b.dataset.fond); };
   });
   barre.querySelector('.recentrer').before(boutonRelief());
+  if (typeof boutonsSimulateur === 'function') barre.querySelector('.recentrer').before(boutonsSimulateur(map));
   barre.querySelector('.recentrer').onclick = e => { e.stopPropagation(); map.flyTo({ center: [c.lng, c.lat], zoom: 13, bearing: 0, pitch: lieuxRelief ? 60 : 0, duration: 1200 }); };
   el.appendChild(barre);
 
@@ -1767,13 +1774,13 @@ function initLieuFicheMap(l) {
     pin.title = o.nom;
     pin.innerHTML = '<span></span>';
     pin.onclick = e => { e.stopPropagation(); openDetail('lieu', o.id); };
-    new maplibregl.Marker({ element: pin }).setLngLat([oc.lng, oc.lat]).addTo(map);
+    lieuFicheMarkers.push(new maplibregl.Marker({ element: pin }).setLngLat([oc.lng, oc.lat]).addTo(map));
   });
   const ici = document.createElement('div');
   ici.className = 'lieu-pin ici';
   ici.title = l.nom;
   ici.innerHTML = '<span></span>';
-  new maplibregl.Marker({ element: ici }).setLngLat([c.lng, c.lat]).addTo(map);
+  lieuFicheMarkers.push(new maplibregl.Marker({ element: ici }).setLngLat([c.lng, c.lat]).addTo(map));
 }
 
 // ── CHAPITRES LIBRES (créés depuis l'app) ─────────────────────────────────────
