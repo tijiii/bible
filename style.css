@@ -10,7 +10,7 @@
   --border:  #e4e4e2;
   --border2: #bdbdbb;
   --text:    #111111;
-  --muted:   #8a8a87;
+  --muted:   #6b6b68;   /* 4,5:1 mini sur blanc (avant #8a8a87, 3,4:1) */
   --accent:  #111111;
   --accent2: #111111;
   --accent3: #111111;
@@ -1279,3 +1279,40 @@ button, [role="button"] { -webkit-user-select: none; user-select: none; }
 .simu-chargement-barre { width:100%; height:3px; background:#1d2b45; overflow:hidden; margin-top:6px; }
 .simu-chargement-barre i { display:block; height:100%; background:#5dff7a; transform-origin:left; transform:scaleX(0); transition: transform 300ms ease-out; }
 .simu-quitter { z-index:2; }
+
+/* ── Audit design (nov. 2026) ── */
+/* Navigation au clavier : un contour noir fin, dans la charte, au lieu du
+   halo bleu du navigateur (ou de rien du tout sur les champs) */
+:focus-visible { outline: 1.5px solid #111; outline-offset: 2px; }
+input:focus-visible, select:focus-visible, textarea:focus-visible { outline-offset: 0; }
+.modal-bg :focus:not(:focus-visible) { outline: none; }
+
+/* Chiffres alignés dans les dates, compteurs et tableaux (les chiffres
+   elzéviriens de la Garamond font danser les colonnes) */
+.ch-count, .ch-num, .crumb-count, .count-pill, .card-age, .pj-table, .pj-tableau, .pj-rp,
+.pj-plan-row, .pj-onglets small, .detail-val, .pj-aff-quand small, .td-ligne {
+  font-variant-numeric: lining-nums tabular-nums;
+}
+
+/* Équipe d'un projet sur téléphone : la personne et le rôle côte à côte
+   étaient coupés (« Noah Fontaine · D », « Assistante proc ») */
+@media (max-width: 640px) {
+  .pj-aff-ligne { grid-template-columns: minmax(0, 1fr) 32px; }
+  .pj-aff-ligne > .pj-aff-qui { grid-column: 1; grid-row: 1; }
+  .pj-aff-ligne > .field:not(.pj-aff-qui) { grid-column: 1; grid-row: 2; }
+  .pj-aff-ligne > .ts-x { grid-column: 2; grid-row: 1; }
+}
+
+/* Onglets d'un projet sur téléphone : un fondu à droite montre qu'il y en a
+   d'autres en faisant glisser */
+@media (max-width: 640px) {
+  .pj-onglets { -webkit-mask-image: linear-gradient(90deg, #000 calc(100% - 28px), transparent); mask-image: linear-gradient(90deg, #000 calc(100% - 28px), transparent); padding-right: 28px; }
+}
+
+/* Cibles tactiles : les petits boutons carrés (fermer, +, retirer) faisaient
+   24 à 30 px, trop petits pour le doigt */
+@media (pointer: coarse) {
+  .modal-close { width: 40px; height: 40px; }
+  .ch-add { width: 40px; height: 40px; }
+  .ts-x { width: 32px; height: 32px; }
+}
