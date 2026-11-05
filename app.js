@@ -986,6 +986,16 @@ function initLieuxMap(list) {
   };
   el.appendChild(pins);
 
+  // Bouton « Rechercher ici » : apparaît quand on a bougé la carte
+  const ici = document.createElement('button');
+  ici.type = 'button';
+  ici.id = 'lieux-ici';
+  ici.className = 'lieux-ici';
+  ici.textContent = '⌕ RECHERCHER ICI';
+  ici.onclick = e => { e.stopPropagation(); lieuxRechercherIci(); };
+  el.appendChild(ici);
+  map.on('moveend', lieuxMajBoutonIci);
+
   // Les pins se regroupent selon le zoom
   renderLieuxPins(map, list);
   map.on('zoomend', () => renderLieuxPins(map, list));
@@ -1017,12 +1027,52 @@ document.addEventListener('keydown', e => {
   if (e.key === 'Escape') closeLieuxPopup();
 });
 
+// « Rechercher ici » (comme Google Maps) : la liste ne garde que les lieux
+// visibles dans la zone de la carte au moment du clic. null = tous les lieux.
+let lieuxZone = null; // { w, s, e, n } en degrés (e peut dépasser 180 si la zone passe l'antiméridien)
+
+function lieuDansZone(l, z) {
+  const c = parseGps(l.gps);
+  if (!c || c.lat < z.s || c.lat > z.n) return false;
+  if (z.e - z.w >= 360) return true;
+  let x = c.lng;
+  while (x < z.w) x += 360;
+  while (x > z.w + 360) x -= 360;
+  return x <= z.e;
+}
+
+function lieuxRechercherIci() {
+  if (!lieuxMap) return;
+  const b = lieuxMap.getBounds();
+  lieuxZone = { w: b.getWest(), s: b.getSouth(), e: b.getEast(), n: b.getNorth() };
+  if (lieuxZone.e < lieuxZone.w) lieuxZone.e += 360;
+  const btn = document.getElementById('lieux-ici');
+  if (btn) btn.classList.remove('visible');
+  renderLieuxList();
+  const box = document.getElementById('lieux-list');
+  if (box) box.scrollTop = 0;
+}
+
+function lieuxZoneEffacer() {
+  lieuxZone = null;
+  renderLieuxList();
+  lieuxMajBoutonIci();
+}
+
+// Le bouton apparaît dès qu'on a déplacé la carte assez près du sol
+function lieuxMajBoutonIci() {
+  const btn = document.getElementById('lieux-ici');
+  if (!btn || !lieuxMap) return;
+  btn.classList.toggle('visible', lieuxMap.getZoom() >= 3);
+}
+
 function lieuxFiltered(withSearch) {
   const q = searchQ.toLowerCase();
   return lieuxList().filter(l => {
     if (withSearch && q && ![l.nom,l.type,lieuCats(l).join(' '),l.adresse,l.ville,l.pays,l.contact,l.description,l.notes,l.coutDetail,
         lieuProjets(l).map(p => p.nom + ' ' + p.annee).join(' '), lieuSports(l).join(' ')]
       .some(v => String(v||'').toLowerCase().includes(q))) return false;
+    if (withSearch && lieuxZone && !lieuDansZone(l, lieuxZone)) return false;
     if (fPays && l.pays !== fPays) return false;
     if (fLieuSport && !lieuSports(l).includes(fLieuSport)) return false;
     if (fLieuCat === LIEU_DEJA_TOURNE) { if (!lieuProjets(l).length) return false; }
@@ -1146,7 +1196,13 @@ function renderLieuxList() {
   if (!box) return;
   const list = lieuxTries(lieuxFiltered(true));
   let html = '';
-  if (!list.length) {
+  if (lieuxZone) {
+    html += `<div class="lieux-zone-bar"><span>${list.length} lieu${list.length > 1 ? 'x' : ''} dans la zone de la carte</span>
+      <button type="button" onclick="lieuxZoneEffacer()">✕ TOUS LES LIEUX</button></div>`;
+  }
+  if (!list.length && lieuxZone) {
+    html += `<div class="empty">AUCUN LIEU DANS CETTE ZONE</div>`;
+  } else if (!list.length) {
     html += `<div class="empty">${lieuxList().length ? (searchQ ? 'AUCUN DE TES LIEUX NE CORRESPOND' : 'AUCUN LIEU TROUVÉ') : 'AUCUN LIEU POUR LE MOMENT'}</div>`;
   } else {
     html += `<div class="grid lieux-grid">`;
