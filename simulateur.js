@@ -24,15 +24,15 @@ const SIMU_FT = 3.28084;   // m → pieds
 const SIMU_AVIONS = {
   leger: {
     nom: 'Avion léger', sous: 'type SR22 · hélice',
-    masse: 1500, surface: 13.5, pousseeMax: 3600,
+    masse: 1500, surface: 13.5, pousseeMax: 7000,
     cd0: 0.045, k: 0.055, clAlpha: 5.0, alphaDecro: 15, roulisMax: 60,
-    vDepart: 62, altDepart: 900, vne: 110,
+    vDepart: 90, altDepart: 900, vne: 160,
   },
   chasseur: {
     nom: 'Chasseur', sous: 'type F-16 · réacteur',
-    masse: 12000, surface: 28, pousseeMax: 85000,
+    masse: 12000, surface: 28, pousseeMax: 140000,
     cd0: 0.028, k: 0.12, clAlpha: 3.6, alphaDecro: 22, roulisMax: 160,
-    vDepart: 190, altDepart: 1800, vne: 420,
+    vDepart: 250, altDepart: 1800, vne: 650,
   },
 };
 
@@ -269,7 +269,7 @@ function simuImage(t) {
     const trainee = qS * (av.cd0 + av.k * cl * cl);
     // Poussée : l'hélice perd de la force avec la vitesse, le réacteur avec l'altitude
     const poussee = s.gaz * av.pousseeMax * (s.typeAvion === 'leger'
-      ? Math.max(0.2, 1 - s.v / 140) * 1.6
+      ? Math.max(0.2, 1 - s.v / 200) * 1.6
       : rho / 1.225 * 1.1);
 
     // Équations du mouvement : vitesse, pente de la trajectoire, cap
