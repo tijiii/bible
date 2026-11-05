@@ -54,6 +54,48 @@ const SIMU_RELIEF = 'relief-vol', SIMU_RELIEF_ZOOM = 12;
 // Tuiles envoyées à la carte graphique par image (8 par défaut) : moins à la
 // fois, c'est un peu plus long à se remplir mais sans à-coups
 const SIMU_IMAGES_PAR_IMAGE = 3;
+// Image satellite de vol : tuiles déclarées en 512 px (la carte prend le zoom
+// du dessous et l'agrandit), soit 4 fois moins de tuiles à télécharger, envoyer
+// à la carte graphique et redessiner sur le relief ; et sans fondu d'apparition
+// (avec le relief, chaque tuile en train d'apparaître fait tout redessiner).
+function simuSatelliteVol(map, actif) {
+  try {
+    if (actif) {
+      if (!map.getLayer('sat') || map.getLayer('sat-vol')) return;
+      const src = map.getStyle().sources.sat;
+      map.addSource('sat-vol', { ...src, tileSize: 512 });
+      map.addLayer({ id: 'sat-vol', type: 'raster', source: 'sat-vol', paint: { 'raster-fade-duration': 0 } }, 'sat');
+      map.setLayoutProperty('sat', 'visibility', 'none');
+    } else {
+      if (map.getLayer('sat-vol')) map.removeLayer('sat-vol');
+      if (map.getSource('sat-vol')) map.removeSource('sat-vol');
+      if (map.getLayer('sat')) map.setLayoutProperty('sat', 'visibility', 'visible');
+    }
+  } catch (e) { console.error(e); }
+}
+
+// Résolution qui s'adapte : si l'ordinateur passe sous ~45 images/s pendant
+// 2 s, on dessine la carte un cran moins fin (jusqu'à 60 %), et on remonte
+// quand il y a de la marge. Une image fluide un peu plus douce vaut mieux
+// qu'une image nette qui saccade.
+const SIMU_RESOLUTIONS = [1, 0.85, 0.7, 0.6];
+function simuResolution(t, dt) {
+  const s = simu;
+  if (!s.map.setPixelRatio || !(dt > 0)) return;
+  const P = s.perf || (s.perf = { cran: 0, debut: t, somme: 0, n: 0 });
+  P.somme += dt; P.n++;
+  if (t - P.debut < 2000) return;
+  const moyenne = P.somme / P.n * 1000;
+  P.debut = t; P.somme = 0; P.n = 0;
+  let cran = P.cran;
+  // On remonte seulement après 10 s sans avoir dû baisser, pour ne pas faire le yoyo
+  if (moyenne > 22 && cran < SIMU_RESOLUTIONS.length - 1) { cran++; P.bloque = t + 10000; }
+  else if (moyenne < 17.5 && cran > 0 && t > (P.bloque || 0)) cran--;
+  if (cran === P.cran) return;
+  P.cran = cran;
+  try { s.map.setPixelRatio(SIMU_RESOLUTIONS[cran]); } catch {}
+}
+
 function simuLod(niveaux) {
   if (!simu || simu.lod === niveaux) return;
   simu.lod = niveaux;
@@ -102,7 +144,7 @@ function lancerSimulateur(map) {
       <div class="simu-choix-sous">Départ au-dessus de l'endroit regardé</div>
       ${Object.entries(SIMU_AVIONS).map(([k, a]) => `<button type="button" data-avion="${k}">
         <span>${k === 'leger' ? '🛩' : '✈'} ${a.nom}</span><small>${a.sous}</small></button>`).join('')}
-      <div class="simu-choix-aide">← → incliner · ↑ piquer · ↓ cabrer<br>Page ↑ / ↓ ou + / − : gaz · Échap : quitter</div>
+      <div class="simu-choix-aide">← → incliner · ↑ piquer · ↓ cabrer<br>Page ↑ / ↓ ou + / − : gaz · I : images/s · Échap : quitter</div>
       <button type="button" class="simu-choix-annuler">ANNULER</button>
     </div>`;
   choix.addEventListener('click', e => e.stopPropagation());
@@ -238,6 +280,7 @@ function demarrerVol(map, typeAvion) {
   simu.onKeyDown = e => {
     if (e.target && /^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName)) return;
     if (e.key === 'Escape') { quitterSimulateur(); return; }
+    if (e.key.toLowerCase() === 'i' && !e.repeat) { simu.ips = simu.ips ? null : { v: 60 }; return; }
     const k = simuTouche(e);
     if (k) { e.preventDefault(); simu.touches.add(k); }
   };
@@ -297,6 +340,7 @@ function simuMonde() {
       'sky-horizon-blend': 0.55, 'horizon-fog-blend': 0.7, 'fog-ground-blend': 0.25, 'atmosphere-blend': 0,
     });
   } catch {}
+  simuSatelliteVol(map, true);
   simu.pret = true;
 }
 
@@ -339,6 +383,7 @@ function quitterSimulateur() {
       try { map.setSky({ 'atmosphere-blend': ['interpolate', ['linear'], ['zoom'], 0, 1, 5, 1, 7, 0] }); } catch {}
       appliquerRelief(map);
       try { if (map.getSource(SIMU_RELIEF)) map.removeSource(SIMU_RELIEF); } catch {}
+      simuSatelliteVol(map, false);
     }
     map.setMaxZoom(s.avant.maxZoom);
     map.easeTo({ center: [s.lng, s.lat], zoom: 12, pitch: 60, bearing: s.cap, roll: 0, padding: { top: 0, bottom: 0, left: 0, right: 0 }, duration: 1200 });
@@ -353,6 +398,8 @@ function simuImage(t) {
   const dt = Math.min(0.1, Math.max(0, (t - s.t) / 1000));
   s.t = t;
   if (!s.pret) { s.anim = requestAnimationFrame(simuImage); return; }
+  if (!s.intro) simuResolution(t, dt);
+  if (s.ips && dt > 0) s.ips.v += (1 / dt - s.ips.v) * 0.1;
   if (s.intro && simuChargement(t)) { s.anim = requestAnimationFrame(simuImage); return; }
 
   const sol = simuSol(s.lng, s.lat);
@@ -449,7 +496,7 @@ const SIMU_PITCH_MAX = 85;
 function simuInstruments(tangage, sol) {
   const s = simu, cv = s.cv;
   if (!cv) return;
-  const W = cv.clientWidth, H = cv.clientHeight, dpr = window.devicePixelRatio || 1;
+  const W = cv.clientWidth, H = cv.clientHeight, dpr = 1;   // HUD en résolution normale : redessiné à chaque image
   if (cv.width !== Math.round(W * dpr) || cv.height !== Math.round(H * dpr)) { cv.width = Math.round(W * dpr); cv.height = Math.round(H * dpr); }
   const ctx = cv.getContext('2d');
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
@@ -545,6 +592,13 @@ function simuInstruments(tangage, sol) {
   ctx.textAlign = 'left';
   ctx.fillText('GAZ ' + Math.round(s.gaz * 100) + '%', bx + 22, by + bh - 6);
   ctx.fillText(s.av.nom.toUpperCase(), bx + 22, by + 8);
+
+  // Images par seconde (touche I)
+  if (s.ips) {
+    ctx.textAlign = 'right'; ctx.font = police(12, 600); ctx.fillStyle = s.ips.v < 40 ? '#ffc75d' : '#9effa8';
+    const res = s.perf ? SIMU_RESOLUTIONS[s.perf.cran] : 1;
+    ctx.fillText(Math.round(s.ips.v) + ' IMG/S · RÉSOL. ' + Math.round(res * 100) + '%', W - 14, 18);
+  }
 
   // Alarmes
   ctx.textAlign = 'center';
