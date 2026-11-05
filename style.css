@@ -1156,3 +1156,27 @@ body.doc-vue-ouvert > *:not(#doc-vue) { display:none !important; }
 
 /* Renommer un chapitre dans le fil d'Ariane */
 .crumb-input { font:inherit; letter-spacing:inherit; text-transform:inherit; color:inherit; border:none; border-bottom:1px solid var(--text); background:transparent; padding:0 2px; min-width:12ch; outline:none; }
+
+/* ── Simulateur (vol / snow) sur la carte 3D ── */
+.globe-fonds .simu-btn { font-size:14px; padding:6px 8px; color:#111; }
+.globe-fonds .simu-btn:first-of-type { border-left:1px solid var(--border); }
+.simu-actif .globe-fonds, .simu-actif .globe-pins, .simu-actif .lieux-ici, .simu-actif .maplibregl-ctrl-top-right { display:none !important; }
+.simu-hud { position:absolute; inset:0; z-index:5; pointer-events:none; font-family:var(--serif); color:#fff; }
+.simu-hud button { pointer-events:auto; }
+.simu-haut { position:absolute; top:10px; left:10px; right:10px; display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+.simu-titre, .simu-val { background:rgba(0,0,0,.55); padding:6px 10px; font-size:14px; letter-spacing:.06em; }
+.simu-val { min-width:84px; text-align:center; font-variant-numeric:tabular-nums; }
+.simu-quitter { margin-left:auto; border:none; background:#fff; color:#111; font-family:inherit; font-size:13px; letter-spacing:.06em; padding:7px 12px; cursor:pointer; }
+.simu-aide { position:absolute; left:50%; bottom:14px; transform:translateX(-50%); background:rgba(0,0,0,.45); padding:5px 10px; font-size:12px; letter-spacing:.04em; white-space:nowrap; }
+.simu-pad { position:absolute; right:14px; bottom:44px; display:grid; grid-template-columns:repeat(3,44px); grid-template-rows:repeat(2,44px); gap:4px; }
+.simu-pad [data-k="ArrowUp"] { grid-column:2; grid-row:1; }
+.simu-pad [data-k="ArrowLeft"] { grid-column:1; grid-row:2; }
+.simu-pad [data-k="ArrowDown"] { grid-column:2; grid-row:2; }
+.simu-pad [data-k="ArrowRight"] { grid-column:3; grid-row:2; }
+.simu-gaz { position:absolute; left:14px; bottom:44px; display:flex; flex-direction:column; gap:4px; }
+.simu-pad button, .simu-gaz button { width:44px; height:44px; border:1px solid rgba(255,255,255,.6); background:rgba(0,0,0,.35); color:#fff; font-size:16px; cursor:pointer; touch-action:none; user-select:none; -webkit-user-select:none; }
+.simu-pad button:active, .simu-gaz button:active { background:rgba(255,255,255,.35); }
+.simu-rider { position:absolute; left:50%; bottom:22%; transform:translateX(-50%); font-size:44px; line-height:1; filter:drop-shadow(0 3px 4px rgba(0,0,0,.4)); }
+.simu-neige { position:absolute; inset:0; width:100%; height:100%; pointer-events:none; }
+@media (hover:hover) and (pointer:fine) { .simu-pad, .simu-gaz { opacity:.55; } }
+@media (max-width:600px) { .simu-aide { display:none; } }
