@@ -1225,14 +1225,14 @@ button, [role="button"] { -webkit-user-select: none; user-select: none; }
 
 /* Fenêtres (fiches, formulaires, choix) : elles se posent au lieu d'apparaître
    d'un coup. Fermeture instantanée : c'est l'appli qui répond, ça doit être vif. */
-.modal-bg { transition: opacity 160ms ease-out; }
-.modal-bg > .modal { transition: opacity 200ms var(--ease-out), transform 240ms var(--ease-out); }
+.modal-bg { transition: opacity 120ms ease-out; }
+.modal-bg > .modal { transition: opacity 140ms var(--ease-out), transform 160ms var(--ease-out); }
 @starting-style {
   .modal-bg { opacity: 0; }
   .modal-bg > .modal { opacity: 0; transform: translateY(8px) scale(.97); }
 }
 @media (prefers-reduced-motion: reduce) {
-  .modal-bg > .modal { transition: opacity 160ms ease-out; }
+  .modal-bg > .modal { transition: opacity 120ms ease-out; }
   @starting-style { .modal-bg > .modal { transform: none; } }
   :is(.btn-add, .btn-save, .btn-cancel, .btn-del, .btn-quick, .btn-upload, .btn-ig, .modal-close, .subcat, .ch-add):active { transform: none; }
 }
