@@ -962,6 +962,10 @@ function openLieuxGroupe(g, i) {
   openLieuxPopup([g.c.lng, g.c.lat], box);
 }
 
+// Plus de tuiles téléchargées en parallèle (16 par défaut) : la carte 3D en
+// demande beaucoup d'un coup, surtout inclinée ou en vol
+try { if (window.maplibregl && maplibregl.setMaxParallelImageRequests) maplibregl.setMaxParallelImageRequests(32); } catch {}
+
 function initLieuxMap(list) {
   const el = document.getElementById('lieux-map');
   closeLieuxPopup();

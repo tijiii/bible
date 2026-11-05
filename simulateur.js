@@ -45,6 +45,24 @@ function simuAvancer(lng, lat, cap, d) {
 }
 
 // Altitude du sol (relief à l'échelle réelle pendant le vol)
+// Hauteur minimale au-dessus du relief et distance vérifiée devant le nez (m)
+const SIMU_MARGE_SOL = 6;
+const SIMU_NEZ = 25;
+// Niveaux de zoom à l'écran en vol, et valeurs par défaut de MapLibre à remettre
+const SIMU_LOD = [4, 3], SIMU_LOD_DEFAUT = [9.314, 3];
+// Altitude du sol touché sur le segment parcouru, ou null si l'avion passe
+function simuContact([lng, lat, alt], longueur, dAlt, dHoriz) {
+  const pas = Math.max(1, Math.ceil(longueur / 8));
+  for (let i = 1; i <= pas; i++) {
+    const d = longueur * i / pas;
+    const [x, y] = simuAvancer(lng, lat, simu.cap, d);
+    const h = alt + dAlt * Math.min(1, dHoriz > 0 ? d / dHoriz : 1);
+    const sol = simuSol(x, y);
+    if (h <= sol + SIMU_MARGE_SOL) return sol;
+  }
+  return null;
+}
+
 function simuSol(lng, lat) {
   let e = null;
   try { e = simu.map.queryTerrainElevation([lng, lat]); } catch {}
@@ -179,7 +197,14 @@ function simuMonde() {
   if (!simu) return;
   const map = simu.map;
   try { appliquerRelief(map); } catch {}
+  // L'image satellite a déjà ses ombres : pas d'ombrage en vol, ce qui évite
+  // de télécharger une deuxième fois toutes les tuiles d'altitude
+  try { map.setLayoutProperty('relief-ombre', 'visibility', 'none'); } catch {}
   try { map.setTerrain({ source: 'relief', exaggeration: 1 }); } catch {}
+  // Vue rasante : par défaut MapLibre empile jusqu'à 9 niveaux de zoom jusqu'à
+  // l'horizon, soit des centaines de tuiles. On en garde 4, comme Google Earth
+  // (détaillé devant, flou au loin), ce qui charge beaucoup moins de tuiles.
+  try { if (map.setSourceTileLodParams) map.setSourceTileLodParams(SIMU_LOD[0], SIMU_LOD[1]); } catch {}
   try {
     map.setSky({
       'sky-color': '#4f86d6', 'horizon-color': '#cfe1f3', 'fog-color': '#dbe6f1',
@@ -215,6 +240,7 @@ function quitterSimulateur() {
   ['dragPan', 'dragRotate', 'scrollZoom', 'touchZoomRotate', 'touchPitch', 'doubleClickZoom', 'keyboard', 'boxZoom']
     .forEach(h => { try { map[h].enable(); } catch {} });
   try { if (s.avant.fov != null && map.setVerticalFieldOfView) map.setVerticalFieldOfView(s.avant.fov); } catch {}
+  try { if (map.setSourceTileLodParams) map.setSourceTileLodParams(SIMU_LOD_DEFAUT[0], SIMU_LOD_DEFAUT[1]); } catch {}
   (s.pins || []).forEach(m => { try { m.addTo(map); } catch {} });
   // On remet la carte comme avant (fond, relief, ciel) et on se pose en vue d'ensemble
   try {
@@ -288,13 +314,17 @@ function simuImage(t) {
 
     // Déplacement
     s.vz = s.v * Math.sin(s.pente);
-    [s.lng, s.lat] = simuAvancer(s.lng, s.lat, s.cap, s.v * Math.cos(s.pente) * dt);
+    const avant = [s.lng, s.lat, s.alt];
+    const dHoriz = s.v * Math.cos(s.pente) * dt;
+    [s.lng, s.lat] = simuAvancer(s.lng, s.lat, s.cap, dHoriz);
     s.alt += s.vz * dt;
 
-    // Sol : crash
-    const solIci = simuSol(s.lng, s.lat);
-    if (s.alt <= solIci + 2) {
-      s.alt = solIci + 2;
+    // Sol : crash. On vérifie tout le trajet de l'image (à 2 000 km/h l'avion
+    // fait plus de 10 m par image et sautait par-dessus une crête), plus un peu
+    // devant le nez, pour que la caméra ne rentre jamais dans le relief.
+    const contact = simuContact(avant, dHoriz + SIMU_NEZ, s.alt - avant[2], dHoriz);
+    if (contact !== null) {
+      s.alt = contact + SIMU_MARGE_SOL;
       s.crash = true;
       const box = s.hud.querySelector('.simu-crash');
       box.hidden = false;
