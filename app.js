@@ -1167,12 +1167,11 @@ function renderLieuxList() {
       if (l.cout !== '' && l.cout !== undefined) html += `<div class="card-ig-hover" style="color:var(--accent2)">≈ ${esc(formatCout(l.cout))}</div>`;
       html += `<div class="card-body">
         <div class="card-name">${esc(l.nom)}</div>
+        ${l.ville || l.pays ? `<div class="card-ville">${FLAGS[l.pays] || ''} ${esc([l.ville, l.pays].filter(Boolean).join(', '))}</div>` : ''}
         <div class="card-meta">
           ${lieuSports(l).map(x => `<span class="tag sport">${esc(x)}</span>`).join('')}
           ${lieuCats(l).map(c => `<span class="tag agence">${esc(c)}</span>`).join('')}
           ${!lieuCats(l).length && l.type ? `<span class="tag agence">${esc(l.type)}</span>` : ''}
-          ${l.ville ? `<span class="tag">${esc(l.ville)}</span>` : ''}
-          ${l.pays ? `<span class="tag">${FLAGS[l.pays]||''} ${esc(l.pays)}</span>` : ''}
         </div>
       </div></div>`;
     });
