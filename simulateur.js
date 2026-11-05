@@ -49,7 +49,16 @@ function simuAvancer(lng, lat, cap, d) {
 const SIMU_MARGE_SOL = 6;
 const SIMU_NEZ = 25;
 // Niveaux de zoom à l'écran en vol, et valeurs par défaut de MapLibre à remettre
-const SIMU_LOD = [4, 3], SIMU_LOD_DEFAUT = [9.314, 3];
+const SIMU_LOD = [4, 3], SIMU_LOD_HAUT = 3, SIMU_LOD_DEFAUT = [9.314, 3];
+const SIMU_RELIEF = 'relief-vol', SIMU_RELIEF_ZOOM = 12;
+// Tuiles envoyées à la carte graphique par image (8 par défaut) : moins à la
+// fois, c'est un peu plus long à se remplir mais sans à-coups
+const SIMU_IMAGES_PAR_IMAGE = 3;
+function simuLod(niveaux) {
+  if (!simu || simu.lod === niveaux) return;
+  simu.lod = niveaux;
+  try { if (simu.map.setSourceTileLodParams) simu.map.setSourceTileLodParams(niveaux, SIMU_LOD[1]); } catch {}
+}
 // Altitude du sol touché sur le segment parcouru, ou null si l'avion passe
 function simuContact([lng, lat, alt], longueur, dAlt, dHoriz) {
   const pas = Math.max(1, Math.ceil(longueur / 8));
@@ -135,7 +144,7 @@ function simuChargement(t) {
   s.alt = Math.max(s.dernierSol || 0, simuSol(s.lng, s.lat)) + s.av.altDepart;
   try { s.map.jumpTo(simuVue(s.lng, s.lat, s.alt, s.cap, 0, 0)); } catch (err) { console.error(err); }
   let pret = false;
-  try { pret = typeof e === 'number' && isFinite(e) && s.map.isSourceLoaded('relief') && s.map.areTilesLoaded(); } catch {}
+  try { pret = typeof e === 'number' && isFinite(e) && s.map.isSourceLoaded(SIMU_RELIEF) && s.map.areTilesLoaded(); } catch {}
   // On attend que tout reste chargé un court instant (les tuiles arrivent par vagues)
   if (!pret) I.stable = null; else if (I.stable == null) I.stable = t;
   const ecoule = t - I.t0;
@@ -165,6 +174,7 @@ function demarrerVol(map, typeAvion) {
       relief: typeof lieuxRelief !== 'undefined' ? lieuxRelief : true,
       clampSol: map.getCenterClampedToGround ? map.getCenterClampedToGround() : null,
       pixelRatio: map._overridePixelRatio != null ? map._overridePixelRatio : null,
+      imagesParImage: window.maplibregl && maplibregl.config ? maplibregl.config.MAX_PARALLEL_IMAGE_REQUESTS_PER_FRAME : null,
     },
     pret: false,
     intro: { t0: null, stable: null },
@@ -178,6 +188,7 @@ function demarrerVol(map, typeAvion) {
   // Le centre de la vue est loin devant (vue rasante) : si MapLibre le recolle au
   // relief à chaque tuile reçue, la caméra saute de haut en bas. On le laisse libre.
   try { if (map.setCenterClampedToGround) map.setCenterClampedToGround(false); } catch {}
+  try { if (maplibregl.config) maplibregl.config.MAX_PARALLEL_IMAGE_REQUESTS_PER_FRAME = SIMU_IMAGES_PAR_IMAGE; } catch {}
   // Plein écran sur écran Retina = 4 fois plus de pixels à dessiner avec le relief
   // à chaque image : on vole en résolution normale, bien plus fluide.
   try { if (map.setPixelRatio && (window.devicePixelRatio || 1) > 1) map.setPixelRatio(1); } catch {}
@@ -268,11 +279,18 @@ function simuMonde() {
   // L'image satellite a déjà ses ombres : pas d'ombrage en vol, ce qui évite
   // de télécharger une deuxième fois toutes les tuiles d'altitude
   try { map.setLayoutProperty('relief-ombre', 'visibility', 'none'); } catch {}
-  try { map.setTerrain({ source: 'relief', exaggeration: 1 }); } catch {}
+  // Relief de vol moins détaillé (zoom 12, ~40 m par point) : chaque tuile de
+  // relief oblige la carte à redessiner tout ce qui est posé dessus, et en
+  // montant ou en faisant demi-tour il en arrivait des dizaines d'un coup.
+  try {
+    if (!map.getSource(SIMU_RELIEF)) map.addSource(SIMU_RELIEF, { ...RELIEF_TUILES, maxzoom: SIMU_RELIEF_ZOOM });
+    map.setTerrain({ source: SIMU_RELIEF, exaggeration: 1 });
+  } catch {}
   // Vue rasante : par défaut MapLibre empile jusqu'à 9 niveaux de zoom jusqu'à
-  // l'horizon, soit des centaines de tuiles. On en garde 4, comme Google Earth
-  // (détaillé devant, flou au loin), ce qui charge beaucoup moins de tuiles.
-  try { if (map.setSourceTileLodParams) map.setSourceTileLodParams(SIMU_LOD[0], SIMU_LOD[1]); } catch {}
+  // l'horizon, soit des centaines de tuiles. On en garde 4 (3 en altitude),
+  // comme Google Earth : détaillé devant, flou au loin.
+  simu.lod = null;
+  simuLod(SIMU_LOD[0]);
   try {
     map.setSky({
       'sky-color': '#4f86d6', 'horizon-color': '#cfe1f3', 'fog-color': '#dbe6f1',
@@ -311,6 +329,7 @@ function quitterSimulateur() {
   try { if (s.avant.clampSol != null) map.setCenterClampedToGround(s.avant.clampSol); } catch {}
   try { if (map.setPixelRatio) map.setPixelRatio(s.avant.pixelRatio); } catch {}   // null = celle de l'écran
   try { if (map.setSourceTileLodParams) map.setSourceTileLodParams(SIMU_LOD_DEFAUT[0], SIMU_LOD_DEFAUT[1]); } catch {}
+  try { if (s.avant.imagesParImage != null) maplibregl.config.MAX_PARALLEL_IMAGE_REQUESTS_PER_FRAME = s.avant.imagesParImage; } catch {}
   (s.pins || []).forEach(m => { try { m.addTo(map); } catch {} });
   // On remet la carte comme avant (fond, relief, ciel) et on se pose en vue d'ensemble
   try {
@@ -319,6 +338,7 @@ function quitterSimulateur() {
     else {
       try { map.setSky({ 'atmosphere-blend': ['interpolate', ['linear'], ['zoom'], 0, 1, 5, 1, 7, 0] }); } catch {}
       appliquerRelief(map);
+      try { if (map.getSource(SIMU_RELIEF)) map.removeSource(SIMU_RELIEF); } catch {}
     }
     map.setMaxZoom(s.avant.maxZoom);
     map.easeTo({ center: [s.lng, s.lat], zoom: 12, pitch: 60, bearing: s.cap, roll: 0, padding: { top: 0, bottom: 0, left: 0, right: 0 }, duration: 1200 });
@@ -413,7 +433,12 @@ function simuImage(t) {
     sc = Math.sin(t * 0.09) * 1.4 * a; st = Math.cos(t * 0.11) * 1.2 * a; sr = Math.sin(t * 0.13) * 2.5 * a;
   }
   try { s.map.jumpTo(simuVue(s.lng, s.lat, s.alt, s.cap + sc, tangage + st, s.roulis + sr)); } catch (e) { console.error(e); }
-  simuInstruments(tangage, simuSol(s.lng, s.lat));
+  const solSous = simuSol(s.lng, s.lat);
+  // Haut dans le ciel, on voit beaucoup plus loin : un niveau de détail en moins
+  // (avec une marge entre 2 000 et 3 000 m pour ne pas basculer sans arrêt)
+  const hauteur = s.alt - solSous;
+  if (hauteur > 3000) simuLod(SIMU_LOD_HAUT); else if (hauteur < 2000) simuLod(SIMU_LOD[0]);
+  simuInstruments(tangage, solSous);
   s.anim = requestAnimationFrame(simuImage);
 }
 // Signe du roulis pour MapLibre (vérifié : avion penché à droite = horizon qui penche à gauche)
