@@ -63,9 +63,20 @@ function simuContact([lng, lat, alt], longueur, dAlt, dHoriz) {
   return null;
 }
 
+// Altitude du sol. MapLibre remonte d'office la caméra quand il la croit sous
+// le relief, en mesurant le sol avec une tuile parfois plus grossière que la
+// nôtre : l'avion « bougeait tout seul ». On prend donc la plus haute des deux
+// mesures, pour que notre sol ne soit jamais plus bas que celui de MapLibre.
 function simuSol(lng, lat) {
+  const map = simu.map;
   let e = null;
-  try { e = simu.map.queryTerrainElevation([lng, lat]); } catch {}
+  try { e = map.queryTerrainElevation([lng, lat]); } catch {}
+  try {
+    if (map.terrain && map.terrain.getElevationForLngLatZoom) {
+      const e2 = map.terrain.getElevationForLngLatZoom(new maplibregl.LngLat(lng, lat), map.transform.zoom);
+      if (isFinite(e2) && (!isFinite(e) || e2 > e)) e = e2;
+    }
+  } catch {}
   if (typeof e === 'number' && isFinite(e)) { simu.dernierSol = e; return e; }
   return simu.dernierSol || 0;
 }
@@ -93,25 +104,6 @@ function lancerSimulateur(map) {
   el.appendChild(choix);
 }
 
-// Position de la caméra de la carte au moment où on décolle, pour y partir en douceur
-function simuCameraActuelle(map) {
-  try {
-    const tr = map.transform;
-    const ll = tr.getCameraLngLat();
-    let alt = tr.getCameraAltitude ? tr.getCameraAltitude() : NaN;
-    if (!isFinite(alt)) {
-      // hauteur au-dessus du point visé = distance caméra-centre × cos(inclinaison)
-      const c = map.getCenter();
-      const pxParMetre = 512 * Math.pow(2, map.getZoom()) / (40075016.686 * Math.cos(c.lat * simuDeg));
-      const e = isFinite(tr.elevation) ? tr.elevation : (map.queryTerrainElevation(c) || 0);
-      alt = e + Math.cos(map.getPitch() * simuDeg) * tr.cameraToCenterDistance / pxParMetre;
-    }
-    if (ll && isFinite(ll.lng) && isFinite(alt)) return { lng: ll.lng, lat: ll.lat, alt, cap: map.getBearing(), pitch: map.getPitch() };
-  } catch {}
-  return null;
-}
-const SIMU_INTRO_MS = 2200;
-const simuDouceur = x => x < 0.5 ? 4 * x * x * x : 1 - Math.pow(-2 * x + 2, 3) / 2;
 const simuMouvementReduit = () => { try { return matchMedia('(prefers-reduced-motion: reduce)').matches; } catch { return false; } };
 
 // Caméra du cockpit pour une attitude donnée. Au-delà de ~85° MapLibre ne charge
@@ -129,31 +121,33 @@ function simuVue(lng, lat, alt, cap, tangage, roulis) {
   return opts;
 }
 
-// Décollage : on attend que le relief soit là (sinon l'avion naît dans la
-// montagne), puis la caméra glisse de la vue de la carte jusqu'au cockpit.
-function simuIntro(t) {
+// Écran de chargement : la caméra est déjà posée dans le cockpit (invisible
+// derrière l'écran) pour que les bonnes tuiles se chargent, et on ne décolle
+// qu'une fois le relief et l'image satellite là. Sinon l'avion naissait dans la
+// montagne et les premières secondes saccadaient pendant le téléchargement.
+const SIMU_CHARGEMENT_MAX = 15000;
+function simuChargement(t) {
   const s = simu, I = s.intro;
   if (I.t0 == null) I.t0 = t;
-  if (I.debut == null) {
-    let e = null, charge = false;
-    try { e = s.map.queryTerrainElevation([s.depart.lng, s.depart.lat]); charge = s.map.isSourceLoaded('relief'); } catch {}
-    const pret = typeof e === 'number' && isFinite(e) && charge;
-    if (!pret && t - I.t0 < 8000) return true;   // on patiente (8 s au plus)
-    s.dernierSol = typeof e === 'number' && isFinite(e) ? e : (s.dernierSol || 0);
-    s.alt = s.dernierSol + s.av.altDepart;
-    I.debut = t;
-    if (!I.de || simuMouvementReduit()) { s.intro = null; return false; }
-  }
-  const x = Math.min(1, (t - I.debut) / SIMU_INTRO_MS), k = simuDouceur(x);
-  const de = I.de, lerp = (a, b) => a + (b - a) * k;
-  const dCap = ((s.cap - de.cap + 540) % 360) - 180;
-  const cible = simuVue(s.lng, s.lat, s.alt, s.cap, 0, 0);
-  const opts = simuVue(lerp(de.lng, s.lng), lerp(de.lat, s.lat), lerp(de.alt, s.alt), de.cap + dCap * k, lerp(de.pitch - 90, 0), 0);
-  opts.padding = { top: cible.padding.top * k, bottom: 0, left: 0, right: 0 };
-  try { s.map.jumpTo(opts); } catch (e) { console.error(e); }
-  s.hud.style.setProperty('--intro', k.toFixed(3));
-  if (x >= 1) { s.intro = null; s.hud.style.removeProperty('--intro'); return false; }
-  return true;
+  let e = null;
+  try { e = s.map.queryTerrainElevation([s.depart.lng, s.depart.lat]); } catch {}
+  if (typeof e === 'number' && isFinite(e)) s.dernierSol = e;
+  s.alt = Math.max(s.dernierSol || 0, simuSol(s.lng, s.lat)) + s.av.altDepart;
+  try { s.map.jumpTo(simuVue(s.lng, s.lat, s.alt, s.cap, 0, 0)); } catch (err) { console.error(err); }
+  let pret = false;
+  try { pret = typeof e === 'number' && isFinite(e) && s.map.isSourceLoaded('relief') && s.map.areTilesLoaded(); } catch {}
+  // On attend que tout reste chargé un court instant (les tuiles arrivent par vagues)
+  if (!pret) I.stable = null; else if (I.stable == null) I.stable = t;
+  const ecoule = t - I.t0;
+  const fini = (I.stable != null && t - I.stable > 400 && ecoule > 700) || ecoule > SIMU_CHARGEMENT_MAX;
+  const barre = s.hud.querySelector('.simu-chargement i');
+  if (barre) barre.style.transform = `scaleX(${fini ? 1 : Math.min(0.92, 1 - Math.exp(-ecoule / 3000))})`;
+  if (!fini) return true;
+  const ecran = s.hud.querySelector('.simu-chargement');
+  if (ecran) { ecran.classList.add('fini'); setTimeout(() => ecran.remove(), 400); }
+  s.intro = null;
+  s.t = t;   // la physique repart de cet instant, sans rattraper le temps de chargement
+  return false;
 }
 
 function demarrerVol(map, typeAvion) {
@@ -169,9 +163,11 @@ function demarrerVol(map, typeAvion) {
       fov: map.getVerticalFieldOfView ? map.getVerticalFieldOfView() : null,
       fond: typeof lieuxFond !== 'undefined' ? lieuxFond : null,
       relief: typeof lieuxRelief !== 'undefined' ? lieuxRelief : true,
+      clampSol: map.getCenterClampedToGround ? map.getCenterClampedToGround() : null,
+      pixelRatio: map._overridePixelRatio != null ? map._overridePixelRatio : null,
     },
     pret: false,
-    intro: { de: simuCameraActuelle(map), t0: null, debut: null },
+    intro: { t0: null, stable: null },
   };
   simuReinitialiser();
 
@@ -179,6 +175,12 @@ function demarrerVol(map, typeAvion) {
     .forEach(h => { try { map[h].disable(); } catch {} });
   try { map.setMaxPitch(180); map.setMaxZoom(24); } catch {}
   try { if (map.setVerticalFieldOfView) map.setVerticalFieldOfView(55); } catch {}
+  // Le centre de la vue est loin devant (vue rasante) : si MapLibre le recolle au
+  // relief à chaque tuile reçue, la caméra saute de haut en bas. On le laisse libre.
+  try { if (map.setCenterClampedToGround) map.setCenterClampedToGround(false); } catch {}
+  // Plein écran sur écran Retina = 4 fois plus de pixels à dessiner avec le relief
+  // à chaque image : on vole en résolution normale, bien plus fluide.
+  try { if (map.setPixelRatio && (window.devicePixelRatio || 1) > 1) map.setPixelRatio(1); } catch {}
   el.classList.add('simu-actif');
   try { closeLieuxPopup(); } catch {}
   // Pas de pins pendant le vol (au ras du relief, MapLibre plante en les plaçant)
@@ -205,6 +207,7 @@ function demarrerVol(map, typeAvion) {
       <button type="button" data-k="ArrowRight">▶</button>
     </div>
     <div class="simu-gaz"><button type="button" data-k="+">＋</button><button type="button" data-k="-">−</button></div>
+    <div class="simu-chargement"><div><b>CHARGEMENT DU RELIEF</b><span>${av.nom} · image satellite et montagnes</span><div class="simu-chargement-barre"><i></i></div></div></div>
     <div class="simu-crash" hidden><div><b>CRASH</b><span></span>
       <button type="button" class="simu-repartir">REPARTIR</button>
       <button type="button" class="simu-crash-quitter">QUITTER</button></div></div>`;
@@ -305,6 +308,8 @@ function quitterSimulateur() {
   ['dragPan', 'dragRotate', 'scrollZoom', 'touchZoomRotate', 'touchPitch', 'doubleClickZoom', 'keyboard', 'boxZoom']
     .forEach(h => { try { map[h].enable(); } catch {} });
   try { if (s.avant.fov != null && map.setVerticalFieldOfView) map.setVerticalFieldOfView(s.avant.fov); } catch {}
+  try { if (s.avant.clampSol != null) map.setCenterClampedToGround(s.avant.clampSol); } catch {}
+  try { if (map.setPixelRatio) map.setPixelRatio(s.avant.pixelRatio); } catch {}   // null = celle de l'écran
   try { if (map.setSourceTileLodParams) map.setSourceTileLodParams(SIMU_LOD_DEFAUT[0], SIMU_LOD_DEFAUT[1]); } catch {}
   (s.pins || []).forEach(m => { try { m.addTo(map); } catch {} });
   // On remet la carte comme avant (fond, relief, ciel) et on se pose en vue d'ensemble
@@ -328,7 +333,7 @@ function simuImage(t) {
   const dt = Math.min(0.1, Math.max(0, (t - s.t) / 1000));
   s.t = t;
   if (!s.pret) { s.anim = requestAnimationFrame(simuImage); return; }
-  if (s.intro && simuIntro(t)) { s.anim = requestAnimationFrame(simuImage); return; }
+  if (s.intro && simuChargement(t)) { s.anim = requestAnimationFrame(simuImage); return; }
 
   const sol = simuSol(s.lng, s.lat);
   if (s.alt == null) s.alt = sol + av.altDepart;
@@ -427,7 +432,7 @@ function simuInstruments(tangage, sol) {
   const vert = '#5dff7a';
   const police = (px, g = 600) => `${g} ${px}px ui-monospace, Menlo, Consolas, monospace`;
   ctx.strokeStyle = vert; ctx.fillStyle = vert; ctx.lineWidth = 1.5;
-  ctx.shadowColor = 'rgba(0,0,0,.8)'; ctx.shadowBlur = 3;
+  ctx.shadowColor = 'rgba(0,0,0,.7)'; ctx.shadowBlur = 0; ctx.shadowOffsetX = 1; ctx.shadowOffsetY = 1; // ombre nette : un flou par trait coûtait cher à chaque image
   ctx.font = police(13);
   ctx.textBaseline = 'middle';
   const cx = W / 2, cy = H / 2;
