@@ -7,7 +7,8 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { betaZodOutputFormat } from '@anthropic-ai/sdk/helpers/beta/zod';
 import * as z from 'zod/v4';
-import { handleStore, teamOk, TEAM_REFUS } from './store.js';
+import { handleStore, teamOk, refusAcces, storeCors, reply } from './store.js';
+import { handleAuth } from './auth.js';
 
 const MAX_BODY_BYTES = 8 * 1024 * 1024;
 const IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
@@ -340,7 +341,7 @@ function corsHeaders(origin, env) {
   return {
     'Access-Control-Allow-Origin': ok ? origin : allowed[0],
     'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-    'Access-Control-Allow-Headers': 'Content-Type, X-Team-Code',
+    'Access-Control-Allow-Headers': 'Content-Type, X-Team-Code, X-Session',
     'Vary': 'Origin',
     ok,
   };
@@ -434,11 +435,17 @@ export default {
   async fetch(request, env) {
     const url = new URL(request.url);
     if (url.pathname === '/store' || url.pathname.startsWith('/store/')) return handleStore(request, env, url);
+    if (url.pathname.startsWith('/auth/')) {
+      const c = storeCors(request.headers.get('Origin') || '', env);
+      if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers: (({ ok, ...h }) => h)(c) });
+      return handleAuth(request, env, url, c, reply, teamOk);
+    }
     const origin = request.headers.get('Origin') || '';
     const cors = corsHeaders(origin, env);
     if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers: (({ ok, ...h }) => h)(cors) });
     // Ajout rapide, travel sheets, rétroplanning, logos, liens Maps : réservés à l'équipe
-    if (!teamOk(request, env, url)) return json(TEAM_REFUS, 401, cors);
+    const refus = await refusAcces(request, env, url);
+    if (refus) return json(refus, 401, cors);
     if (url.pathname === '/maps' && request.method === 'GET') {
       if (!cors.ok) return json({ error: 'Origine non autorisée' }, 403, cors);
       return json(await resolveMapsLink(url.searchParams.get('url') || ''), 200, cors);
