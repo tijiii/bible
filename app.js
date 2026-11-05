@@ -2272,8 +2272,8 @@ function ficheDepuisCarte(id) {
     { transform: t.depuis, opacity: 0 },
     { opacity: 1, offset: .35 },
     { transform: 'none', opacity: 1 },
-  ], { duration: 340, easing: 'cubic-bezier(0.23, 1, 0.32, 1)' });
-  bg.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 200, easing: 'ease-out' });
+  ], { duration: 200, easing: 'cubic-bezier(0.23, 1, 0.32, 1)' });
+  bg.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 130, easing: 'ease-out' });
 }
 function ficheVersCarte(id, fin) {
   const bg = document.getElementById('detail-modal');
@@ -2286,8 +2286,8 @@ function ficheVersCarte(id, fin) {
     { transform: 'none', opacity: 1 },
     { opacity: 1, offset: .6 },
     { transform: t.depuis, opacity: 0 },
-  ], { duration: 200, easing: 'cubic-bezier(0.4, 0, 1, 1)', fill: 'forwards' });
-  bg.animate([{ opacity: 1 }, { opacity: 0 }], { duration: 200, easing: 'ease-in', fill: 'forwards' });
+  ], { duration: 140, easing: 'cubic-bezier(0.4, 0, 1, 1)', fill: 'forwards' });
+  bg.animate([{ opacity: 1 }, { opacity: 0 }], { duration: 140, easing: 'ease-in', fill: 'forwards' });
   a.onfinish = () => {
     delete bg.dataset.ferme;
     fin();
