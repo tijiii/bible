@@ -35,7 +35,14 @@ function esc(s) {
   return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
 function uid() { return Date.now() + Math.floor(Math.random()*9999); }
-function initials(p, n) { return ((p||'')[0]||'').toUpperCase() + ((n||'')[0]||'').toUpperCase(); }
+// Première lettre réelle (un emoji ou un accent composé compte pour un seul caractère)
+function premiereLettre(t) {
+  t = String(t || '').trim();
+  if (!t) return '';
+  try { if (window.Intl && Intl.Segmenter) return [...new Intl.Segmenter('fr', { granularity: 'grapheme' }).segment(t)][0].segment.toUpperCase(); } catch {}
+  return Array.from(t)[0].toUpperCase();
+}
+function initials(p, n) { return premiereLettre(p) + premiereLettre(n); }
 function g(id) { const el = document.getElementById(id); return el ? el.value.trim() : ''; }
 function catById(id) { return db.categories.find(c => c.id === id); }
 function agenceNames() { return db.agences.map(a => a.nom).sort(); }
@@ -903,16 +910,24 @@ function groupLieux(list, zoom) {
 
 function hideLieuxHover() { if (lieuxHoverPopup) { lieuxHoverPopup.remove(); lieuxHoverPopup = null; } }
 
+let lieuxPinsVus = new Set();   // groupes de pins affichés, pour n'animer que les nouveaux
 function renderLieuxPins(map, list) {
   if (typeof simu !== 'undefined' && simu && simu.map === map) return; // pas de pins pendant le simulateur
   lieuxMarkers.forEach(m => m.remove());
   lieuxMarkers = [];
   hideLieuxHover();
-  if (!lieuxPins) return;
+  if (!lieuxPins) { lieuxPinsVus = new Set(); return; }
+  // Les pins déjà là ne bougent pas ; seuls les nouveaux (groupe qui s'ouvre ou
+  // se referme au zoom, lieu ajouté, filtre) apparaissent avec un petit rebond.
+  const vus = lieuxPinsVus, premier = !vus.size;
+  lieuxPinsVus = new Set();
   groupLieux(list, map.getZoom()).forEach(g => {
     const n = g.lieux.length;
+    const cle = g.lieux.map(l => l.id).sort().join(',');
+    lieuxPinsVus.add(cle);
     const pin = document.createElement('div');
-    pin.className = 'lieu-pin' + (g.lieux.some(l => lieuProjets(l).length) ? ' tourne' : '') + (n > 1 ? ' groupe' : '');
+    pin.className = 'lieu-pin' + (g.lieux.some(l => lieuProjets(l).length) ? ' tourne' : '') + (n > 1 ? ' groupe' : '')
+      + (!premier && !vus.has(cle) ? ' nouveau' : '');
     pin.innerHTML = n > 1 ? `<span>${n}</span>` : '<span></span>';
     pin.setAttribute('aria-label', n > 1 ? `${n} lieux` : g.lieux[0].nom);
     pin.addEventListener('click', e => {
@@ -1248,11 +1263,17 @@ function renderLieuxList() {
     html += `<div class="empty">${lieuxList().length ? (searchQ ? 'AUCUN DE TES LIEUX NE CORRESPOND' : 'AUCUN LIEU TROUVÉ') : 'AUCUN LIEU POUR LE MOMENT'}</div>`;
   } else {
     html += `<div class="grid lieux-grid">`;
+    // Les cartes qui n'étaient pas là au dernier affichage (recherche, « Rechercher
+    // ici », filtre) arrivent en léger décalé ; les autres restent immobiles.
+    const vus = lieuxCartesVues;
+    let nouvelles = 0;
     list.forEach(l => {
       const photos = lieuPhotoUrls(l);
       const cover = lieuCoverPhoto(l, photos)?.url;
       const teinte = cover && lieuTeintes[cover];
-      html += `<div class="card" onclick="openDetail('lieu',${l.id})"${teinte && teinte.hex ? ` style="--teinte:${teinte.hex}"` : ''}>`;
+      const entre = !vus.has(l.id);
+      const style = [teinte && teinte.hex ? `--teinte:${teinte.hex}` : '', entre ? `--i:${Math.min(nouvelles++, 12)}` : ''].filter(Boolean).join(';');
+      html += `<div class="card${entre ? ' entre' : ''}" data-lieu="${l.id}" onclick="openDetail('lieu',${l.id})"${style ? ` style="${style}"` : ''}>`;
       if (cover) {
         html += `<img class="card-img lieu" src="${esc(cover)}" alt="${esc(l.nom)}"
           onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">
@@ -1276,7 +1297,9 @@ function renderLieuxList() {
     html += `</div>`;
   }
   box.innerHTML = html;
+  lieuxCartesVues = new Set(list.map(l => l.id));
 }
+let lieuxCartesVues = new Set();
 
 // ── Lieux rangés par couleur : la couleur dominante de chaque photo de couverture
 // (verdure, mer, roche, neige…) est calculée une fois et gardée sur l'appareil,
@@ -2151,6 +2174,7 @@ function openDetail(type, pid, chapId) {
     document.getElementById('detail-title').textContent = '';
     document.getElementById('detail-body').innerHTML = lieuDetailHtml(p);
     document.getElementById('detail-modal').style.display = 'flex';
+    ficheDepuisCarte(pid);
     initLieuFicheMap(p);
     return;
   }
@@ -2213,7 +2237,65 @@ function openDetail(type, pid, chapId) {
   document.getElementById('detail-modal').style.display = 'flex';
 }
 
-function closeDetail() { document.getElementById('detail-modal').style.display = 'none'; closeLieuFicheMap(); }
+function closeDetail(instant) {
+  const bg = document.getElementById('detail-modal');
+  const fermer = () => { bg.style.display = 'none'; bg.classList.remove('depuis-carte'); closeLieuFicheMap(); };
+  if (!instant && detailType === 'lieu' && ficheVersCarte(detailId, fermer)) return;
+  fermer();
+}
+
+// ── La fiche d'un lieu s'ouvre depuis sa vignette et s'y range en se fermant ──
+// (une seule échelle pour ne pas déformer le texte ; le fond reste un simple fondu)
+const mouvementReduit = () => { try { return matchMedia('(prefers-reduced-motion: reduce)').matches; } catch { return false; } };
+function ficheCarteVisible(id) {
+  const c = document.querySelector(`#lieux-list .card[data-lieu="${id}"]`);
+  if (!c) return null;
+  const r = c.getBoundingClientRect();
+  return r.width && r.bottom > 0 && r.top < innerHeight ? r : null;
+}
+function ficheTrajet(id) {
+  const r = ficheCarteVisible(id);
+  const modal = document.querySelector('#detail-modal > .modal');
+  if (!r || !modal || mouvementReduit()) return null;
+  const m = modal.getBoundingClientRect();
+  if (!m.width) return null;
+  const k = Math.max(.15, Math.min(1, r.width / m.width));
+  const dx = (r.left + r.width / 2) - (m.left + m.width / 2), dy = (r.top + r.height / 2) - (m.top + m.height / 2);
+  return { modal, depuis: `translate(${dx}px, ${dy}px) scale(${k})` };
+}
+function ficheDepuisCarte(id) {
+  const bg = document.getElementById('detail-modal');
+  bg.classList.add('depuis-carte');           // pas la petite apparition générique des fenêtres
+  const t = ficheTrajet(id);
+  if (!t) { bg.classList.remove('depuis-carte'); return; }
+  t.modal.animate([
+    { transform: t.depuis, opacity: 0 },
+    { opacity: 1, offset: .35 },
+    { transform: 'none', opacity: 1 },
+  ], { duration: 340, easing: 'cubic-bezier(0.23, 1, 0.32, 1)' });
+  bg.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 200, easing: 'ease-out' });
+}
+function ficheVersCarte(id, fin) {
+  const bg = document.getElementById('detail-modal');
+  if (bg.dataset.ferme) return true;          // déjà en train de se ranger
+  const t = ficheTrajet(id);
+  if (!t) return false;
+  bg.dataset.ferme = '1';
+  t.modal.getAnimations().forEach(x => x.cancel());   // fermée en pleine ouverture
+  const a = t.modal.animate([
+    { transform: 'none', opacity: 1 },
+    { opacity: 1, offset: .6 },
+    { transform: t.depuis, opacity: 0 },
+  ], { duration: 200, easing: 'cubic-bezier(0.4, 0, 1, 1)', fill: 'forwards' });
+  bg.animate([{ opacity: 1 }, { opacity: 0 }], { duration: 200, easing: 'ease-in', fill: 'forwards' });
+  a.onfinish = () => {
+    delete bg.dataset.ferme;
+    fin();
+    t.modal.getAnimations().forEach(x => x.cancel());
+    bg.getAnimations().forEach(x => x.cancel());
+  };
+  return true;
+}
 
 function delFromDetail() {
   if (!confirm(detailType === 'lieu' ? 'Supprimer ce lieu ?' : detailType === 'item' ? 'Supprimer cette fiche ?' : 'Supprimer ce profil ?')) return;
@@ -2222,13 +2304,13 @@ function delFromDetail() {
   else if (detailType === 'lieu') { db.lieux = lieuxList().filter(l => l.id !== detailId); deleteAllLieuPhotos(detailId); }
   else                         db.clubs   = db.clubs.filter(c => c.id !== detailId);
   saveDb();
-  closeDetail();
+  closeDetail(true);
   buildTabs();
   render();
 }
 
 function editFromDetail() {
-  closeDetail();
+  closeDetail(true);
   openForm(detailType, detailId, { chap: detailChap });
 }
 
