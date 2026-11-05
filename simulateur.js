@@ -63,7 +63,9 @@ function simuSatelliteVol(map, actif) {
     if (actif) {
       if (!map.getLayer('sat') || map.getLayer('sat-vol')) return;
       const src = map.getStyle().sources.sat;
-      map.addSource('sat-vol', { ...src, tileSize: 512 });
+      // Plafonnée au zoom 16 : vu d'avion le détail en plus ne se voit pas, mais
+      // il multiplie les tuiles à télécharger quand on vole bas
+      map.addSource('sat-vol', { ...src, tileSize: 512, maxzoom: Math.min(src.maxzoom || 19, 16) });
       map.addLayer({ id: 'sat-vol', type: 'raster', source: 'sat-vol', paint: { 'raster-fade-duration': 0 } }, 'sat');
       map.setLayoutProperty('sat', 'visibility', 'none');
     } else {
@@ -72,6 +74,22 @@ function simuSatelliteVol(map, actif) {
       if (map.getLayer('sat')) map.setLayoutProperty('sat', 'visibility', 'visible');
     }
   } catch (e) { console.error(e); }
+}
+
+// Nom de la carte graphique utilisée par le navigateur. Si c'est un rendu
+// logiciel (accélération matérielle coupée dans le navigateur), le relief 3D
+// ne peut pas être fluide : on le dit au lieu de laisser croire à un bug.
+function simuCarteGraphique(map) {
+  try {
+    const gl = map.painter && map.painter.context && map.painter.context.gl;
+    const ext = gl && gl.getExtension('WEBGL_debug_renderer_info');
+    const nom = ext ? gl.getParameter(ext.UNMASKED_RENDERER_WEBGL) : '';
+    simu.gpu = String(nom || '').replace(/^ANGLE \((.*)\)$/, '$1').slice(0, 60);
+    if (/swiftshader|llvmpipe|softpipe|basic render|software/i.test(nom)) {
+      const a = simu.hud && simu.hud.querySelector('.simu-alerte');
+      if (a) a.hidden = false;
+    }
+  } catch {}
 }
 
 // Résolution qui s'adapte : si l'ordinateur passe sous ~45 images/s pendant
@@ -89,8 +107,12 @@ function simuResolution(t, dt) {
   P.debut = t; P.somme = 0; P.n = 0;
   let cran = P.cran;
   // On remonte seulement après 10 s sans avoir dû baisser, pour ne pas faire le yoyo
-  if (moyenne > 22 && cran < SIMU_RESOLUTIONS.length - 1) { cran++; P.bloque = t + 10000; }
+  // Très lent (moins de ~22 images/s) : on descend tout de suite au plus bas
+  if (moyenne > 45) { cran = SIMU_RESOLUTIONS.length - 1; P.bloque = t + 10000; }
+  else if (moyenne > 22 && cran < SIMU_RESOLUTIONS.length - 1) { cran++; P.bloque = t + 10000; }
   else if (moyenne < 17.5 && cran > 0 && t > (P.bloque || 0)) cran--;
+  // Toujours trop lent au plus bas : mode léger, relief moins détaillé au loin
+  if (moyenne > 30 && P.cran === SIMU_RESOLUTIONS.length - 1 && !s.leger) { s.leger = true; s.lod = null; simuLod(SIMU_LOD_HAUT); }
   if (cran === P.cran) return;
   P.cran = cran;
   try { s.map.setPixelRatio(SIMU_RESOLUTIONS[cran]); } catch {}
@@ -261,6 +283,7 @@ function demarrerVol(map, typeAvion) {
     </div>
     <div class="simu-gaz"><button type="button" data-k="+">＋</button><button type="button" data-k="-">−</button></div>
     <div class="simu-chargement"><div><b>CHARGEMENT DU RELIEF</b><span>${av.nom} · image satellite et montagnes</span><div class="simu-chargement-barre"><i></i></div></div></div>
+    <div class="simu-alerte" hidden>Ton navigateur dessine la carte sans la carte graphique, donc le vol ne peut pas être fluide. Active « l'accélération matérielle » dans ses réglages puis relance-le.</div>
     <div class="simu-crash" hidden><div><b>CRASH</b><span></span>
       <button type="button" class="simu-repartir">REPARTIR</button>
       <button type="button" class="simu-crash-quitter">QUITTER</button></div></div>`;
@@ -341,6 +364,7 @@ function simuMonde() {
     });
   } catch {}
   simuSatelliteVol(map, true);
+  simuCarteGraphique(map);
   simu.pret = true;
 }
 
@@ -484,7 +508,7 @@ function simuImage(t) {
   // Haut dans le ciel, on voit beaucoup plus loin : un niveau de détail en moins
   // (avec une marge entre 2 000 et 3 000 m pour ne pas basculer sans arrêt)
   const hauteur = s.alt - solSous;
-  if (hauteur > 3000) simuLod(SIMU_LOD_HAUT); else if (hauteur < 2000) simuLod(SIMU_LOD[0]);
+  if (hauteur > 3000 || s.leger) simuLod(SIMU_LOD_HAUT); else if (hauteur < 2000) simuLod(SIMU_LOD[0]);
   simuInstruments(tangage, solSous);
   s.anim = requestAnimationFrame(simuImage);
 }
@@ -597,7 +621,9 @@ function simuInstruments(tangage, sol) {
   if (s.ips) {
     ctx.textAlign = 'right'; ctx.font = police(12, 600); ctx.fillStyle = s.ips.v < 40 ? '#ffc75d' : '#9effa8';
     const res = s.perf ? SIMU_RESOLUTIONS[s.perf.cran] : 1;
-    ctx.fillText(Math.round(s.ips.v) + ' IMG/S · RÉSOL. ' + Math.round(res * 100) + '%', W - 14, 18);
+    ctx.fillText(Math.round(s.ips.v) + ' IMG/S · RÉSOL. ' + Math.round(res * 100) + '%' + (s.leger ? ' · LÉGER' : ''), W - 14, 18);
+    ctx.font = police(10, 500);
+    ctx.fillText(s.gpu || 'carte graphique inconnue', W - 14, 34);
   }
 
   // Alarmes

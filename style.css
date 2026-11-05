@@ -1319,3 +1319,4 @@ input:focus-visible, select:focus-visible, textarea:focus-visible { outline-offs
   .ch-add { width: 40px; height: 40px; }
   .ts-x { width: 32px; height: 32px; }
 }
+.simu-alerte { position:absolute; top:52px; left:50%; transform:translateX(-50%); width:min(460px, calc(100% - 32px)); background:rgba(60,20,10,.85); color:#ffd9a8; font-size:13px; line-height:1.4; padding:9px 12px; text-align:center; z-index:2; }
