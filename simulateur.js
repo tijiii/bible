@@ -1,124 +1,142 @@
-// ── Simulateur sur la carte 3D des lieux ───────────────────────────────────────
-// Deux modes, sur le relief 3D (comme le simulateur de vol de Google Earth) :
-//  · VOL  : un avion. ← → pour s'incliner et tourner, ↑ ↓ pour piquer / monter,
-//           + / − (ou W / S) pour les gaz.
-//  · SNOW : une planche posée sur la montagne. La pente donne la vitesse,
-//           ← → pour tourner, ↑ pour pousser, ↓ pour freiner.
-// La caméra est placée à la main à chaque image (position, altitude, cap,
-// tangage, roulis) avec calculateCameraOptionsFromCameraLngLatAltRotation.
+// ── Simulateur de vol sur la carte 3D des lieux ────────────────────────────────
+// Comme le simulateur de vol de Google Earth : on choisit un avion, on vole
+// au-dessus de l'imagerie satellite et du relief à l'échelle réelle.
+//
+// Physique simplifiée mais réelle : portance et traînée (½·ρ·V²·S·C),
+// densité de l'air qui baisse avec l'altitude, poussée selon les gaz,
+// décrochage au-delà de l'incidence maximale, virage par l'inclinaison.
+// Le manche (↑ ↓) agit sur l'incidence autour de celle qui tient 1 g :
+// lâché, l'avion garde à peu près sa trajectoire, et en virage il faut tirer.
+//
+// Commandes : ← → roulis · ↑ pique · ↓ cabre · Page ↑ / Page ↓ ou + / − gaz
+//             Échap pour quitter.
+// La caméra est placée à chaque image (position, altitude, cap, tangage,
+// roulis) avec calculateCameraOptionsFromCameraLngLatAltRotation.
 
 const SIMU_G = 9.81;
-const SIMU_R = 6371008.8; // rayon de la Terre (m)
-let simu = null;          // état du simulateur en cours, ou null
-
+const SIMU_R = 6371008.8;
 const simuDeg = Math.PI / 180;
 const simuClamp = (v, a, b) => Math.max(a, Math.min(b, v));
+const SIMU_KT = 1.943844;  // m/s → nœuds
+const SIMU_FT = 3.28084;   // m → pieds
 
-// Avancer de d mètres vers le cap donné (degrés, 0 = nord)
+// Deux avions, comme dans Google Earth
+const SIMU_AVIONS = {
+  leger: {
+    nom: 'Avion léger', sous: 'type SR22 · hélice',
+    masse: 1500, surface: 13.5, pousseeMax: 3600,
+    cd0: 0.045, k: 0.055, clAlpha: 5.0, alphaDecro: 15, roulisMax: 60,
+    vDepart: 62, altDepart: 900, vne: 110,
+  },
+  chasseur: {
+    nom: 'Chasseur', sous: 'type F-16 · réacteur',
+    masse: 12000, surface: 28, pousseeMax: 85000,
+    cd0: 0.028, k: 0.12, clAlpha: 3.6, alphaDecro: 22, roulisMax: 160,
+    vDepart: 190, altDepart: 1800, vne: 420,
+  },
+};
+
+let simu = null;
+
 function simuAvancer(lng, lat, cap, d) {
   const dLat = d * Math.cos(cap * simuDeg) / SIMU_R / simuDeg;
   const dLng = d * Math.sin(cap * simuDeg) / (SIMU_R * Math.cos(lat * simuDeg)) / simuDeg;
   return [((lng + dLng + 540) % 360) - 180, simuClamp(lat + dLat, -85, 85)];
 }
 
-// Altitude du sol (avec l'exagération du relief, comme il est dessiné)
+// Altitude du sol (relief à l'échelle réelle pendant le vol)
 function simuSol(lng, lat) {
-  if (!simu) return 0;
   let e = null;
   try { e = simu.map.queryTerrainElevation([lng, lat]); } catch {}
   if (typeof e === 'number' && isFinite(e)) { simu.dernierSol = e; return e; }
   return simu.dernierSol || 0;
 }
 
-function simuExageration() {
-  try { const t = simu.map.getTerrain(); return (t && t.exaggeration) || 1; } catch { return 1; }
-}
-
-// La direction qui descend le plus fort autour d'un point (pour lancer la planche)
-function simuCapDescente(lng, lat) {
-  const ici = simuSol(lng, lat);
-  let meilleur = 0, pente = 0;
-  for (let cap = 0; cap < 360; cap += 15) {
-    const [x, y] = simuAvancer(lng, lat, cap, 40);
-    const d = ici - simuSol(x, y);
-    if (d > pente) { pente = d; meilleur = cap; }
-  }
-  return meilleur;
-}
-
-function lancerSimulateur(map, mode) {
+// ── Lancement : d'abord le choix de l'avion ───────────────────────────────────
+function lancerSimulateur(map) {
   if (!map || simu) return;
-  // Le relief doit être là pour voler au-dessus des montagnes ou les descendre
-  if (typeof lieuxRelief !== 'undefined' && !lieuxRelief) setLieuxRelief(true);
+  const el = map.getContainer();
+  if (el.querySelector('.simu-choix')) return;
+  const choix = document.createElement('div');
+  choix.className = 'simu-choix';
+  choix.innerHTML = `<div class="simu-choix-box">
+      <div class="simu-choix-titre">SIMULATEUR DE VOL</div>
+      <div class="simu-choix-sous">Départ au-dessus de l'endroit regardé</div>
+      ${Object.entries(SIMU_AVIONS).map(([k, a]) => `<button type="button" data-avion="${k}">
+        <span>${k === 'leger' ? '🛩' : '✈'} ${a.nom}</span><small>${a.sous}</small></button>`).join('')}
+      <div class="simu-choix-aide">← → incliner · ↑ piquer · ↓ cabrer<br>Page ↑ / ↓ ou + / − : gaz · Échap : quitter</div>
+      <button type="button" class="simu-choix-annuler">ANNULER</button>
+    </div>`;
+  choix.addEventListener('click', e => e.stopPropagation());
+  choix.querySelector('.simu-choix-annuler').onclick = () => choix.remove();
+  choix.querySelectorAll('[data-avion]').forEach(b => {
+    b.onclick = () => { choix.remove(); demarrerVol(map, b.dataset.avion); };
+  });
+  el.appendChild(choix);
+}
+
+function demarrerVol(map, typeAvion) {
+  const av = SIMU_AVIONS[typeAvion] || SIMU_AVIONS.leger;
   const el = map.getContainer();
   const c = map.getCenter();
-  const vol = mode === 'vol';
   simu = {
-    map, mode, el,
-    lng: c.lng, lat: c.lat,
-    cap: map.getBearing(),
-    tangage: 0,          // angle du nez (degrés, + = monte)
-    roulis: 0,           // inclinaison (degrés, + = penche à droite)
-    vitesse: vol ? 70 : 0, // m/s
-    alt: 0,
-    dernierSol: 0,
+    map, el, av, typeAvion,
+    depart: { lng: c.lng, lat: c.lat, cap: map.getBearing() },
     touches: new Set(),
-    t: 0,
-    anim: 0,
     avant: {
       maxPitch: map.getMaxPitch(), maxZoom: map.getMaxZoom(),
-      vue: { center: map.getCenter(), zoom: map.getZoom(), bearing: map.getBearing(), pitch: map.getPitch(), roll: map.getRoll ? map.getRoll() : 0 },
+      fov: map.getVerticalFieldOfView ? map.getVerticalFieldOfView() : null,
+      fond: typeof lieuxFond !== 'undefined' ? lieuxFond : null,
+      relief: typeof lieuxRelief !== 'undefined' ? lieuxRelief : true,
     },
+    pret: false,
   };
-  const sol = simuSol(c.lng, c.lat);
-  const ex = simuExageration();
-  simu.alt = vol ? sol + 1200 * ex : sol + 2;
-  if (!vol) simu.cap = simuCapDescente(c.lng, c.lat);
+  simuReinitialiser();
 
-  // On coupe les gestes de la carte : c'est le simulateur qui tient la caméra
   ['dragPan', 'dragRotate', 'scrollZoom', 'touchZoomRotate', 'touchPitch', 'doubleClickZoom', 'keyboard', 'boxZoom']
     .forEach(h => { try { map[h].disable(); } catch {} });
-  try { map.setMaxPitch(180); } catch {}
-  try { map.setMaxZoom(24); } catch {}
+  try { map.setMaxPitch(180); map.setMaxZoom(24); } catch {}
+  try { if (map.setVerticalFieldOfView) map.setVerticalFieldOfView(55); } catch {}
   el.classList.add('simu-actif');
-  // Les pins sont retirés pendant le simulateur : au ras du sol, MapLibre
-  // n'arrive plus à les placer sur le relief et la carte se bloque
+  try { closeLieuxPopup(); } catch {}
+  // Pas de pins pendant le vol (au ras du relief, MapLibre plante en les plaçant)
   simu.pins = (map === lieuxMap ? lieuxMarkers : map === lieuFicheMap ? lieuFicheMarkers : []).slice();
   simu.pins.forEach(m => { try { m.remove(); } catch {} });
-  try { closeLieuxPopup(); } catch {}
 
-  // Écran du simulateur : compteurs, aide, commandes tactiles, bouton quitter
+  // Imagerie satellite + relief à l'échelle réelle + ciel bleu et brume
+  simu.onStyle = () => simuMonde();
+  map.on('style.load', simu.onStyle);
+  if (typeof lieuxRelief !== 'undefined') lieuxRelief = true;
+  if (typeof lieuxFond !== 'undefined' && lieuxFond !== 'satellite') setLieuxFond('satellite');
+  else simuMonde();
+
+  // Écran : instruments (canvas), commandes tactiles, quitter
   const hud = document.createElement('div');
-  hud.className = 'simu-hud' + (vol ? '' : ' snow');
+  hud.className = 'simu-hud';
   hud.innerHTML = `
-    <div class="simu-haut">
-      <span class="simu-titre">${vol ? '✈ VOL' : '🏂 SNOW'}</span>
-      <span class="simu-val" data-v="vitesse">0 km/h</span>
-      <span class="simu-val" data-v="alt">0 m</span>
-      <button type="button" class="simu-quitter" title="Quitter (Échap)">✕ QUITTER</button>
-    </div>
-    <div class="simu-aide">${vol
-      ? '← → tourner · ↑ piquer · ↓ monter · + / − gaz (ou W / S)'
-      : '← → tourner · ↑ pousser · ↓ freiner · la pente fait la vitesse'}</div>
+    <canvas class="simu-instruments"></canvas>
+    <button type="button" class="simu-quitter" title="Quitter (Échap)">✕ QUITTER</button>
     <div class="simu-pad">
       <button type="button" data-k="ArrowUp">▲</button>
       <button type="button" data-k="ArrowLeft">◀</button>
       <button type="button" data-k="ArrowDown">▼</button>
       <button type="button" data-k="ArrowRight">▶</button>
     </div>
-    ${vol ? `<div class="simu-gaz"><button type="button" data-k="+">＋</button><button type="button" data-k="-">−</button></div>` : ''}
-    ${vol ? '' : '<div class="simu-rider">🏂</div>'}
-    <canvas class="simu-neige"></canvas>`;
+    <div class="simu-gaz"><button type="button" data-k="+">＋</button><button type="button" data-k="-">−</button></div>
+    <div class="simu-crash" hidden><div><b>CRASH</b><span></span>
+      <button type="button" class="simu-repartir">REPARTIR</button>
+      <button type="button" class="simu-crash-quitter">QUITTER</button></div></div>`;
   el.appendChild(hud);
   simu.hud = hud;
+  simu.cv = hud.querySelector('.simu-instruments');
   hud.addEventListener('click', e => e.stopPropagation());
   hud.querySelector('.simu-quitter').onclick = () => quitterSimulateur();
+  hud.querySelector('.simu-crash-quitter').onclick = () => quitterSimulateur();
+  hud.querySelector('.simu-repartir').onclick = () => { simuReinitialiser(); hud.querySelector('.simu-crash').hidden = true; };
   hud.querySelectorAll('[data-k]').forEach(b => {
     const k = b.dataset.k;
-    const on = e => { e.preventDefault(); simu && simu.touches.add(k); };
-    const off = () => { simu && simu.touches.delete(k); };
-    b.addEventListener('pointerdown', on);
-    ['pointerup', 'pointerleave', 'pointercancel'].forEach(ev => b.addEventListener(ev, off));
+    b.addEventListener('pointerdown', e => { e.preventDefault(); simu && simu.touches.add(k); });
+    ['pointerup', 'pointerleave', 'pointercancel'].forEach(ev => b.addEventListener(ev, () => simu && simu.touches.delete(k)));
   });
 
   simu.onKeyDown = e => {
@@ -132,21 +150,51 @@ function lancerSimulateur(map, mode) {
   window.addEventListener('keydown', simu.onKeyDown);
   window.addEventListener('keyup', simu.onKeyUp);
   window.addEventListener('blur', simu.onBlur);
-
-  // Plein écran : plus immersif (si le navigateur le permet)
   try { if (!document.fullscreenElement && el.requestFullscreen) el.requestFullscreen().catch(() => {}); } catch {}
-  simu.onFs = () => { setTimeout(() => { try { map.resize(); } catch {} }, 50); };
+  simu.onFs = () => setTimeout(() => { try { map.resize(); } catch {} }, 50);
   document.addEventListener('fullscreenchange', simu.onFs);
 
-  if (!vol) simuNeigeInit(hud.querySelector('.simu-neige'));
   simu.t = performance.now();
   simu.anim = requestAnimationFrame(simuImage);
+}
+
+// Position de départ (et « Repartir » après un crash)
+function simuReinitialiser() {
+  const s = simu, av = s.av;
+  s.lng = s.depart.lng; s.lat = s.depart.lat;
+  s.cap = s.depart.cap;            // cap (degrés)
+  s.roulis = 0;                    // inclinaison (degrés, + = à droite)
+  s.pente = 0;                     // pente de la trajectoire (radians)
+  s.alpha = 0;                     // incidence (radians)
+  s.v = av.vDepart;                // vitesse air (m/s)
+  s.gaz = 0.75;
+  s.manche = 0; s.ailerons = 0;
+  s.alt = null;                    // posée à la première image, quand le relief est là
+  s.crash = false;
+  s.vz = 0;
+}
+
+// Le monde de Google Earth : satellite, relief réel, ciel et brume
+function simuMonde() {
+  if (!simu) return;
+  const map = simu.map;
+  try { appliquerRelief(map); } catch {}
+  try { map.setTerrain({ source: 'relief', exaggeration: 1 }); } catch {}
+  try {
+    map.setSky({
+      'sky-color': '#4f86d6', 'horizon-color': '#cfe1f3', 'fog-color': '#dbe6f1',
+      'sky-horizon-blend': 0.55, 'horizon-fog-blend': 0.7, 'fog-ground-blend': 0.25, 'atmosphere-blend': 0,
+    });
+  } catch {}
+  simu.pret = true;
 }
 
 function simuTouche(e) {
   const k = e.key;
   if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(k)) return k;
-  const m = { z: 'ArrowUp', q: 'ArrowLeft', d: 'ArrowRight', a: 'ArrowLeft', w: '+', s: '-', '+': '+', '=': '+', '-': '-', '_': '-' };
+  if (k === 'PageUp') return '+';
+  if (k === 'PageDown') return '-';
+  const m = { '+': '+', '=': '+', '-': '-', '_': '-', w: '+', s: '-' };
   return m[k.toLowerCase()] || null;
 }
 
@@ -155,152 +203,244 @@ function quitterSimulateur() {
   const s = simu;
   simu = null;
   cancelAnimationFrame(s.anim);
-  if (s.neige) cancelAnimationFrame(s.neige.anim);
   window.removeEventListener('keydown', s.onKeyDown);
   window.removeEventListener('keyup', s.onKeyUp);
   window.removeEventListener('blur', s.onBlur);
   document.removeEventListener('fullscreenchange', s.onFs);
+  const map = s.map;
+  try { map.off('style.load', s.onStyle); } catch {}
   if (s.hud) s.hud.remove();
   s.el.classList.remove('simu-actif');
-  (s.pins || []).forEach(m => { try { m.addTo(s.map); } catch {} });
   try { if (document.fullscreenElement === s.el) document.exitFullscreen().catch(() => {}); } catch {}
-  const map = s.map;
   ['dragPan', 'dragRotate', 'scrollZoom', 'touchZoomRotate', 'touchPitch', 'doubleClickZoom', 'keyboard', 'boxZoom']
     .forEach(h => { try { map[h].enable(); } catch {} });
-  // On se pose doucement là où on s'est arrêté, vu d'un peu plus haut
+  try { if (s.avant.fov != null && map.setVerticalFieldOfView) map.setVerticalFieldOfView(s.avant.fov); } catch {}
+  (s.pins || []).forEach(m => { try { m.addTo(map); } catch {} });
+  // On remet la carte comme avant (fond, relief, ciel) et on se pose en vue d'ensemble
   try {
+    lieuxRelief = s.avant.relief;
+    if (s.avant.fond && s.avant.fond !== lieuxFond) setLieuxFond(s.avant.fond);
+    else {
+      try { map.setSky({ 'atmosphere-blend': ['interpolate', ['linear'], ['zoom'], 0, 1, 5, 1, 7, 0] }); } catch {}
+      appliquerRelief(map);
+    }
     map.setMaxZoom(s.avant.maxZoom);
-    map.easeTo({ center: [s.lng, s.lat], zoom: s.mode === 'vol' ? 12 : 14, pitch: 60, bearing: s.cap, roll: 0, duration: 1200 });
+    map.easeTo({ center: [s.lng, s.lat], zoom: 12, pitch: 60, bearing: s.cap, roll: 0, padding: { top: 0, bottom: 0, left: 0, right: 0 }, duration: 1200 });
     setTimeout(() => { try { map.setMaxPitch(s.avant.maxPitch); } catch {} }, 1300);
   } catch {}
 }
 
+// ── Une image : commandes → physique → caméra → instruments ───────────────────
 function simuImage(t) {
   if (!simu) return;
-  const s = simu;
+  const s = simu, av = s.av, T = s.touches;
   const dt = Math.min(0.1, Math.max(0, (t - s.t) / 1000));
   s.t = t;
-  const T = s.touches;
-  const ex = simuExageration();
+  if (!s.pret) { s.anim = requestAnimationFrame(simuImage); return; }
 
-  if (s.mode === 'vol') {
-    // Inclinaison : ← → penchent l'avion, il revient tout seul à plat
-    const vRoulis = 60;
-    if (T.has('ArrowLeft')) s.roulis -= vRoulis * dt;
-    else if (T.has('ArrowRight')) s.roulis += vRoulis * dt;
-    else s.roulis -= s.roulis * Math.min(1, 1.5 * dt);
-    s.roulis = simuClamp(s.roulis, -60, 60);
-    // Tangage : ↑ pique (comme un manche), ↓ monte
-    const vTangage = 25;
-    if (T.has('ArrowUp')) s.tangage -= vTangage * dt;
-    else if (T.has('ArrowDown')) s.tangage += vTangage * dt;
-    else s.tangage -= s.tangage * Math.min(1, 0.6 * dt);
-    s.tangage = simuClamp(s.tangage, -45, 40);
-    // Gaz
-    if (T.has('+')) s.vitesse += 40 * dt;
-    if (T.has('-')) s.vitesse -= 40 * dt;
-    s.vitesse = simuClamp(s.vitesse, 30, 320);
-    // Virage : un avion incliné tourne (taux = g·tan(roulis) / v)
-    const taux = SIMU_G * Math.tan(s.roulis * simuDeg) / s.vitesse / simuDeg;
-    s.cap = (s.cap + taux * dt * 2 + 360) % 360;
-    const dHoriz = s.vitesse * Math.cos(s.tangage * simuDeg) * dt;
-    [s.lng, s.lat] = simuAvancer(s.lng, s.lat, s.cap, dHoriz);
-    s.alt += s.vitesse * Math.sin(s.tangage * simuDeg) * dt * ex;
-    // Pas sous le sol (ni dans l'espace)
-    const sol = simuSol(s.lng, s.lat);
-    const mini = sol + 40 * ex;
-    if (s.alt < mini) { s.alt = mini; if (s.tangage < 0) s.tangage *= 0.5; }
-    s.alt = Math.min(s.alt, 12000 * ex);
-    simuCamera(s.alt, 82 + s.tangage, s.roulis);
-    simuHud(s.vitesse, (s.alt - sol) / ex);
-  } else {
-    // Snow : la pente devant la planche pousse ou freine
-    const sol = simuSol(s.lng, s.lat);
-    const [ax, ay] = simuAvancer(s.lng, s.lat, s.cap, 12);
-    const devant = simuSol(ax, ay);
-    const pente = Math.atan2((sol - devant) / ex, 12); // + = ça descend
-    let acc = SIMU_G * Math.sin(pente) - 0.06 * SIMU_G * Math.cos(pente) * Math.sign(s.vitesse || 1);
-    acc -= 0.0035 * s.vitesse * s.vitesse;            // air
-    if (T.has('ArrowUp')) acc += 2.5;                 // on pousse sur le bâton / le pied
-    if (T.has('ArrowDown')) acc -= 6;                 // dérapage pour freiner
-    // Tourner « casse » un peu la vitesse, comme un vrai virage
-    const tourne = T.has('ArrowLeft') ? -1 : T.has('ArrowRight') ? 1 : 0;
-    if (tourne) acc -= 0.15 * s.vitesse;
-    s.vitesse = simuClamp(s.vitesse + acc * dt, 0, 33);
-    s.cap = (s.cap + tourne * 70 * dt + 360) % 360;
-    s.roulis += ((tourne * 22) - s.roulis) * Math.min(1, 4 * dt);
-    [s.lng, s.lat] = simuAvancer(s.lng, s.lat, s.cap, s.vitesse * dt);
-    const solApres = simuSol(s.lng, s.lat);
-    s.alt = solApres;
-    s.pente = (s.pente || 0) + (pente - (s.pente || 0)) * Math.min(1, 3 * dt);
-    // Caméra « à la GoPro sur perche » : un peu derrière et au-dessus du rider,
-    // jamais sous la neige (le relief est trop grossier pour filmer au ras du sol)
-    const [cx, cy] = simuAvancer(s.lng, s.lat, (s.cap + 180) % 360, 40);
-    const camVoulue = Math.max(simuSol(cx, cy), solApres) + 16 * ex;
-    s.camAlt = s.camAlt == null ? camVoulue : s.camAlt + (camVoulue - s.camAlt) * Math.min(1, 4 * dt);
-    simuCamera(s.camAlt, 76 - s.pente / simuDeg * 0.5, s.roulis * 0.5, [cx, cy]);
-    simuHud(s.vitesse, solApres / ex);
-    if (s.neige) s.neige.vitesse = s.vitesse;
-    const rider = s.hud.querySelector('.simu-rider');
-    if (rider) rider.style.transform = `translateX(-50%) rotate(${(s.roulis * 0.8).toFixed(1)}deg)`;
+  const sol = simuSol(s.lng, s.lat);
+  if (s.alt == null) s.alt = sol + av.altDepart;
+
+  if (!s.crash) {
+    // Gouvernes : les touches déplacent manche et ailerons, qui reviennent au neutre
+    const vers = (val, cible, vitesse) => val + simuClamp(cible - val, -vitesse * dt, vitesse * dt);
+    const tire = T.has('ArrowDown'), pousse = T.has('ArrowUp');
+    s.manche = vers(s.manche, tire ? 1 : pousse ? -1 : 0, tire || pousse ? 1.6 : 2.5);
+    s.ailerons = vers(s.ailerons, T.has('ArrowRight') ? 1 : T.has('ArrowLeft') ? -1 : 0, 4);
+    if (T.has('+')) s.gaz = Math.min(1, s.gaz + 0.4 * dt);
+    if (T.has('-')) s.gaz = Math.max(0, s.gaz - 0.4 * dt);
+
+    const rho = 1.225 * Math.exp(-Math.max(0, s.alt) / 8500);
+    const qS = Math.max(1, 0.5 * rho * s.v * s.v * av.surface);
+    const poids = av.masse * SIMU_G;
+
+    // Incidence : celle qui tient la trajectoire (avec une partie du facteur de charge
+    // en virage, comme un avion bien compensé), plus l'action du manche
+    const charge = Math.pow(Math.max(0.45, Math.cos(s.roulis * simuDeg)), -0.75);
+    const alpha1g = (poids * Math.cos(s.pente) * charge) / (qS * av.clAlpha);
+    const alphaVoulu = alpha1g + s.manche * 12 * simuDeg;
+    s.alpha += (simuClamp(alphaVoulu, -12 * simuDeg, (av.alphaDecro + 6) * simuDeg) - s.alpha) * Math.min(1, 3 * dt);
+    // Portance, avec décrochage au-delà de l'incidence max
+    const aDecro = av.alphaDecro * simuDeg;
+    let cl = av.clAlpha * s.alpha;
+    s.decroche = s.alpha > aDecro;
+    if (s.decroche) cl = av.clAlpha * aDecro * Math.max(0.35, 1 - (s.alpha - aDecro) / (10 * simuDeg));
+    const portance = qS * cl;
+    const trainee = qS * (av.cd0 + av.k * cl * cl);
+    // Poussée : l'hélice perd de la force avec la vitesse, le réacteur avec l'altitude
+    const poussee = s.gaz * av.pousseeMax * (s.typeAvion === 'leger'
+      ? Math.max(0.2, 1 - s.v / 140) * 1.6
+      : rho / 1.225 * 1.1);
+
+    // Équations du mouvement : vitesse, pente de la trajectoire, cap
+    const fNormale = portance + poussee * Math.sin(s.alpha);
+    const dv = (poussee * Math.cos(s.alpha) - trainee) / av.masse - SIMU_G * Math.sin(s.pente);
+    const dPente = (fNormale * Math.cos(s.roulis * simuDeg) - poids * Math.cos(s.pente)) / (av.masse * Math.max(s.v, 15));
+    const dCap = (fNormale * Math.sin(s.roulis * simuDeg)) / (av.masse * Math.max(s.v, 15) * Math.max(0.2, Math.cos(s.pente)));
+    s.v = Math.max(8, s.v + dv * dt);
+    s.pente = simuClamp(s.pente + dPente * dt, -85 * simuDeg, 85 * simuDeg);
+    s.cap = (s.cap + dCap / simuDeg * dt + 360) % 360;
+    // Roulis : vitesse selon les ailerons (moins efficaces à basse vitesse), un peu de stabilité
+    const efficacite = simuClamp(s.v / av.vDepart, 0.2, 1.3);
+    s.roulis += (s.ailerons * av.roulisMax * efficacite - s.roulis * 0.08) * dt;
+    if (s.roulis > 180) s.roulis -= 360;
+    if (s.roulis < -180) s.roulis += 360;
+
+    // Déplacement
+    s.vz = s.v * Math.sin(s.pente);
+    [s.lng, s.lat] = simuAvancer(s.lng, s.lat, s.cap, s.v * Math.cos(s.pente) * dt);
+    s.alt += s.vz * dt;
+
+    // Sol : crash
+    const solIci = simuSol(s.lng, s.lat);
+    if (s.alt <= solIci + 2) {
+      s.alt = solIci + 2;
+      s.crash = true;
+      const box = s.hud.querySelector('.simu-crash');
+      box.hidden = false;
+      box.querySelector('span').textContent = `à ${Math.round(s.v * 3.6)} km/h`;
+    }
   }
+
+  // Caméra du cockpit : dans l'axe de l'avion (pente + incidence)
+  const tangage = (s.pente + s.alpha) / simuDeg;
+  try {
+    // Au-delà de ~85° MapLibre ne charge plus les tuiles devant la caméra :
+    // on garde la caméra sous cette limite et on décale l'image (padding haut)
+    // pour que le centre de l'écran reste exactement dans l'axe du nez.
+    const voulu = simuClamp(90 + tangage, 0, 150);
+    const vue = Math.min(voulu, SIMU_PITCH_MAX);
+    const H = s.map.getCanvas().clientHeight || 600;
+    const f = (H / 2) / Math.tan((s.map.getVerticalFieldOfView ? s.map.getVerticalFieldOfView() : 55) * simuDeg / 2);
+    const decalage = Math.min(2 * f * Math.tan((voulu - vue) * simuDeg), H * 0.9);
+    const opts = s.map.calculateCameraOptionsFromCameraLngLatAltRotation([s.lng, s.lat], s.alt, s.cap, vue, s.roulis * SIMU_SENS_ROULIS);
+    opts.padding = { top: decalage, bottom: 0, left: 0, right: 0 };
+    s.map.jumpTo(opts);
+  } catch (e) { console.error(e); }
+  simuInstruments(tangage, simuSol(s.lng, s.lat));
   s.anim = requestAnimationFrame(simuImage);
 }
+// Signe du roulis pour MapLibre (vérifié : avion penché à droite = horizon qui penche à gauche)
+const SIMU_SENS_ROULIS = 1;
+const SIMU_PITCH_MAX = 85;
 
-function simuCamera(alt, pitch, roulis, pos) {
-  const s = simu;
-  try {
-    const opts = s.map.calculateCameraOptionsFromCameraLngLatAltRotation(pos || [s.lng, s.lat], alt, s.cap, simuClamp(pitch, 0, 179), roulis);
-    s.map.jumpTo(opts);
-  } catch (e) { console.error(e); quitterSimulateur(); }
-}
+// ── Instruments verts façon Google Earth ──────────────────────────────────────
+function simuInstruments(tangage, sol) {
+  const s = simu, cv = s.cv;
+  if (!cv) return;
+  const W = cv.clientWidth, H = cv.clientHeight, dpr = window.devicePixelRatio || 1;
+  if (cv.width !== Math.round(W * dpr) || cv.height !== Math.round(H * dpr)) { cv.width = Math.round(W * dpr); cv.height = Math.round(H * dpr); }
+  const ctx = cv.getContext('2d');
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, W, H);
+  const vert = '#5dff7a';
+  const police = (px, g = 600) => `${g} ${px}px ui-monospace, Menlo, Consolas, monospace`;
+  ctx.strokeStyle = vert; ctx.fillStyle = vert; ctx.lineWidth = 1.5;
+  ctx.shadowColor = 'rgba(0,0,0,.8)'; ctx.shadowBlur = 3;
+  ctx.font = police(13);
+  ctx.textBaseline = 'middle';
+  const cx = W / 2, cy = H / 2;
+  const fov = s.map.getVerticalFieldOfView ? s.map.getVerticalFieldOfView() : 37;
+  const focale = (H / 2) / Math.tan(fov * simuDeg / 2);
+  // Échelle conforme : chaque barreau tombe pile sur l'angle réel dans la vue
+  const ecart = d => focale * Math.tan(simuClamp(d, -80, 80) * simuDeg);
 
-function simuHud(vitesse, alt) {
-  const h = simu && simu.hud;
-  if (!h) return;
-  h.querySelector('[data-v="vitesse"]').textContent = Math.round(vitesse * 3.6) + ' km/h';
-  h.querySelector('[data-v="alt"]').textContent = (simu.mode === 'vol' ? '↥ ' : '⛰ ') + Math.round(alt).toLocaleString('fr-FR') + ' m';
-}
+  // Échelle de tangage et horizon, tournées avec le roulis
+  ctx.save();
+  ctx.beginPath(); ctx.rect(cx - 170, cy - H * 0.3, 340, H * 0.6); ctx.clip();
+  ctx.translate(cx, cy);
+  ctx.rotate(-s.roulis * simuDeg);
+  for (let d = -90; d <= 90; d += 5) {
+    const y = ecart(tangage - d);
+    if (Math.abs(y) > H) continue;
+    const large = d === 0 ? 150 : d % 10 === 0 ? 60 : 30;
+    ctx.setLineDash(d < 0 ? [6, 5] : []);
+    ctx.beginPath();
+    ctx.moveTo(-large, y); ctx.lineTo(-large * 0.35, y);
+    ctx.moveTo(large * 0.35, y); ctx.lineTo(large, y);
+    if (d === 0) { ctx.moveTo(-large * 0.35, y); ctx.lineTo(large * 0.35, y); }
+    ctx.stroke();
+    if (d !== 0 && d % 10 === 0) { ctx.textAlign = 'left'; ctx.fillText(String(Math.abs(d)), large + 6, y); }
+  }
+  ctx.setLineDash([]);
+  ctx.restore();
 
-// Flocons qui passent plus vite quand on prend de la vitesse
-function simuNeigeInit(cv) {
-  if (!cv || !simu) return;
-  const n = { cv, ctx: cv.getContext('2d'), flocons: [], vitesse: 0, anim: 0 };
-  simu.neige = n;
-  const taille = () => { cv.width = cv.clientWidth; cv.height = cv.clientHeight; };
-  taille();
-  for (let i = 0; i < 140; i++) n.flocons.push({ x: Math.random(), y: Math.random(), r: 0.6 + Math.random() * 2, v: 0.2 + Math.random() * 0.6 });
-  let avant = performance.now();
-  const dessine = t => {
-    if (!simu || simu.neige !== n) return;
-    const dt = Math.min(0.05, (t - avant) / 1000); avant = t;
-    if (cv.width !== cv.clientWidth || cv.height !== cv.clientHeight) taille();
-    const { ctx } = n, W = cv.width, H = cv.height;
-    ctx.clearRect(0, 0, W, H);
-    ctx.fillStyle = 'rgba(255,255,255,.85)';
-    const vite = n.vitesse / 33;
-    n.flocons.forEach(f => {
-      f.y += (f.v * 0.15 + vite * 0.9 * f.v) * dt;
-      f.x += ((f.x - 0.5) * vite * 1.2 + Math.sin(t / 900 + f.r) * 0.01) * dt;
-      if (f.y > 1 || f.x < 0 || f.x > 1) { f.y = Math.random() * 0.2; f.x = Math.random(); }
-      ctx.beginPath(); ctx.arc(f.x * W, f.y * H, f.r * (1 + vite), 0, Math.PI * 2); ctx.fill();
-    });
-    n.anim = requestAnimationFrame(dessine);
-  };
-  n.anim = requestAnimationFrame(dessine);
-}
+  // Maquette de l'avion au centre
+  ctx.beginPath();
+  ctx.moveTo(cx - 40, cy); ctx.lineTo(cx - 14, cy); ctx.lineTo(cx - 7, cy + 8); ctx.lineTo(cx, cy);
+  ctx.lineTo(cx + 7, cy + 8); ctx.lineTo(cx + 14, cy); ctx.lineTo(cx + 40, cy);
+  ctx.stroke();
 
-// Les deux boutons ✈ et 🏂 de la barre de la carte
-function boutonsSimulateur(map) {
-  const frag = document.createDocumentFragment();
-  [['vol', '✈', 'Simulateur de vol au-dessus du relief'], ['snow', '🏂', 'Descendre la montagne en snow']].forEach(([mode, txt, titre]) => {
-    const b = document.createElement('button');
-    b.type = 'button';
-    b.className = 'simu-btn';
-    b.title = titre;
-    b.textContent = txt;
-    b.onclick = e => { e.stopPropagation(); lancerSimulateur(map, mode); };
-    frag.appendChild(b);
+  // Indicateur de roulis (arc en haut)
+  const r = H * 0.33;
+  ctx.beginPath(); ctx.arc(cx, cy, r, (-90 - 45) * simuDeg, (-90 + 45) * simuDeg); ctx.stroke();
+  [-45, -30, -20, -10, 0, 10, 20, 30, 45].forEach(a => {
+    const ang = (-90 + a) * simuDeg, l = a % 30 === 0 ? 10 : 6;
+    ctx.beginPath(); ctx.moveTo(cx + Math.cos(ang) * r, cy + Math.sin(ang) * r);
+    ctx.lineTo(cx + Math.cos(ang) * (r + l), cy + Math.sin(ang) * (r + l)); ctx.stroke();
   });
-  return frag;
+  const ar = (-90 - s.roulis) * simuDeg, rr = r - 4;
+  ctx.beginPath();
+  ctx.moveTo(cx + Math.cos(ar) * rr, cy + Math.sin(ar) * rr);
+  ctx.lineTo(cx + Math.cos(ar + 0.04) * (rr - 12), cy + Math.sin(ar + 0.04) * (rr - 12));
+  ctx.lineTo(cx + Math.cos(ar - 0.04) * (rr - 12), cy + Math.sin(ar - 0.04) * (rr - 12));
+  ctx.closePath(); ctx.fill();
+
+  // Cap (bande en haut)
+  const capY = 28;
+  ctx.textAlign = 'center';
+  for (let d = -30; d <= 30; d += 5) {
+    const c = Math.round((s.cap + d) / 5) * 5;
+    const x = cx + (c - s.cap) * 6;
+    if (Math.abs(x - cx) > 180) continue;
+    const cc = ((c % 360) + 360) % 360;
+    ctx.beginPath(); ctx.moveTo(x, capY + 10); ctx.lineTo(x, capY + (cc % 10 === 0 ? 2 : 6)); ctx.stroke();
+    if (cc % 30 === 0) ctx.fillText(({ 0: 'N', 90: 'E', 180: 'S', 270: 'O' })[cc] || String(cc / 10), x, capY - 6);
+  }
+  ctx.strokeRect(cx - 24, capY + 14, 48, 18);
+  ctx.fillText(String(Math.round(s.cap) % 360).padStart(3, '0'), cx, capY + 23);
+
+  // Vitesse (gauche) et altitude (droite)
+  const gx = Math.max(16, cx - 270), dx = Math.min(W - 126, cx + 160);
+  const boite = (x, y, w, txt, etiquette, align) => {
+    const tx = align === 'right' ? x + w - 8 : x + 8;
+    ctx.strokeRect(x, y - 13, w, 26);
+    ctx.textAlign = align; ctx.fillText(txt, tx, y);
+    ctx.font = police(11); ctx.fillText(etiquette, tx, y - 24); ctx.font = police(13);
+  };
+  boite(gx, cy, 110, Math.round(s.v * SIMU_KT) + ' kt', 'VITESSE', 'left');
+  ctx.textAlign = 'left';
+  ctx.fillText(Math.round(s.v * 3.6) + ' km/h', gx + 8, cy + 26);
+  boite(dx, cy, 110, Math.round(s.alt * SIMU_FT).toLocaleString('fr-FR') + ' ft', 'ALTITUDE', 'right');
+  ctx.textAlign = 'right';
+  ctx.fillText(Math.round(s.alt).toLocaleString('fr-FR') + ' m', dx + 102, cy + 26);
+  ctx.fillText('VS ' + Math.round(s.vz * SIMU_FT * 60).toLocaleString('fr-FR') + ' ft/min', dx + 102, cy + 44);
+  ctx.fillText('SOL ' + Math.max(0, Math.round((s.alt - sol) * SIMU_FT)).toLocaleString('fr-FR') + ' ft', dx + 102, cy + 62);
+
+  // Gaz (en bas à gauche)
+  const bx = gx, by = H - 160, bh = 90;
+  ctx.strokeRect(bx, by, 14, bh);
+  ctx.fillRect(bx + 2, by + bh - 2 - (bh - 4) * s.gaz, 10, (bh - 4) * s.gaz);
+  ctx.textAlign = 'left';
+  ctx.fillText('GAZ ' + Math.round(s.gaz * 100) + '%', bx + 22, by + bh - 6);
+  ctx.fillText(s.av.nom.toUpperCase(), bx + 22, by + 8);
+
+  // Alarmes
+  ctx.textAlign = 'center';
+  const alarme = (txt, couleur) => { ctx.fillStyle = couleur; ctx.font = police(17, 700); ctx.fillText(txt, cx, cy + H * 0.2); };
+  if (s.crash) return;
+  if (s.decroche) alarme('DÉCROCHAGE', '#ff5d5d');
+  else if (s.v > s.av.vne) alarme('SURVITESSE', '#ffc75d');
+  else if (s.alt - sol < 150 && s.vz < -5) alarme('TERRAIN — REMONTE', '#ffc75d');
+}
+
+// Le bouton ✈ de la barre de la carte
+function boutonsSimulateur(map) {
+  const b = document.createElement('button');
+  b.type = 'button';
+  b.className = 'simu-btn';
+  b.title = 'Simulateur de vol';
+  b.textContent = '✈';
+  b.onclick = e => { e.stopPropagation(); lancerSimulateur(map); };
+  return b;
 }

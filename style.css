@@ -1157,26 +1157,37 @@ body.doc-vue-ouvert > *:not(#doc-vue) { display:none !important; }
 /* Renommer un chapitre dans le fil d'Ariane */
 .crumb-input { font:inherit; letter-spacing:inherit; text-transform:inherit; color:inherit; border:none; border-bottom:1px solid var(--text); background:transparent; padding:0 2px; min-width:12ch; outline:none; }
 
-/* ── Simulateur (vol / snow) sur la carte 3D ── */
-.globe-fonds .simu-btn { font-size:14px; padding:6px 8px; color:#111; }
-.globe-fonds .simu-btn:first-of-type { border-left:1px solid var(--border); }
+/* ── Simulateur de vol sur la carte 3D ── */
+.globe-fonds .simu-btn { font-size:14px; padding:6px 9px; color:#111; border-left:1px solid var(--border); }
+/* La bande entre le ciel calculé par MapLibre et le vrai horizon reste transparente quand le nez monte */
+.simu-actif .maplibregl-canvas { background: linear-gradient(#4f86d6, #cfe1f3 55%, #dbe6f1); }
 .simu-actif .globe-fonds, .simu-actif .globe-pins, .simu-actif .lieux-ici, .simu-actif .maplibregl-ctrl-top-right { display:none !important; }
+.simu-choix { position:absolute; inset:0; z-index:6; display:flex; align-items:center; justify-content:center; background:rgba(5,10,20,.55); padding:16px; }
+.simu-choix-box { background:#0b1220; color:#e8f0ff; border:1px solid #2a3b5c; padding:22px; width:min(360px,100%); font-family:var(--serif); display:flex; flex-direction:column; gap:10px; box-shadow:0 10px 40px rgba(0,0,0,.5); }
+.simu-choix-titre { font-size:16px; letter-spacing:.14em; }
+.simu-choix-sous { font-size:13px; color:#9fb0cc; margin-bottom:4px; }
+.simu-choix-box [data-avion] { display:flex; flex-direction:column; align-items:flex-start; gap:2px; text-align:left; border:1px solid #2f4570; background:#12203a; color:#fff; padding:12px 14px; font-family:inherit; font-size:15px; cursor:pointer; }
+.simu-choix-box [data-avion]:hover { background:#1c3159; border-color:#5dff7a; }
+.simu-choix-box [data-avion] small { color:#9fb0cc; font-size:12px; }
+.simu-choix-aide { font-size:12px; color:#9fb0cc; line-height:1.5; margin-top:4px; }
+.simu-choix-annuler { align-self:flex-end; border:none; background:none; color:#9fb0cc; font-family:inherit; font-size:12px; letter-spacing:.08em; cursor:pointer; }
 .simu-hud { position:absolute; inset:0; z-index:5; pointer-events:none; font-family:var(--serif); color:#fff; }
 .simu-hud button { pointer-events:auto; }
-.simu-haut { position:absolute; top:10px; left:10px; right:10px; display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
-.simu-titre, .simu-val { background:rgba(0,0,0,.55); padding:6px 10px; font-size:14px; letter-spacing:.06em; }
-.simu-val { min-width:84px; text-align:center; font-variant-numeric:tabular-nums; }
-.simu-quitter { margin-left:auto; border:none; background:#fff; color:#111; font-family:inherit; font-size:13px; letter-spacing:.06em; padding:7px 12px; cursor:pointer; }
-.simu-aide { position:absolute; left:50%; bottom:14px; transform:translateX(-50%); background:rgba(0,0,0,.45); padding:5px 10px; font-size:12px; letter-spacing:.04em; white-space:nowrap; }
-.simu-pad { position:absolute; right:14px; bottom:44px; display:grid; grid-template-columns:repeat(3,44px); grid-template-rows:repeat(2,44px); gap:4px; }
+.simu-instruments { position:absolute; inset:0; width:100%; height:100%; }
+.simu-quitter { position:absolute; top:10px; right:10px; border:none; background:rgba(0,0,0,.55); color:#fff; font-family:inherit; font-size:12px; letter-spacing:.08em; padding:7px 12px; cursor:pointer; }
+.simu-pad { position:absolute; right:14px; bottom:34px; display:grid; grid-template-columns:repeat(3,44px); grid-template-rows:repeat(2,44px); gap:4px; }
 .simu-pad [data-k="ArrowUp"] { grid-column:2; grid-row:1; }
 .simu-pad [data-k="ArrowLeft"] { grid-column:1; grid-row:2; }
 .simu-pad [data-k="ArrowDown"] { grid-column:2; grid-row:2; }
 .simu-pad [data-k="ArrowRight"] { grid-column:3; grid-row:2; }
-.simu-gaz { position:absolute; left:14px; bottom:44px; display:flex; flex-direction:column; gap:4px; }
-.simu-pad button, .simu-gaz button { width:44px; height:44px; border:1px solid rgba(255,255,255,.6); background:rgba(0,0,0,.35); color:#fff; font-size:16px; cursor:pointer; touch-action:none; user-select:none; -webkit-user-select:none; }
-.simu-pad button:active, .simu-gaz button:active { background:rgba(255,255,255,.35); }
-.simu-rider { position:absolute; left:50%; bottom:22%; transform:translateX(-50%); font-size:44px; line-height:1; filter:drop-shadow(0 3px 4px rgba(0,0,0,.4)); }
-.simu-neige { position:absolute; inset:0; width:100%; height:100%; pointer-events:none; }
-@media (hover:hover) and (pointer:fine) { .simu-pad, .simu-gaz { opacity:.55; } }
-@media (max-width:600px) { .simu-aide { display:none; } }
+.simu-gaz { position:absolute; left:14px; bottom:34px; display:flex; flex-direction:column; gap:4px; }
+.simu-pad button, .simu-gaz button { width:44px; height:44px; border:1px solid rgba(93,255,122,.6); background:rgba(0,0,0,.3); color:#5dff7a; font-size:16px; cursor:pointer; touch-action:none; user-select:none; -webkit-user-select:none; }
+.simu-pad button:active, .simu-gaz button:active { background:rgba(93,255,122,.25); }
+@media (hover:hover) and (pointer:fine) { .simu-pad, .simu-gaz { display:none; } }
+.simu-crash { position:absolute; inset:0; display:flex; align-items:center; justify-content:center; background:rgba(120,0,0,.35); pointer-events:auto; }
+.simu-crash[hidden] { display:none; }
+.simu-crash > div { background:#0b1220; border:1px solid #ff5d5d; padding:20px 24px; display:flex; flex-direction:column; align-items:center; gap:10px; min-width:220px; }
+.simu-crash b { font-size:24px; letter-spacing:.2em; color:#ff5d5d; }
+.simu-crash span { color:#c9d4e8; font-size:13px; }
+.simu-crash button { width:100%; border:1px solid #2f4570; background:#12203a; color:#fff; font-family:inherit; font-size:13px; letter-spacing:.08em; padding:9px; cursor:pointer; }
+.simu-crash .simu-repartir { border-color:#5dff7a; color:#5dff7a; }
