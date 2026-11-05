@@ -42,6 +42,11 @@ function premiereLettre(t) {
   try { if (window.Intl && Intl.Segmenter) return [...new Intl.Segmenter('fr', { granularity: 'grapheme' }).segment(t)][0].segment.toUpperCase(); } catch {}
   return Array.from(t)[0].toUpperCase();
 }
+// Un compte Instagram tel qu'on l'affiche : sans @ ni lien autour (« @hugo »,
+// « instagram.com/hugo/ » et « hugo » donnent tous « hugo »)
+function igHandle(v) {
+  return String(v || '').trim().replace(/^https?:\/\/(www\.)?instagram\.com\//i, '').replace(/[/?#].*$/, '').replace(/^@+/, '');
+}
 function initials(p, n) { return premiereLettre(p) + premiereLettre(n); }
 function g(id) { const el = document.getElementById(id); return el ? el.value.trim() : ''; }
 function catById(id) { return db.categories.find(c => c.id === id); }
@@ -511,12 +516,12 @@ function renderTalents(main) {
       if (cats.length) {
         html += `<div class="card-cats">`;
         cats.slice(0,3).forEach(c => {
-          html += `<div class="cat-dot" style="background:${esc(c.color)}" title="${esc(c.label)}"></div>`;
+          html += `<div class="cat-dot" style="background:${esc(catCouleur(c))}" title="${esc(c.label)}"></div>`;
         });
         html += `</div>`;
       }
 
-      if (ig) html += `<div class="card-ig-hover">@${esc(p.insta)}</div>`;
+      if (ig) html += `<div class="card-ig-hover">@${esc(igHandle(p.insta))}</div>`;
       else if (p.site) html += `<div class="card-ig-hover">SITE ↗</div>`;
 
       html += `<div class="card-body">
@@ -533,11 +538,14 @@ function renderTalents(main) {
   setMainHtml(main, html);
 }
 
-function getCatBg(cats) {
-  // Pick a subtle bg tint based on first category
-  const first = (cats||[]).map(c => catById(c)).find(Boolean);
-  if (!first) return 'var(--bg3)';
-  return first.color + '18';
+// Fond de la vignette sans photo : neutre, comme le reste de la charte (les
+// anciennes couleurs des catégories, vert et bleu fluo, teintaient les cartes)
+function getCatBg() { return 'var(--bg3)'; }
+// La couleur d'une catégorie de talents : celle de son chapitre (Modèles,
+// Athlètes, Techniciens), la même que sur l'accueil
+function catCouleur(c) {
+  const fam = c && TALENT_FAMILIES.find(f => String(c.id).startsWith(f.key + '-'));
+  return fam ? fam.color : (c && c.color) || '#bdbdbb';
 }
 
 // ── CLUBS ─────────────────────────────────────────────────────────────────────
@@ -1872,7 +1880,7 @@ function itemDetailHtml(it) {
     ${row('CONTACT', esc(it.contact))}
     ${row('TEL', it.tel ? `<a href="tel:${esc(it.tel)}">${esc(it.tel)}</a>` : '')}
     ${row('MAIL', it.mail ? `<a href="mailto:${esc(it.mail)}">${esc(it.mail)}</a>` : '')}
-    ${row('INSTAGRAM', it.insta ? `<a href="https://instagram.com/${esc(it.insta)}" target="_blank">@${esc(it.insta)}</a>` : '')}
+    ${row('INSTAGRAM', it.insta ? `<a href="https://instagram.com/${esc(igHandle(it.insta))}" target="_blank">@${esc(igHandle(it.insta))}</a>` : '')}
     ${row('SITE', it.site ? `<a href="${esc(it.site)}" target="_blank">${esc(it.site)}</a>` : '')}
     ${it.notes ? `<div class="detail-row"><span class="detail-lbl">NOTES</span><span class="detail-val pre">${esc(it.notes)}</span></div>` : ''}
   </div>`;
@@ -2199,7 +2207,7 @@ function openDetail(type, pid, chapId) {
         <div class="detail-tags">
           ${p.age ? `<span class="tag">${esc(String(p.age))} ans</span>` : ''}
           ${p.sexe ? `<span class="tag" style="color:${p.sexe==='f'?'var(--accent)':'var(--accent2)'}">${p.sexe==='f'?'FEMME':'HOMME'}</span>` : ''}
-          ${cats.map(c => `<span class="tag cat" style="color:${esc(c.color)};border-color:${esc(c.color)}44">${esc(c.label)}</span>`).join('')}
+          ${cats.map(c => `<span class="tag cat" style="border-color:${esc(catCouleur(c))}66">${esc(c.label)}</span>`).join('')}
           ${talentSports(p).map(s => `<span class="tag sport">${esc(s)}</span>`).join('')}
         </div>
         ${talentAgences(p).length ? `<div class="detail-row"><span class="detail-lbl">AGENCE</span><span class="detail-val">${talentAgences(p).map(esc).join(', ')}</span></div>` : ''}
@@ -2210,13 +2218,13 @@ function openDetail(type, pid, chapId) {
           ${p.mail ? `<a href="mailto:${esc(p.mail)}">${esc(p.mail)}</a>` : '—'}
         </span></div>
         <div class="detail-row"><span class="detail-lbl">INSTAGRAM</span><span class="detail-val">
-          ${ig ? `<a href="https://instagram.com/${esc(p.insta)}" target="_blank">@${esc(p.insta)}</a>` : '—'}
+          ${ig ? `<a href="https://instagram.com/${esc(igHandle(p.insta))}" target="_blank">@${esc(igHandle(p.insta))}</a>` : '—'}
         </span></div>
         ${p.site ? `<div class="detail-row"><span class="detail-lbl">LIEN / SITE</span><span class="detail-val"><a href="${esc(p.site)}" target="_blank">${esc(p.site)}</a></span></div>` : ''}
         ${p.notes ? `<div class="detail-row"><span class="detail-lbl">NOTES</span><span class="detail-val">${esc(p.notes)}</span></div>` : ''}
         ${mensurationsHtml(p.mensurations)}
         ${checkinHtml(p.checkin)}
-        ${ig ? `<a class="btn-ig" href="https://instagram.com/${esc(p.insta)}" target="_blank">INSTAGRAM ↗</a>` : ''}
+        ${ig ? `<a class="btn-ig" href="https://instagram.com/${esc(igHandle(p.insta))}" target="_blank">INSTAGRAM ↗</a>` : ''}
         ${p.site ? `<a class="btn-ig" href="${esc(p.site)}" target="_blank" style="margin-left:${ig?'8px':'0'}">SITE ↗</a>` : ''}
       </div>
     </div>`;
@@ -2669,7 +2677,7 @@ function renderCatSel() {
   const ids = [...document.querySelectorAll('input[name="cat"]:checked')].map(el => el.value);
   box.innerHTML = ids.map(id => {
     const c = catById(id);
-    return c ? `<button type="button" class="cat-chip" style="border-color:${esc(c.color)}" onclick="uncheckCat('${esc(id)}')">${esc(c.label)} ✕</button>` : '';
+    return c ? `<button type="button" class="cat-chip" style="border-color:${esc(catCouleur(c))}" onclick="uncheckCat('${esc(id)}')">${esc(c.label)} ✕</button>` : '';
   }).join('');
 }
 
@@ -3145,7 +3153,7 @@ function submitForm() {
       age: g('f-age') || '', cats,
       tel: g('f-tel') || '', mail: g('f-mail') || '',
       agence, pays, ville,
-      insta: g('f-insta'), site: g('f-site'), sports,
+      insta: igHandle(g('f-insta')), site: g('f-site'), sports,
       photo: normalizePhotoUrl(g('f-photo')), notes: g('f-notes'),
       mensurations: Object.fromEntries(MENSURATIONS.map(([k]) => [k, g('f-m-' + k)]).filter(([, val]) => val)),
     };
@@ -3206,7 +3214,7 @@ function submitForm() {
     if (!Array.isArray(ch.items)) ch.items = [];
     const obj = {
       nom: g('f-nom'), type: g('f-type'), pays: g('fi-pays'), ville: g('f-ville'),
-      contact: g('f-contact'), tel: g('f-tel'), mail: g('f-mail'), insta: g('f-insta').replace(/^@/, ''),
+      contact: g('f-contact'), tel: g('f-tel'), mail: g('f-mail'), insta: igHandle(g('f-insta')),
       site: g('f-site'), photo: normalizePhotoUrl(g('f-photo')), notes: g('f-notes')
     };
     if (isEdit) ch.items = ch.items.map(it => it.id === pid ? { ...obj, id: it.id } : it);
