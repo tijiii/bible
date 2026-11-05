@@ -93,6 +93,69 @@ function lancerSimulateur(map) {
   el.appendChild(choix);
 }
 
+// Position de la caméra de la carte au moment où on décolle, pour y partir en douceur
+function simuCameraActuelle(map) {
+  try {
+    const tr = map.transform;
+    const ll = tr.getCameraLngLat();
+    let alt = tr.getCameraAltitude ? tr.getCameraAltitude() : NaN;
+    if (!isFinite(alt)) {
+      // hauteur au-dessus du point visé = distance caméra-centre × cos(inclinaison)
+      const c = map.getCenter();
+      const pxParMetre = 512 * Math.pow(2, map.getZoom()) / (40075016.686 * Math.cos(c.lat * simuDeg));
+      const e = isFinite(tr.elevation) ? tr.elevation : (map.queryTerrainElevation(c) || 0);
+      alt = e + Math.cos(map.getPitch() * simuDeg) * tr.cameraToCenterDistance / pxParMetre;
+    }
+    if (ll && isFinite(ll.lng) && isFinite(alt)) return { lng: ll.lng, lat: ll.lat, alt, cap: map.getBearing(), pitch: map.getPitch() };
+  } catch {}
+  return null;
+}
+const SIMU_INTRO_MS = 2200;
+const simuDouceur = x => x < 0.5 ? 4 * x * x * x : 1 - Math.pow(-2 * x + 2, 3) / 2;
+const simuMouvementReduit = () => { try { return matchMedia('(prefers-reduced-motion: reduce)').matches; } catch { return false; } };
+
+// Caméra du cockpit pour une attitude donnée. Au-delà de ~85° MapLibre ne charge
+// plus les tuiles devant la caméra : on garde la caméra sous cette limite et on
+// décale l'image (padding haut) pour que le centre de l'écran reste dans l'axe du nez.
+function simuVue(lng, lat, alt, cap, tangage, roulis) {
+  const map = simu.map;
+  const voulu = simuClamp(90 + tangage, 0, 150);
+  const vue = Math.min(voulu, SIMU_PITCH_MAX);
+  const H = map.getCanvas().clientHeight || 600;
+  const f = (H / 2) / Math.tan((map.getVerticalFieldOfView ? map.getVerticalFieldOfView() : 55) * simuDeg / 2);
+  const decalage = Math.min(2 * f * Math.tan((voulu - vue) * simuDeg), H * 0.9);
+  const opts = map.calculateCameraOptionsFromCameraLngLatAltRotation([lng, lat], alt, cap, vue, roulis * SIMU_SENS_ROULIS);
+  opts.padding = { top: decalage, bottom: 0, left: 0, right: 0 };
+  return opts;
+}
+
+// Décollage : on attend que le relief soit là (sinon l'avion naît dans la
+// montagne), puis la caméra glisse de la vue de la carte jusqu'au cockpit.
+function simuIntro(t) {
+  const s = simu, I = s.intro;
+  if (I.t0 == null) I.t0 = t;
+  if (I.debut == null) {
+    let e = null, charge = false;
+    try { e = s.map.queryTerrainElevation([s.depart.lng, s.depart.lat]); charge = s.map.isSourceLoaded('relief'); } catch {}
+    const pret = typeof e === 'number' && isFinite(e) && charge;
+    if (!pret && t - I.t0 < 8000) return true;   // on patiente (8 s au plus)
+    s.dernierSol = typeof e === 'number' && isFinite(e) ? e : (s.dernierSol || 0);
+    s.alt = s.dernierSol + s.av.altDepart;
+    I.debut = t;
+    if (!I.de || simuMouvementReduit()) { s.intro = null; return false; }
+  }
+  const x = Math.min(1, (t - I.debut) / SIMU_INTRO_MS), k = simuDouceur(x);
+  const de = I.de, lerp = (a, b) => a + (b - a) * k;
+  const dCap = ((s.cap - de.cap + 540) % 360) - 180;
+  const cible = simuVue(s.lng, s.lat, s.alt, s.cap, 0, 0);
+  const opts = simuVue(lerp(de.lng, s.lng), lerp(de.lat, s.lat), lerp(de.alt, s.alt), de.cap + dCap * k, lerp(de.pitch - 90, 0), 0);
+  opts.padding = { top: cible.padding.top * k, bottom: 0, left: 0, right: 0 };
+  try { s.map.jumpTo(opts); } catch (e) { console.error(e); }
+  s.hud.style.setProperty('--intro', k.toFixed(3));
+  if (x >= 1) { s.intro = null; s.hud.style.removeProperty('--intro'); return false; }
+  return true;
+}
+
 function demarrerVol(map, typeAvion) {
   const av = SIMU_AVIONS[typeAvion] || SIMU_AVIONS.leger;
   const el = map.getContainer();
@@ -108,6 +171,7 @@ function demarrerVol(map, typeAvion) {
       relief: typeof lieuxRelief !== 'undefined' ? lieuxRelief : true,
     },
     pret: false,
+    intro: { de: simuCameraActuelle(map), t0: null, debut: null },
   };
   simuReinitialiser();
 
@@ -189,6 +253,7 @@ function simuReinitialiser() {
   s.manche = 0; s.ailerons = 0;
   s.alt = null;                    // posée à la première image, quand le relief est là
   s.crash = false;
+  s.crashT = null;
   s.vz = 0;
 }
 
@@ -263,6 +328,7 @@ function simuImage(t) {
   const dt = Math.min(0.1, Math.max(0, (t - s.t) / 1000));
   s.t = t;
   if (!s.pret) { s.anim = requestAnimationFrame(simuImage); return; }
+  if (s.intro && simuIntro(t)) { s.anim = requestAnimationFrame(simuImage); return; }
 
   const sol = simuSol(s.lng, s.lat);
   if (s.alt == null) s.alt = sol + av.altDepart;
@@ -326,6 +392,7 @@ function simuImage(t) {
     if (contact !== null) {
       s.alt = contact + SIMU_MARGE_SOL;
       s.crash = true;
+      s.crashT = t;
       const box = s.hud.querySelector('.simu-crash');
       box.hidden = false;
       box.querySelector('span').textContent = `à ${Math.round(s.v * 3.6)} km/h`;
@@ -334,19 +401,13 @@ function simuImage(t) {
 
   // Caméra du cockpit : dans l'axe de l'avion (pente + incidence)
   const tangage = (s.pente + s.alpha) / simuDeg;
-  try {
-    // Au-delà de ~85° MapLibre ne charge plus les tuiles devant la caméra :
-    // on garde la caméra sous cette limite et on décale l'image (padding haut)
-    // pour que le centre de l'écran reste exactement dans l'axe du nez.
-    const voulu = simuClamp(90 + tangage, 0, 150);
-    const vue = Math.min(voulu, SIMU_PITCH_MAX);
-    const H = s.map.getCanvas().clientHeight || 600;
-    const f = (H / 2) / Math.tan((s.map.getVerticalFieldOfView ? s.map.getVerticalFieldOfView() : 55) * simuDeg / 2);
-    const decalage = Math.min(2 * f * Math.tan((voulu - vue) * simuDeg), H * 0.9);
-    const opts = s.map.calculateCameraOptionsFromCameraLngLatAltRotation([s.lng, s.lat], s.alt, s.cap, vue, s.roulis * SIMU_SENS_ROULIS);
-    opts.padding = { top: decalage, bottom: 0, left: 0, right: 0 };
-    s.map.jumpTo(opts);
-  } catch (e) { console.error(e); }
+  // Au crash : secousse brève qui s'amortit (0,5 s), sauf si le mouvement est réduit
+  let sc = 0, st = 0, sr = 0;
+  if (s.crashT != null && t - s.crashT < 500 && !simuMouvementReduit()) {
+    const a = 1 - (t - s.crashT) / 500;
+    sc = Math.sin(t * 0.09) * 1.4 * a; st = Math.cos(t * 0.11) * 1.2 * a; sr = Math.sin(t * 0.13) * 2.5 * a;
+  }
+  try { s.map.jumpTo(simuVue(s.lng, s.lat, s.alt, s.cap + sc, tangage + st, s.roulis + sr)); } catch (e) { console.error(e); }
   simuInstruments(tangage, simuSol(s.lng, s.lat));
   s.anim = requestAnimationFrame(simuImage);
 }

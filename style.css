@@ -1195,6 +1195,17 @@ body.doc-vue-ouvert > *:not(#doc-vue) { display:none !important; }
 .simu-crash span { color:#c9d4e8; font-size:13px; }
 .simu-crash button { width:100%; border:1px solid #2f4570; background:#12203a; color:#fff; font-family:inherit; font-size:13px; letter-spacing:.08em; padding:9px; cursor:pointer; }
 .simu-crash .simu-repartir { border-color:#5dff7a; color:#5dff7a; }
+/* Crash : le voile rouge arrive après la secousse, la carte se pose */
+.simu-crash { transition: opacity 260ms ease-out 180ms; }
+.simu-crash > div { transition: transform 300ms var(--ease-out) 180ms; }
+@starting-style {
+  .simu-crash { opacity: 0; }
+  .simu-crash > div { transform: scale(.94); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .simu-crash, .simu-crash > div { transition: opacity 160ms ease-out; }
+  @starting-style { .simu-crash > div { transform: none; } }
+}
 
 /* ── Finitions tactiles et mouvement ─────────────────────────────────────────
    Règles tirées des skills d'Emil Kowalski (emil-design-eng, mobile-native).
@@ -1231,3 +1242,30 @@ button, [role="button"] { -webkit-user-select: none; user-select: none; }
 @media (pointer: coarse) {
   :is(input:not([type="checkbox"]):not([type="radio"]):not([type="range"]), select, textarea):not(.home-search input, .crumb-input) { font-size: 16px; }
 }
+
+/* Cartes de lieux qui arrivent (recherche, « Rechercher ici », filtre) : en léger
+   décalé, 35 ms d'écart, pour voir ce qui a changé sans attendre (12 au plus). */
+@keyframes carteEntre { from { opacity: 0; transform: translateY(8px); } }
+.card.entre { animation: carteEntre 320ms var(--ease-out) both; animation-delay: calc(var(--i, 0) * 35ms); }
+
+/* Pins nouveaux : petit rebond depuis le point (le marqueur lui-même est placé
+   par la carte, on anime donc le rond à l'intérieur) */
+@keyframes pinEntre { from { opacity: 0; transform: scale(.3); } 70% { transform: scale(1.12); } }
+.lieu-pin.nouveau span { animation: pinEntre 300ms var(--ease-out) both; }
+
+@media (prefers-reduced-motion: reduce) {
+  @keyframes carteEntre { from { opacity: 0; } }
+  @keyframes pinEntre { from { opacity: 0; } }
+  .card.entre { animation-delay: 0ms; }
+}
+
+/* Fiche d'un lieu ouverte depuis sa vignette : l'animation est faite en JS */
+.modal-bg.depuis-carte, .modal-bg.depuis-carte > .modal { transition: none; }
+
+/* ── Cas limites (test de casse) ── */
+/* Un nom ou une ville sans espace (« Aaaa… ») ne sort plus de sa carte */
+.card-name, .card-ville, .detail-val, .crumb-nom, .lieu-titre { overflow-wrap: anywhere; }
+/* Le groupe de boutons en haut à droite chevauchait le logo sur les écrans
+   moyens (portable 13") : le compteur part d'abord, puis le groupe passe dessous */
+@media (max-width: 1400px) { .hdr-right #total-count { display: none; } }
+@media (max-width: 1100px) { .hdr-right { position: static; justify-content: center; margin-top: 12px; } }
