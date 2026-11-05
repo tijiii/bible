@@ -1153,3 +1153,6 @@ body.doc-vue-ouvert > *:not(#doc-vue) { display:none !important; }
 .lieux-zone-bar { display:flex; align-items:center; justify-content:space-between; gap:10px; flex-wrap:wrap; padding:8px 12px; margin-bottom:10px; background:var(--bg3); border:1px solid var(--border); font-family:var(--serif); font-size:13px; }
 .lieux-zone-bar button { border:1px solid var(--border); background:#fff; font-family:var(--serif); font-size:12px; letter-spacing:.06em; padding:4px 10px; cursor:pointer; }
 .lieux-zone-bar button:hover { background:#111; color:#fff; }
+
+/* Renommer un chapitre dans le fil d'Ariane */
+.crumb-input { font:inherit; letter-spacing:inherit; text-transform:inherit; color:inherit; border:none; border-bottom:1px solid var(--text); background:transparent; padding:0 2px; min-width:12ch; outline:none; }

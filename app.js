@@ -128,6 +128,9 @@ const TALENT_FAMILIES = [
 function isFamilyCat(c) { return TALENT_FAMILIES.some(f => c.id.startsWith(f.key + '-')); }
 function chapitresList() { if (!Array.isArray(db.chapitres)) db.chapitres = []; return db.chapitres; }
 function chapById(id) { return chapitresList().find(c => String(c.id) === String(id)); }
+// Noms choisis par l'équipe pour les chapitres de base (Modèles, Clubs, Lieux…),
+// gardés dans la base partagée : { 'lieux': 'Spots', … }. Vide = nom d'origine.
+function chapNom(key, defaut) { return (db.chapNoms && db.chapNoms[key]) || defaut; }
 function countInCat(catId) { return db.talents.filter(t => t.cats && t.cats.includes(catId)).length; }
 
 function chaptersList() {
@@ -136,15 +139,15 @@ function chaptersList() {
     const cats = db.categories.filter(c => c.id.startsWith(fam.key + '-'));
     if (!cats.length) return;
     const count = db.talents.filter(t => t.cats && t.cats.some(c => c.startsWith(fam.key + '-'))).length;
-    list.push({ key: fam.key + '-group', label: fam.label, color: fam.color, count, add: () => openForm('talent', undefined, { cats: [] }) });
+    list.push({ key: fam.key + '-group', label: chapNom(fam.key + '-group', fam.label), renommable: true, color: fam.color, count, add: () => openForm('talent', undefined, { cats: [] }) });
   });
   db.categories.filter(c => !isFamilyCat(c)).forEach(cat => {
     list.push({ key: cat.id, label: cat.label, color: cat.color, count: countInCat(cat.id), custom: 'profils',
       add: () => openForm('talent', undefined, { cats: [cat.id] }) });
   });
-  list.push({ key:'clubs', label:'Clubs', color:'#5e7d4f', count: db.clubs.length, add: () => openForm('club') });
-  list.push({ key:'lieux', label:'Lieux', color:'#8a6fa8', count: lieuxList().length, add: () => openForm('lieu') });
-  list.push({ key:'marques', label:'Marques · Agences', color:'#2b2b2b', count: db.marques.length + db.agences.length,
+  list.push({ key:'clubs', label: chapNom('clubs', 'Clubs'), renommable: true, color:'#5e7d4f', count: db.clubs.length, add: () => openForm('club') });
+  list.push({ key:'lieux', label: chapNom('lieux', 'Lieux'), renommable: true, color:'#8a6fa8', count: lieuxList().length, add: () => openForm('lieu') });
+  list.push({ key:'marques', label: chapNom('marques', 'Marques · Agences'), renommable: true, color:'#2b2b2b', count: db.marques.length + db.agences.length,
     add: () => openChooser('AJOUTER DANS MARQUES · AGENCES', [
       { label:'Marque', color:'#2b2b2b', run: () => openForm('marque') },
       { label:'Agence', color:'#2b2b2b', run: () => openForm('agence') },
@@ -173,9 +176,41 @@ function buildTabs() {
   nav.style.display = '';
   nav.innerHTML = `<button class="crumb-back" onclick="goHome()">← CHAPITRES</button>
     <span class="crumb-sep">/</span>
-    <span class="crumb-title"><span class="ch-dot" style="background:${esc(ch.color)}"></span>${esc(ch.label.toUpperCase())}</span>
+    <span class="crumb-title" id="crumb-title"><span class="ch-dot" style="background:${esc(ch.color)}"></span><span class="crumb-nom">${esc(ch.label.toUpperCase())}</span></span>
     ${ch.count !== undefined ? `<span class="crumb-count">${ch.count}</span>` : ''}
-    ${ch.custom ? `<button class="crumb-edit" onclick="openForm('chapitre','${esc(String(ch.key).replace(/^ch:/,''))}',{kind:'${ch.custom}'})">MODIFIER LE CHAPITRE</button>` : ''}`;
+    ${ch.custom ? `<button class="crumb-edit" onclick="openForm('chapitre','${esc(String(ch.key).replace(/^ch:/,''))}',{kind:'${ch.custom}'})">MODIFIER LE CHAPITRE</button>` : ''}
+    ${ch.renommable ? `<button class="crumb-edit" onclick="renommerChapitre('${esc(ch.key)}')">RENOMMER</button>` : ''}`;
+}
+
+// Renommer un chapitre de base directement dans le fil d'Ariane :
+// Entrée enregistre, Échap annule, un nom vide remet le nom d'origine
+function renommerChapitre(key) {
+  const ch = chapterByKey(key);
+  const nomEl = document.querySelector('#crumb-title .crumb-nom');
+  if (!ch || !nomEl) return;
+  const input = document.createElement('input');
+  input.className = 'crumb-input';
+  input.value = ch.label;
+  input.setAttribute('aria-label', 'Nom du chapitre');
+  nomEl.replaceWith(input);
+  input.focus(); input.select();
+  let fini = false;
+  const finir = garder => {
+    if (fini) return; fini = true;
+    const nom = input.value.trim();
+    if (garder && nom !== ch.label) {
+      if (!db.chapNoms || typeof db.chapNoms !== 'object') db.chapNoms = {};
+      if (nom) db.chapNoms[key] = nom; else delete db.chapNoms[key];
+      saveDb();
+    }
+    buildTabs();
+    if (curCatId === 'home') render();
+  };
+  input.addEventListener('keydown', e => {
+    if (e.key === 'Enter') { e.preventDefault(); finir(true); }
+    if (e.key === 'Escape') { e.preventDefault(); finir(false); }
+  });
+  input.addEventListener('blur', () => finir(true));
 }
 
 function switchCat(catId) {
