@@ -1144,4 +1144,4 @@ body.doc-vue-ouvert > *:not(#doc-vue) { display:none !important; }
 .commandes-3d button { font-size:16px; line-height:1; color:#111; touch-action:none; user-select:none; -webkit-user-select:none; }
 
 /* Lieux : la ville juste sous le nom, bien lisible (plus noyée dans les étiquettes) */
-.card-ville { font-family:var(--serif); font-size:14px; font-weight:600; letter-spacing:.02em; color:var(--text); margin-top:3px; line-height:1.2; }
+.card-ville { font-family:var(--serif); font-size:14px; font-weight:400; letter-spacing:.02em; color:var(--text); margin-top:3px; line-height:1.2; }
