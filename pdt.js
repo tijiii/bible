@@ -533,7 +533,7 @@ function renderPdtDoc(main) {
       <button type="button" class="${d.paysage ? 'on' : ''}" title="Page en largeur : plus de place pour les colonnes et les images" onclick="pdtPaysage(true)">▭ PAYSAGE</button>
     </div>
     <div class="pdt-ed-zone">
-      <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Karla:ital,wght@0,400;0,700;1,400;1,700&display=swap">
+      <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=EB+Garamond:ital,wght@0,400;0,500;0,600;0,700;1,400;1,500&display=swap">
       <style>${pdtDocCss(true, true, d.paysage)}</style>
       ${pdtDocCorps(d, true)}
     </div>
@@ -1585,67 +1585,71 @@ function pdtDocCss(ecran, edit, paysage) {
     size: A4 ${paysage ? 'landscape' : 'portrait'}; margin: 9mm 8mm 11mm;
     /* Des cases de marge remplies : le navigateur n'imprime plus l'adresse du site, la date ni le titre */
     @top-right { content: " "; }
-    @bottom-right { content: "PAGE " counter(page) " / " counter(pages); font-family: 'Karla', Arial, sans-serif; font-size: 8px; font-weight: 700; letter-spacing: .02em; color: #111; vertical-align: middle; }
+    @bottom-right { content: "PAGE " counter(page) " / " counter(pages); font-family: 'EB Garamond', Garamond, Georgia, serif; font-size: 8px; font-weight: 500; letter-spacing: .2em; color: #8a8a86; vertical-align: middle; }
   }
   body { margin: 0; background: ${ecran ? '#fff' : '#e9e9e7'}; -webkit-print-color-adjust: exact; print-color-adjust: exact; }`}
   .pdt-doc, .pdt-doc * { box-sizing: border-box; }
-  .pdt-doc { font-family: 'Karla', Arial, sans-serif; color: #111; width: 210mm; min-height: 297mm; margin: ${ecran ? '0' : '10mm'} auto; background: #fff; padding: 9mm 8mm; font-size: 8px; line-height: 1.25; text-align: left; letter-spacing: normal; }
+  /* Même DA que la travel sheet : EB Garamond, petites capitales espacées, filets fins, pas de cases grises */
+  .pdt-doc { --ink: #141414; --gris: #8a8a86; --filet: #dcdcd8; --filet-v: #ececea; --rouge: #9b1c1c; font-family: 'EB Garamond', Garamond, Georgia, serif; font-variant-numeric: lining-nums; color: var(--ink); width: 210mm; min-height: 297mm; margin: ${ecran ? '0' : '10mm'} auto; background: #fff; padding: 9mm 8mm; font-size: 9px; line-height: 1.25; text-align: left; letter-spacing: normal; }
   .pdt-doc.paysage { width: 297mm; min-height: 210mm; }
   .pdt-doc.paysage tr.plan.avec-img td, .pdt-doc.paysage td.ref .pdt-imgs { height: 32mm; }
-  .pdt-doc .tete { display: grid; grid-template-columns: 1fr 2fr 1fr; align-items: center; margin-bottom: 5mm; }
-  .pdt-doc .tete .widen { height: 15px; display: block; }
+  .pdt-doc .tete { display: grid; grid-template-columns: 1fr 2fr 1fr; align-items: center; margin-bottom: 5mm; padding-bottom: 4mm; border-bottom: 1.5pt solid var(--ink); }
+  .pdt-doc .tete .widen { height: 14px; display: block; }
   .pdt-doc .tete .mil { text-align: center; }
-  .pdt-doc .tete .mil h1 { font-family: inherit; font-size: 15px; font-weight: 700; margin: 0 0 9px; letter-spacing: .02em; }
-  .pdt-doc .tete .mil .t { font-size: 10px; font-weight: 700; margin-bottom: 14px; }
-  .pdt-doc .tete .mil .d { font-size: 8px; font-weight: 700; }
-  .pdt-doc .tete .cl { justify-self: end; text-align: right; font-weight: 700; font-size: 17px; letter-spacing: .03em; }
+  .pdt-doc .tete .mil h1 { font-family: inherit; font-size: 8.5px; font-weight: 500; margin: 0 0 4px; letter-spacing: .32em; padding-left: .32em; color: var(--gris); }
+  .pdt-doc .tete .mil .t { font-size: 17px; font-weight: 500; letter-spacing: .04em; margin-bottom: 5px; }
+  .pdt-doc .tete .mil .d { font-size: 8.5px; font-weight: 500; letter-spacing: .14em; color: #555; }
+  .pdt-doc .tete .cl { justify-self: end; text-align: right; font-weight: 500; font-size: 18px; letter-spacing: .06em; }
   .pdt-doc .tete .cl img { max-width: 36mm; max-height: 14mm; display: block; }
   .pdt-doc table { width: 100%; border-collapse: collapse; table-layout: fixed; }
-  .pdt-doc table.plan-t { margin-top: -1px; }
-  .pdt-doc td, .pdt-doc th { border: .6pt solid #111; padding: 2px 3px; vertical-align: middle; text-align: center; }
-  .pdt-doc th { font-weight: 700; }
+  .pdt-doc td, .pdt-doc th { border: 0; border-bottom: .5pt solid var(--filet); padding: 2px 3px; vertical-align: middle; text-align: center; }
+  .pdt-doc td + td, .pdt-doc th + th { border-left: .5pt solid var(--filet-v); }
+  .pdt-doc th { font-size: 7px; font-weight: 500; letter-spacing: .16em; color: var(--gris); border-bottom: 1pt solid var(--ink); }
   .pdt-doc .haut td, .pdt-doc .haut th { height: 15px; }
   .pdt-doc .haut .lab { text-align: left; font-weight: 400; }
   .pdt-doc .haut-2 { display: flex; align-items: flex-start; }
   .pdt-doc .haut-2 table.eq { flex: 0 0 64%; width: auto; }
-  .pdt-doc .haut-2 table.hor { flex: 1 1 0; width: auto; }
+  .pdt-doc .haut-2 table.hor { flex: 1 1 0; width: auto; border-top: 1pt solid var(--ink); }
+  .pdt-doc .haut.hor td + td { border-left: 0; }
   .pdt-doc .pdt-redim-split, .pdt-doc .pdt-split-vide { flex: 0 0 6mm; align-self: stretch; }
   .pdt-doc-ed .pdt-redim-split { cursor: col-resize; }
   .pdt-doc-ed .pdt-redim-split:hover { background: linear-gradient(90deg, transparent 45%, #2f559766 45%, #2f559766 55%, transparent 55%); }
   .pdt-doc-ed .haut td.lab { position: relative; }
-  .pdt-doc .haut.hor .lab { font-weight: 700; }
-  .pdt-doc table.prepa-t { margin-top: 4mm; }
-  .pdt-doc .hh { font-weight: 700; white-space: nowrap; }
-  .pdt-doc .b { font-weight: 700; }
-  .pdt-doc .tbc { color: #c00000; font-weight: 700; }
-  .pdt-doc tr.noir td { background: #111; height: 9px; padding: 0; }
-  .pdt-doc tr.saut td { border-left: none; border-right: none; height: 14px; }
-  .pdt-doc tr.prepa td { background: #d9d9d9; font-weight: 700; height: 15px; }
-  .pdt-doc tr.th th { height: 30px; font-size: 7.5px; line-height: 1.15; }
-  .pdt-doc tr.barre td { background: #d9d9d9; font-weight: 700; height: 14px; }
-  .pdt-doc tr.install td { background: #f2f2f2; height: 14px; }
-  .pdt-doc tr.install td.hh { background: #d9d9d9; }
-  .pdt-doc tr.install td.it { font-style: italic; font-size: 7px; }
+  .pdt-doc .haut.hor .lab { font-size: 7.5px; font-weight: 500; letter-spacing: .14em; color: var(--gris); }
+  .pdt-doc table.prepa-t { margin-top: 5mm; }
+  .pdt-doc .hh { font-weight: 600; white-space: nowrap; }
+  .pdt-doc .b { font-weight: 600; letter-spacing: .04em; }
+  .pdt-doc .tbc { color: var(--rouge); font-weight: 600; }
+  .pdt-doc tr.noir td { background: none; height: 0; padding: 0; border: 0; border-top: 1.5pt solid var(--ink); }
+  .pdt-doc tr.saut td { border-left: none; border-right: none; border-bottom: 0; height: 14px; }
+  .pdt-doc tr.prepa td { font-weight: 600; letter-spacing: .1em; height: 17px; border-bottom: 0; }
+  .pdt-doc tr.prepa td + td { border-left: 0; }
+  .pdt-doc tr.th th { height: 30px; font-size: 6.5px; line-height: 1.25; border-top: 1pt solid var(--ink); }
+  .pdt-doc tr.barre td { font-weight: 600; letter-spacing: .16em; font-size: 8.5px; height: 18px; padding-top: 4px; border-top: 1pt solid var(--ink); border-bottom: .5pt solid var(--ink); }
+  .pdt-doc tr.install td { height: 14px; color: #555; }
+  .pdt-doc tr.install td.hh { color: var(--ink); }
+  .pdt-doc tr.install td.it { font-style: italic; font-size: 8px; letter-spacing: .04em; }
   .pdt-doc tr.plan td { height: 15mm; }
   .pdt-doc tr.plan.avec-img td { height: 25mm; }
   .pdt-doc tr.plan, .pdt-doc tr.install, .pdt-doc tr.barre { break-inside: avoid; page-break-inside: avoid; }
   .pdt-doc tr[data-h] > td { height: var(--h) !important; }
   .pdt-doc tr[data-h] td.ref .pdt-imgs, .pdt-doc-ed tr[data-h] .pdt-ref-ed { height: var(--h) !important; }
-  .pdt-doc td.shot { font-weight: 700; font-size: 10px; }
-  .pdt-doc tr.total td { background: #d9d9d9; font-weight: 700; height: 15px; border-top: 1.2pt solid #111; }
+  .pdt-doc td.shot { font-weight: 600; font-size: 12px; }
+  .pdt-doc tr.total td { font-weight: 600; letter-spacing: .14em; height: 17px; border-top: 1pt solid var(--ink); border-bottom: 0; }
+  .pdt-doc tr.total td + td { border-left: 0; }
   .pdt-doc tr.total td.lab-total { text-align: right; padding-right: 6px; }
   .pdt-doc td.ref { padding: 0; }
   .pdt-doc td.ref .pdt-imgs { display: flex; flex-wrap: wrap; justify-content: center; align-content: flex-start; width: 100%; height: 25mm; }
   .pdt-doc .pdt-im { flex: 0 0 calc(100% / var(--c)); height: calc(100% / var(--r)); overflow: hidden; position: relative; }
   .pdt-doc .pdt-imgs.multi .pdt-im { padding: .3mm; }
   .pdt-doc .pdt-im img { width: 100%; height: 100%; object-fit: cover; display: block; }
-  .pdt-doc td.txt { font-size: 7px; white-space: pre-line; }
-  .pdt-doc td.opt, .pdt-doc td.lum { font-size: 8px; }
-  .pdt-doc td small { display: block; font-size: 5.5px; margin-top: 3px; }
-  .pdt-doc td.note { font-size: 7px; white-space: pre-line; }
-  .pdt-doc td.note.rouge { color: #e00000; }
+  .pdt-doc td.txt { font-size: 8.5px; white-space: pre-line; }
+  .pdt-doc td.opt, .pdt-doc td.lum { font-size: 8.5px; letter-spacing: .03em; }
+  .pdt-doc td small { display: block; font-size: 6.5px; letter-spacing: .08em; margin-top: 3px; }
+  .pdt-doc td.note { font-size: 8.5px; font-style: italic; white-space: pre-line; }
+  .pdt-doc td.note.rouge { color: var(--rouge); }
   .pdt-doc thead { display: table-header-group; }
-  .pdt-doc .pied { margin: 6px 0 0; font-size: 7px; font-style: italic; }
+  .pdt-doc .pied { margin: 6px 0 0; font-size: 8px; font-style: italic; color: #555; }
   ${edit ? `
   .pdt-doc-ed .ed { outline: none; min-width: 1.2em; display: inline-block; border-radius: 1px; cursor: text; }
   .pdt-doc-ed td > .ed, .pdt-doc-ed .t > .ed, .pdt-doc-ed .pied > .ed { display: block; min-height: 1.25em; }
@@ -1713,7 +1717,7 @@ function pdtDocHtml(d, ecran) {
   return `<!DOCTYPE html><html lang="fr"><head><meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>PDT ${esc([d.titre || d.client, 'J' + (d.jour || 1)].filter(Boolean).join(' ').replace(/[“”"]/g, ''))}</title>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Karla:ital,wght@0,400;0,700;1,400;1,700&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=EB+Garamond:ital,wght@0,400;0,500;0,600;0,700;1,400;1,500&display=swap">
 <style>${pdtDocCss(ecran, false, d.paysage)}</style></head><body>
 ${ecran ? '' : '<div class="barre barre-impr" style="position:sticky;top:0;z-index:5;display:flex;gap:12px;align-items:center;justify-content:center;padding:12px;background:#111;color:#fff;font:14px Arial">Vérifie le plan de travail puis <button onclick="window.print()">IMPRIMER / ENREGISTRER EN PDF</button></div>'}
 ${pdtDocCorps(d, false)}
