@@ -700,11 +700,12 @@ function tsJournees(trajets) {
   return jours;
 }
 
-// Petite carte : tuiles CARTO « Positron » (fond clair et sobre, données
-// OpenStreetMap) assemblées autour du cadre choisi, avec un repère sur le lieu.
-// Tuiles @2x pour rester nettes à l'impression. Le cadre (zoom et centre) se
-// règle dans l'éditeur.
-const TS_CARTE_W = 240, TS_CARTE_H = 170, TS_ZOOM_DEFAUT = 15;
+// Petite carte : fond Esri « Light Gray Canvas » (gris clair et sobre, sans clé
+// d'API), avec ses noms de rues et de lieux par-dessus, et un repère sur le lieu.
+// Ce fond s'arrête au zoom 16 : au-delà, ses tuiles sont agrandies. Si une
+// tuile ne charge pas, on prend celle d'OpenStreetMap. Le cadre (zoom et
+// centre) se règle dans l'éditeur.
+const TS_CARTE_W = 240, TS_CARTE_H = 170, TS_ZOOM_DEFAUT = 15, TS_ZOOM_FOND_MAX = 16;
 const tsMonde = z => 256 * Math.pow(2, z);
 function tsVersPixels(c, z) {
   const rad = c.lat * Math.PI / 180;
@@ -720,13 +721,19 @@ function tsCarteHtml(c, W, H, z = TS_ZOOM_DEFAUT, centre = c) {
   const n = Math.pow(2, z);
   const m = tsVersPixels(centre, z), pin = tsVersPixels(c, z);
   const px = m.x - W / 2, py = m.y - H / 2;
+  const tz = Math.min(z, TS_ZOOM_FOND_MAX), k = Math.pow(2, z - tz), T = 256 * k, nt = Math.pow(2, tz);
+  const ESRI = 'https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/';
   const tiles = [];
-  for (let tx = Math.floor(px / 256); tx <= Math.floor((px + W) / 256); tx++)
-    for (let ty = Math.max(0, Math.floor(py / 256)); ty <= Math.min(n - 1, Math.floor((py + H) / 256)); ty++)
-      tiles.push(`<img src="https://${'abcd'[(tx + ty) & 3]}.basemaps.cartocdn.com/light_all/${z}/${((tx % n) + n) % n}/${ty}@2x.png" style="position:absolute;width:256px;height:256px;left:${Math.round(tx * 256 - px)}px;top:${Math.round(ty * 256 - py)}px" alt="" draggable="false">`);
+  for (let tx = Math.floor(px / T); tx <= Math.floor((px + W) / T); tx++)
+    for (let ty = Math.max(0, Math.floor(py / T)); ty <= Math.min(nt - 1, Math.floor((py + H) / T)); ty++) {
+      const x = ((tx % nt) + nt) % nt;
+      const pos = `position:absolute;width:${T}px;height:${T}px;left:${Math.round(tx * T - px)}px;top:${Math.round(ty * T - py)}px`;
+      tiles.push(`<img src="${ESRI}World_Light_Gray_Base/MapServer/tile/${tz}/${ty}/${x}" onerror="this.onerror=null;this.src='https://tile.openstreetmap.org/${tz}/${x}/${ty}.png'" style="${pos}" alt="" draggable="false">`,
+        `<img src="${ESRI}World_Light_Gray_Reference/MapServer/tile/${tz}/${ty}/${x}" onerror="this.remove()" style="${pos}" alt="" draggable="false">`);
+    }
   return `<div class="ts-carte" style="position:relative;overflow:hidden;width:${W}px;height:${H}px;background:#f2f2f0">${tiles.join('')}
     <span class="ts-pin" style="position:absolute;left:${Math.round(pin.x - px)}px;top:${Math.round(pin.y - py)}px;width:26px;height:34px;margin:-33px 0 0 -13px;filter:drop-shadow(0 2px 2px rgba(0,0,0,.35))"><svg width="26" height="34" viewBox="0 0 26 34" style="display:block"><path d="M13 1C6.4 1 1 6.3 1 12.9 1 21.8 13 33 13 33s12-11.2 12-20.1C25 6.3 19.6 1 13 1z" fill="#9b1c1c" stroke="#fff" stroke-width="2"/><circle cx="13" cy="12.8" r="4.2" fill="#fff"/></svg></span>
-    <span style="position:absolute;right:0;bottom:0;font:8px/1.4 inherit;color:#777;background:rgba(255,255,255,.75);padding:0 4px">© OpenStreetMap © CARTO</span></div>`;
+    <span style="position:absolute;right:0;bottom:0;font-size:8px;line-height:1.4;color:#777;background:rgba(255,255,255,.75);padding:0 4px">© Esri © OpenStreetMap</span></div>`;
 }
 
 const tsCarteSejour = (x, c) => tsCarteHtml(c, TS_CARTE_W, TS_CARTE_H, tsZoom(x), parseGps(x.centre) || c);
@@ -821,67 +828,67 @@ function tsDocHtml(s, ecran) {
   return `<!DOCTYPE html><html lang="${s.langue === 'fr' ? 'fr' : 'en'}"><head><meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>TRAVEL SHEET ${esc([s.client, s.voyageur].filter(Boolean).join('_').toUpperCase())}</title>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Work+Sans:ital,wght@0,300;0,400;0,500;0,600;0,700;1,400&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=EB+Garamond:ital,wght@0,400;0,500;0,600;0,700;1,400;1,500&display=swap">
 <style>
   @page { size: A4 portrait; margin: 0; }
   * { box-sizing: border-box; margin: 0; padding: 0; }
   :root { --ink: #141414; --gris: #8a8a86; --filet: #e2e2de; --rouge: #9b1c1c; }
-  body { font-family: 'Work Sans', Arial, sans-serif; color: var(--ink); background: ${ecran ? '#fff' : '#e9e9e7'}; -webkit-print-color-adjust: exact; print-color-adjust: exact; font-size: 13px; }
+  body { font-family: 'EB Garamond', Garamond, Georgia, serif; font-variant-numeric: lining-nums; color: var(--ink); background: ${ecran ? '#fff' : '#e9e9e7'}; -webkit-print-color-adjust: exact; print-color-adjust: exact; font-size: 14px; }
   .barre { position: sticky; top: 0; z-index: 5; display: flex; gap: 12px; align-items: center; justify-content: center; padding: 12px; background: #111; color: #fff; font-size: 14px; }
   .barre button { font: inherit; padding: 6px 14px; border: 1px solid #fff; background: #fff; color: #111; cursor: pointer; }
   .page { width: 210mm; min-height: 297mm; margin: ${ecran ? '0' : '10mm'} auto; background: #fff; padding: 15mm 18mm 12mm; }
 
   /* En-tête : logos aux coins, voyageur au centre, un trait épais pour fermer */
   .entete { display: grid; grid-template-columns: 1fr 2fr 1fr; align-items: center; padding-bottom: 16px; border-bottom: 2px solid var(--ink); }
-  .entete .client { font-weight: 700; font-size: 22px; letter-spacing: .06em; line-height: 1; }
+  .entete .client { font-weight: 500; font-size: 25px; letter-spacing: .06em; line-height: 1; }
   .entete .client img { max-width: 34mm; max-height: 16mm; display: block; }
   .entete .milieu { text-align: center; line-height: 1.25; }
-  .entete .milieu .k { font-size: 10px; font-weight: 600; letter-spacing: .32em; color: var(--gris); padding-left: .32em; }
-  .entete .milieu .nom { display: block; font-size: 23px; font-weight: 700; letter-spacing: .03em; margin: 5px 0 4px; }
-  .entete .milieu .proj { font-size: 11px; letter-spacing: .14em; color: #555; }
+  .entete .milieu .k { font-size: 11px; font-weight: 500; letter-spacing: .32em; color: var(--gris); padding-left: .32em; }
+  .entete .milieu .nom { display: block; font-size: 28px; font-weight: 500; letter-spacing: .04em; margin: 5px 0 4px; }
+  .entete .milieu .proj { font-size: 12.5px; letter-spacing: .14em; color: #555; }
   .entete .widen { justify-self: end; height: 16px; }
-  .refs { display: flex; justify-content: center; align-items: baseline; gap: 10px; padding: 11px 0 0; font-size: 13px; }
-  .refs .k { font-size: 9.5px; font-weight: 600; letter-spacing: .2em; color: var(--gris); text-transform: uppercase; }
-  .refs b { font-weight: 700; letter-spacing: .06em; }
+  .refs { display: flex; justify-content: center; align-items: baseline; gap: 10px; padding: 11px 0 0; font-size: 15px; }
+  .refs .k { font-size: 10.5px; font-weight: 500; letter-spacing: .2em; color: var(--gris); text-transform: uppercase; }
+  .refs b { font-weight: 600; letter-spacing: .06em; }
 
   /* Titres de section : petites capitales espacées, filet fin de chaque côté */
   .sec { margin-top: 24px; break-inside: avoid; }
-  .sec-t { display: flex; align-items: center; gap: 12px; font-size: 10.5px; font-weight: 700; letter-spacing: .26em; margin-bottom: 4px; }
+  .sec-t { display: flex; align-items: center; gap: 12px; font-size: 12px; font-weight: 600; letter-spacing: .26em; margin-bottom: 4px; }
   .sec-t::before, .sec-t::after { content: ''; flex: 1; height: 1px; background: var(--ink); }
   .sec-t span { padding-left: .26em; }
 
   /* Trajets */
   .j { padding: 12px 0 14px; break-inside: avoid; }
   .j + .j { border-top: 1px solid var(--filet); }
-  .j-hdr { display: flex; align-items: baseline; gap: 10px; margin-bottom: 2px; font-size: 13px; }
-  .j-hdr b { font-weight: 700; letter-spacing: .04em; }
-  .j-hdr span { color: var(--gris); }
+  .j-hdr { display: flex; align-items: baseline; gap: 10px; margin-bottom: 2px; font-size: 15px; }
+  .j-hdr b { font-weight: 600; letter-spacing: .04em; }
+  .j-hdr span { color: var(--gris); font-style: italic; }
   .j-hdr b + span::before { content: '—'; margin-right: 10px; color: var(--filet); }
-  table { width: 100%; border-collapse: collapse; font-size: 13.5px; }
+  table { width: 100%; border-collapse: collapse; font-size: 15px; }
   td, th { padding: 2px 0; vertical-align: baseline; text-align: left; }
-  th { font-size: 10px; font-weight: 600; letter-spacing: .14em; text-transform: uppercase; color: var(--gris); width: 22%; }
-  td.lieu { font-weight: 500; letter-spacing: .02em; }
-  td small { display: block; font-size: 9.5px; letter-spacing: .1em; color: var(--gris); margin-top: 1px; }
+  th { font-size: 11px; font-weight: 500; letter-spacing: .14em; text-transform: uppercase; color: var(--gris); width: 22%; }
+  td.lieu { font-weight: 400; letter-spacing: .02em; }
+  td small { display: block; font-size: 10.5px; letter-spacing: .1em; color: var(--gris); margin-top: 1px; }
   .c { text-align: center; width: 18%; }
   .r { text-align: right; width: 20%; }
-  tr.tete td { padding-top: 10px; font-size: 9px; font-weight: 600; letter-spacing: .18em; text-transform: uppercase; color: var(--gris); }
+  tr.tete td { padding-top: 10px; font-size: 10px; font-weight: 500; letter-spacing: .18em; text-transform: uppercase; color: var(--gris); }
   tr.tete + tr td, tr.tete + tr th { padding-top: 0; }
   tr.arr td, tr.arr th { padding-bottom: 2px; }
-  .hl { color: var(--rouge); font-weight: 700; letter-spacing: .03em; }
+  .hl { color: var(--rouge); font-weight: 600; letter-spacing: .03em; }
   .c b { font-weight: 600; }
-  .note { margin: 10px auto 0; max-width: 82%; text-align: center; font-size: 12px; font-style: italic; color: #555; }
+  .note { margin: 10px auto 0; max-width: 82%; text-align: center; font-size: 14px; font-style: italic; color: #555; }
 
   /* Bagages */
-  .bagages { display: flex; flex-wrap: wrap; justify-content: center; gap: 6px 0; padding: 12px 0 4px; font-size: 13px; }
+  .bagages { display: flex; flex-wrap: wrap; justify-content: center; gap: 6px 0; padding: 12px 0 4px; font-size: 15px; }
   .bagages span { padding: 0 14px; }
   .bagages span + span { border-left: 1px solid var(--filet); }
 
   /* Hébergement */
   .sejour { display: flex; justify-content: space-between; align-items: center; gap: 24px; padding: 14px 0; }
   .sejour + .sejour { border-top: 1px solid var(--filet); }
-  .sejour .txt { font-size: 13px; line-height: 1.5; }
-  .sejour .txt .nom { display: block; font-size: 15px; font-weight: 700; letter-spacing: .05em; margin-bottom: 2px; }
-  .sejour .txt .dates { display: block; font-size: 10.5px; font-weight: 600; letter-spacing: .14em; text-transform: uppercase; color: var(--rouge); margin-bottom: 8px; }
+  .sejour .txt { font-size: 15px; line-height: 1.5; }
+  .sejour .txt .nom { display: block; font-size: 18px; font-weight: 500; letter-spacing: .05em; margin-bottom: 2px; }
+  .sejour .txt .dates { display: block; font-size: 11.5px; font-weight: 500; letter-spacing: .14em; text-transform: uppercase; color: var(--rouge); margin-bottom: 8px; }
   .sejour .txt .tel { display: block; color: #555; }
   .sejour .carte-lien, .sejour > .ts-carte { flex: none; display: block; border-radius: 4px; overflow: hidden; box-shadow: 0 0 0 1px var(--filet); }
   .sejour a { color: inherit; text-decoration: none; border-bottom: 1px solid var(--filet); }
@@ -890,11 +897,11 @@ function tsDocHtml(s, ecran) {
   /* Contacts : un groupe par ligne, les personnes centrées quel que soit leur nombre */
   .groupe { padding: 14px 0 4px; break-inside: avoid; }
   .groupe + .groupe { border-top: 1px solid var(--filet); }
-  .groupe .g { text-align: center; font-size: 9.5px; font-weight: 600; letter-spacing: .26em; color: var(--gris); margin-bottom: 8px; padding-left: .26em; }
+  .groupe .g { text-align: center; font-size: 10.5px; font-weight: 500; letter-spacing: .26em; color: var(--gris); margin-bottom: 8px; padding-left: .26em; }
   .personnes { display: flex; flex-wrap: wrap; justify-content: center; row-gap: 12px; }
-  .personnes .p { flex: 0 0 33.333%; text-align: center; line-height: 1.45; font-size: 12.5px; padding: 0 6px; }
-  .personnes .p b { display: block; font-size: 13.5px; font-weight: 700; }
-  .personnes .p i { display: block; font-style: normal; color: var(--gris); font-size: 11px; letter-spacing: .03em; }
+  .personnes .p { flex: 0 0 33.333%; text-align: center; line-height: 1.4; font-size: 14px; padding: 0 6px; }
+  .personnes .p b { display: block; font-size: 16.5px; font-weight: 500; }
+  .personnes .p i { display: block; color: var(--gris); font-size: 14px; }
   .personnes .p span { display: block; margin-top: 2px; letter-spacing: .02em; }
 
   @media screen and (max-width: 820px) { .page { zoom: .46; margin: 8px auto; } }
