@@ -625,7 +625,7 @@ body.espace-prod #total-count, body.espace-prod #btn-quick, body.espace-prod .hd
 .ts-logo-row .field-hint { margin:0; }
 .ts-sejour-corps { display:flex; gap:14px; align-items:flex-start; }
 .ts-sejour-corps .ts-grid { flex:1; min-width:0; }
-.ts-carte-bloc { flex:none; width:218px; margin-top:20px; }
+.ts-carte-bloc { flex:none; width:242px; margin-top:20px; }
 .ts-mini-carte { border:1px solid var(--border); touch-action:none; cursor:grab; user-select:none; -webkit-user-select:none; }
 .ts-mini-carte:active { cursor:grabbing; }
 .ts-carte-ctrl { display:flex; align-items:center; gap:6px; margin-top:6px; }
