@@ -723,10 +723,10 @@ function tsCarteHtml(c, W, H, z = TS_ZOOM_DEFAUT, centre = c) {
   const tiles = [];
   for (let tx = Math.floor(px / 256); tx <= Math.floor((px + W) / 256); tx++)
     for (let ty = Math.max(0, Math.floor(py / 256)); ty <= Math.min(n - 1, Math.floor((py + H) / 256)); ty++)
-      tiles.push(`<img src="https://${'abcd'[(tx + ty) & 3]}.basemaps.cartocdn.com/rastertiles/light_all/${z}/${((tx % n) + n) % n}/${ty}@2x.png" style="position:absolute;width:256px;height:256px;left:${Math.round(tx * 256 - px)}px;top:${Math.round(ty * 256 - py)}px" alt="" draggable="false">`);
+      tiles.push(`<img src="https://${'abcd'[(tx + ty) & 3]}.basemaps.cartocdn.com/light_all/${z}/${((tx % n) + n) % n}/${ty}@2x.png" style="position:absolute;width:256px;height:256px;left:${Math.round(tx * 256 - px)}px;top:${Math.round(ty * 256 - py)}px" alt="" draggable="false">`);
   return `<div class="ts-carte" style="position:relative;overflow:hidden;width:${W}px;height:${H}px;background:#f2f2f0">${tiles.join('')}
     <span class="ts-pin" style="position:absolute;left:${Math.round(pin.x - px)}px;top:${Math.round(pin.y - py)}px;width:26px;height:34px;margin:-33px 0 0 -13px;filter:drop-shadow(0 2px 2px rgba(0,0,0,.35))"><svg width="26" height="34" viewBox="0 0 26 34" style="display:block"><path d="M13 1C6.4 1 1 6.3 1 12.9 1 21.8 13 33 13 33s12-11.2 12-20.1C25 6.3 19.6 1 13 1z" fill="#9b1c1c" stroke="#fff" stroke-width="2"/><circle cx="13" cy="12.8" r="4.2" fill="#fff"/></svg></span>
-    <span style="position:absolute;right:0;bottom:0;font:8px/1.4 sans-serif;color:#777;background:rgba(255,255,255,.75);padding:0 4px">© OpenStreetMap © CARTO</span></div>`;
+    <span style="position:absolute;right:0;bottom:0;font:8px/1.4 inherit;color:#777;background:rgba(255,255,255,.75);padding:0 4px">© OpenStreetMap © CARTO</span></div>`;
 }
 
 const tsCarteSejour = (x, c) => tsCarteHtml(c, TS_CARTE_W, TS_CARTE_H, tsZoom(x), parseGps(x.centre) || c);
