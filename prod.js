@@ -700,9 +700,11 @@ function tsJournees(trajets) {
   return jours;
 }
 
-// Petite carte : tuiles OpenStreetMap assemblées autour du cadre choisi, avec un
-// repère sur le lieu. Le cadre (zoom et centre) se règle dans l'éditeur.
-const TS_CARTE_W = 216, TS_CARTE_H = 180, TS_ZOOM_DEFAUT = 15;
+// Petite carte : tuiles CARTO « Positron » (fond clair et sobre, données
+// OpenStreetMap) assemblées autour du cadre choisi, avec un repère sur le lieu.
+// Tuiles @2x pour rester nettes à l'impression. Le cadre (zoom et centre) se
+// règle dans l'éditeur.
+const TS_CARTE_W = 240, TS_CARTE_H = 170, TS_ZOOM_DEFAUT = 15;
 const tsMonde = z => 256 * Math.pow(2, z);
 function tsVersPixels(c, z) {
   const rad = c.lat * Math.PI / 180;
@@ -721,10 +723,10 @@ function tsCarteHtml(c, W, H, z = TS_ZOOM_DEFAUT, centre = c) {
   const tiles = [];
   for (let tx = Math.floor(px / 256); tx <= Math.floor((px + W) / 256); tx++)
     for (let ty = Math.max(0, Math.floor(py / 256)); ty <= Math.min(n - 1, Math.floor((py + H) / 256)); ty++)
-      tiles.push(`<img src="https://tile.openstreetmap.org/${z}/${((tx % n) + n) % n}/${ty}.png" style="position:absolute;width:256px;height:256px;left:${Math.round(tx * 256 - px)}px;top:${Math.round(ty * 256 - py)}px" alt="" draggable="false">`);
-  return `<div class="ts-carte" style="position:relative;overflow:hidden;width:${W}px;height:${H}px;background:#eee">${tiles.join('')}
-    <span class="ts-pin" style="position:absolute;left:${Math.round(pin.x - px)}px;top:${Math.round(pin.y - py)}px;width:14px;height:14px;margin:-7px 0 0 -7px;border-radius:50%;background:#c5221f;border:3px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.5)"></span>
-    <span style="position:absolute;right:0;bottom:0;font:9px sans-serif;background:rgba(255,255,255,.8);padding:1px 3px">© OpenStreetMap</span></div>`;
+      tiles.push(`<img src="https://${'abcd'[(tx + ty) & 3]}.basemaps.cartocdn.com/rastertiles/light_all/${z}/${((tx % n) + n) % n}/${ty}@2x.png" style="position:absolute;width:256px;height:256px;left:${Math.round(tx * 256 - px)}px;top:${Math.round(ty * 256 - py)}px" alt="" draggable="false">`);
+  return `<div class="ts-carte" style="position:relative;overflow:hidden;width:${W}px;height:${H}px;background:#f2f2f0">${tiles.join('')}
+    <span class="ts-pin" style="position:absolute;left:${Math.round(pin.x - px)}px;top:${Math.round(pin.y - py)}px;width:26px;height:34px;margin:-33px 0 0 -13px;filter:drop-shadow(0 2px 2px rgba(0,0,0,.35))"><svg width="26" height="34" viewBox="0 0 26 34" style="display:block"><path d="M13 1C6.4 1 1 6.3 1 12.9 1 21.8 13 33 13 33s12-11.2 12-20.1C25 6.3 19.6 1 13 1z" fill="#9b1c1c" stroke="#fff" stroke-width="2"/><circle cx="13" cy="12.8" r="4.2" fill="#fff"/></svg></span>
+    <span style="position:absolute;right:0;bottom:0;font:8px/1.4 sans-serif;color:#777;background:rgba(255,255,255,.75);padding:0 4px">© OpenStreetMap © CARTO</span></div>`;
 }
 
 const tsCarteSejour = (x, c) => tsCarteHtml(c, TS_CARTE_W, TS_CARTE_H, tsZoom(x), parseGps(x.centre) || c);
@@ -799,93 +801,121 @@ function tsDocHtml(s, ecran) {
     if (ex) ex.liste.push(c); else groupes.push({ nom: g, liste: [c] });
   });
 
+  const sansDeuxPoints = t => t.replace(/\s*:$/, '');
   const journeeHtml = j => {
     const de = j.legs[0].de, a = j.legs[j.legs.length - 1].a;
     const notes = j.legs.map(t => t.note).filter(Boolean);
     return `<div class="j">
-      <div class="j-hdr">${j.date ? `<b>${esc(T.jour(j.date))}</b>` : ''}${de && a ? `<b>${esc(T.de(tsTitre(de), tsTitre(a)))}</b>` : ''}</div>
+      <div class="j-hdr">${j.date ? `<b>${esc(T.jour(j.date))}</b>` : ''}${de && a ? `<span>${esc(T.de(tsTitre(de), tsTitre(a)))}</span>` : ''}</div>
       <table>${j.legs.map((t, i) => `
-        <tr class="tete"><td></td><td></td><td class="c">${i === 0 ? T.heure : ''}</td><td></td><td class="r">${t.numero ? (t.type === 'train' ? T.train : T.vol) : ''}</td></tr>
-        <tr><th>${i === 0 ? T.depart : T.transit}</th><td>${esc(t.de)}${t.deDetail ? `<small>${esc(t.deDetail.toUpperCase())}</small>` : ''}</td>
-          <td class="c"><span class="hl">${esc(tsH(t.depart))}</span></td><td></td><td class="r">${t.numero ? `<span class="hl">${esc(t.numero.toUpperCase())}</span>` : ''}</td></tr>
-        <tr><th>${T.arrivee}</th><td>${esc(t.a)}${t.aDetail ? `<small>${esc(t.aDetail.toUpperCase())}</small>` : ''}</td><td class="c"><b>${esc(tsH(t.arrivee))}</b></td><td></td><td></td></tr>`).join('')}
+        <tr class="tete"><td></td><td></td><td class="c">${T.heure}</td><td class="r">${t.numero ? (t.type === 'train' ? T.train : T.vol) : ''}</td></tr>
+        <tr><th>${sansDeuxPoints(i === 0 ? T.depart : T.transit)}</th><td class="lieu">${esc(t.de)}${t.deDetail ? `<small>${esc(t.deDetail.toUpperCase())}</small>` : ''}</td>
+          <td class="c"><span class="hl">${esc(tsH(t.depart))}</span></td><td class="r">${t.numero ? `<span class="hl">${esc(t.numero.toUpperCase())}</span>` : ''}</td></tr>
+        <tr class="arr"><th>${sansDeuxPoints(T.arrivee)}</th><td class="lieu">${esc(t.a)}${t.aDetail ? `<small>${esc(t.aDetail.toUpperCase())}</small>` : ''}</td><td class="c"><b>${esc(tsH(t.arrivee))}</b></td><td></td></tr>`).join('')}
       </table>
       ${notes.map(n => `<p class="note">${esc(n)}</p>`).join('')}
     </div>`;
   };
+  const section = (titre, corps, cls = '') => `<section class="sec ${cls}"><h2 class="sec-t"><span>${titre}</span></h2>${corps}</section>`;
 
   return `<!DOCTYPE html><html lang="${s.langue === 'fr' ? 'fr' : 'en'}"><head><meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>TRAVEL SHEET ${esc([s.client, s.voyageur].filter(Boolean).join('_').toUpperCase())}</title>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Work+Sans:ital,wght@0,400;0,600;0,700;1,400&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Work+Sans:ital,wght@0,300;0,400;0,500;0,600;0,700;1,400&display=swap">
 <style>
   @page { size: A4 portrait; margin: 0; }
   * { box-sizing: border-box; margin: 0; padding: 0; }
-  body { font-family: 'Work Sans', Arial, sans-serif; color: #111; background: ${ecran ? '#fff' : '#e9e9e7'}; -webkit-print-color-adjust: exact; print-color-adjust: exact; font-size: 13px; }
+  :root { --ink: #141414; --gris: #8a8a86; --filet: #e2e2de; --rouge: #9b1c1c; }
+  body { font-family: 'Work Sans', Arial, sans-serif; color: var(--ink); background: ${ecran ? '#fff' : '#e9e9e7'}; -webkit-print-color-adjust: exact; print-color-adjust: exact; font-size: 13px; }
   .barre { position: sticky; top: 0; z-index: 5; display: flex; gap: 12px; align-items: center; justify-content: center; padding: 12px; background: #111; color: #fff; font-size: 14px; }
   .barre button { font: inherit; padding: 6px 14px; border: 1px solid #fff; background: #fff; color: #111; cursor: pointer; }
-  .page { width: 210mm; min-height: 297mm; margin: ${ecran ? '0' : '10mm'} auto; background: #fff; padding: 14mm 19mm 12mm; }
-  .entete { border: 1px solid #111; display: grid; grid-template-columns: 1fr 1.6fr 1fr; align-items: start; padding: 12px 10px 14px; min-height: 28mm; }
-  .entete .client { font-weight: 700; font-size: 25px; letter-spacing: .04em; line-height: 1; }
-  .entete .client img { max-width: 34mm; max-height: 18mm; display: block; }
-  .entete .milieu { text-align: center; font-size: 14px; line-height: 1.3; padding-top: 12px; }
-  .entete .milieu b { display: block; font-weight: 700; }
-  .entete .widen { justify-self: end; height: 17px; }
-  .refs { text-align: center; font-size: 14.5px; margin: 16px 0 14px; }
-  .sec { margin-bottom: 14px; }
-  .sec-t { background: #ececec; text-align: center; font-size: 14.5px; padding: 1px 0; letter-spacing: .02em; }
-  .sec-b { border: 1px solid #111; }
-  .j { padding: 0 0 10px; }
-  .j + .j { border-top: 1px solid #111; }
-  .j-hdr { width: 55%; margin: 0 auto 10px; background: #c4c4c4; text-align: center; padding: 3px 4px; font-size: 14px; line-height: 1.35; }
-  .j-hdr b { display: block; }
-  table { width: 100%; border-collapse: collapse; font-size: 14px; }
-  td, th { padding: 2px 0; vertical-align: top; text-align: left; }
-  th { padding-left: 3px; }
-  td.r { padding-right: 3px; }
-  th { font-weight: 700; width: 21%; }
-  td small { display: block; font-size: 10.5px; margin-top: 1px; }
-  .c { text-align: center; width: 20%; }
-  .r { text-align: right; width: 24%; }
-  tr.tete td { padding-top: 10px; }
-  .hl { display: inline-block; min-width: 100%; background: #ececec; color: #990000; font-weight: 700; padding: 0 4px; }
-  .r .hl { min-width: 100%; text-align: right; }
-  .note { text-align: center; font-size: 12.5px; margin-top: 12px; }
-  .centre { text-align: center; font-size: 14.5px; line-height: 1.35; padding: 14px 0; }
-  .sejour { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 8px 0 8px 2px; min-height: 40mm; }
-  .sejour + .sejour { border-top: 1px solid #111; }
-  .sejour .txt { font-size: 14.5px; line-height: 1.35; }
-  .sejour .txt b { display: block; font-weight: 700; }
-  .sejour .carte-lien, .sejour > .ts-carte { flex: none; margin-right: 26px; display: block; }
-  .sejour a { color: inherit; text-decoration: underline; text-underline-offset: 2px; }
+  .page { width: 210mm; min-height: 297mm; margin: ${ecran ? '0' : '10mm'} auto; background: #fff; padding: 15mm 18mm 12mm; }
+
+  /* En-tête : logos aux coins, voyageur au centre, un trait épais pour fermer */
+  .entete { display: grid; grid-template-columns: 1fr 2fr 1fr; align-items: center; padding-bottom: 16px; border-bottom: 2px solid var(--ink); }
+  .entete .client { font-weight: 700; font-size: 22px; letter-spacing: .06em; line-height: 1; }
+  .entete .client img { max-width: 34mm; max-height: 16mm; display: block; }
+  .entete .milieu { text-align: center; line-height: 1.25; }
+  .entete .milieu .k { font-size: 10px; font-weight: 600; letter-spacing: .32em; color: var(--gris); padding-left: .32em; }
+  .entete .milieu .nom { display: block; font-size: 23px; font-weight: 700; letter-spacing: .03em; margin: 5px 0 4px; }
+  .entete .milieu .proj { font-size: 11px; letter-spacing: .14em; color: #555; }
+  .entete .widen { justify-self: end; height: 16px; }
+  .refs { display: flex; justify-content: center; align-items: baseline; gap: 10px; padding: 11px 0 0; font-size: 13px; }
+  .refs .k { font-size: 9.5px; font-weight: 600; letter-spacing: .2em; color: var(--gris); text-transform: uppercase; }
+  .refs b { font-weight: 700; letter-spacing: .06em; }
+
+  /* Titres de section : petites capitales espacées, filet fin de chaque côté */
+  .sec { margin-top: 24px; break-inside: avoid; }
+  .sec-t { display: flex; align-items: center; gap: 12px; font-size: 10.5px; font-weight: 700; letter-spacing: .26em; margin-bottom: 4px; }
+  .sec-t::before, .sec-t::after { content: ''; flex: 1; height: 1px; background: var(--ink); }
+  .sec-t span { padding-left: .26em; }
+
+  /* Trajets */
+  .j { padding: 12px 0 14px; break-inside: avoid; }
+  .j + .j { border-top: 1px solid var(--filet); }
+  .j-hdr { display: flex; align-items: baseline; gap: 10px; margin-bottom: 2px; font-size: 13px; }
+  .j-hdr b { font-weight: 700; letter-spacing: .04em; }
+  .j-hdr span { color: var(--gris); }
+  .j-hdr b + span::before { content: '—'; margin-right: 10px; color: var(--filet); }
+  table { width: 100%; border-collapse: collapse; font-size: 13.5px; }
+  td, th { padding: 2px 0; vertical-align: baseline; text-align: left; }
+  th { font-size: 10px; font-weight: 600; letter-spacing: .14em; text-transform: uppercase; color: var(--gris); width: 22%; }
+  td.lieu { font-weight: 500; letter-spacing: .02em; }
+  td small { display: block; font-size: 9.5px; letter-spacing: .1em; color: var(--gris); margin-top: 1px; }
+  .c { text-align: center; width: 18%; }
+  .r { text-align: right; width: 20%; }
+  tr.tete td { padding-top: 10px; font-size: 9px; font-weight: 600; letter-spacing: .18em; text-transform: uppercase; color: var(--gris); }
+  tr.tete + tr td, tr.tete + tr th { padding-top: 0; }
+  tr.arr td, tr.arr th { padding-bottom: 2px; }
+  .hl { color: var(--rouge); font-weight: 700; letter-spacing: .03em; }
+  .c b { font-weight: 600; }
+  .note { margin: 10px auto 0; max-width: 82%; text-align: center; font-size: 12px; font-style: italic; color: #555; }
+
+  /* Bagages */
+  .bagages { display: flex; flex-wrap: wrap; justify-content: center; gap: 6px 0; padding: 12px 0 4px; font-size: 13px; }
+  .bagages span { padding: 0 14px; }
+  .bagages span + span { border-left: 1px solid var(--filet); }
+
+  /* Hébergement */
+  .sejour { display: flex; justify-content: space-between; align-items: center; gap: 24px; padding: 14px 0; }
+  .sejour + .sejour { border-top: 1px solid var(--filet); }
+  .sejour .txt { font-size: 13px; line-height: 1.5; }
+  .sejour .txt .nom { display: block; font-size: 15px; font-weight: 700; letter-spacing: .05em; margin-bottom: 2px; }
+  .sejour .txt .dates { display: block; font-size: 10.5px; font-weight: 600; letter-spacing: .14em; text-transform: uppercase; color: var(--rouge); margin-bottom: 8px; }
+  .sejour .txt .tel { display: block; color: #555; }
+  .sejour .carte-lien, .sejour > .ts-carte { flex: none; display: block; border-radius: 4px; overflow: hidden; box-shadow: 0 0 0 1px var(--filet); }
+  .sejour a { color: inherit; text-decoration: none; border-bottom: 1px solid var(--filet); }
+  .sejour a.carte-lien { border: 0; }
+
+  /* Contacts : un groupe par ligne, les personnes centrées quel que soit leur nombre */
+  .groupe { padding: 14px 0 4px; break-inside: avoid; }
+  .groupe + .groupe { border-top: 1px solid var(--filet); }
+  .groupe .g { text-align: center; font-size: 9.5px; font-weight: 600; letter-spacing: .26em; color: var(--gris); margin-bottom: 8px; padding-left: .26em; }
+  .personnes { display: flex; flex-wrap: wrap; justify-content: center; row-gap: 12px; }
+  .personnes .p { flex: 0 0 33.333%; text-align: center; line-height: 1.45; font-size: 12.5px; padding: 0 6px; }
+  .personnes .p b { display: block; font-size: 13.5px; font-weight: 700; }
+  .personnes .p i { display: block; font-style: normal; color: var(--gris); font-size: 11px; letter-spacing: .03em; }
+  .personnes .p span { display: block; margin-top: 2px; letter-spacing: .02em; }
+
   @media screen and (max-width: 820px) { .page { zoom: .46; margin: 8px auto; } }
-  .contacts { display: grid; grid-template-columns: 21% 1fr 1fr 1fr; padding: 10px 0 12px; row-gap: 12px; font-size: 13.5px; }
-  .contacts .g { background: #c4c4c4; font-weight: 700; padding: 2px 3px; align-self: start; }
-  .contacts .p { line-height: 1.55; padding-left: 4px; }
-  .contacts .p b { display: block; }
-  .contacts .p i { display: block; }
   @media print { body { background: #fff; } .barre { display: none; } .page { margin: 0; } }
 </style></head><body>
 ${ecran ? '' : '<div class="barre">Vérifie la travel sheet puis <button onclick="window.print()">IMPRIMER / ENREGISTRER EN PDF</button></div>'}
 <div class="page">
-  <div class="entete">
+  <header class="entete">
     <div class="client">${s.logo ? `<img src="${esc(s.logo)}" alt="${esc(s.client)}">` : esc(String(s.client || '').toUpperCase())}</div>
-    <div class="milieu">${T.titre}<b>${esc(String(s.voyageur || '').toUpperCase())}</b>${esc([String(s.client || '').toUpperCase(), String(s.projet || '').toUpperCase()].filter(Boolean).join(' '))}</div>
+    <div class="milieu"><span class="k">${T.titre}</span><b class="nom">${esc(String(s.voyageur || '').toUpperCase())}</b><span class="proj">${esc([String(s.client || '').toUpperCase(), String(s.projet || '').toUpperCase()].filter(Boolean).join(' · '))}</span></div>
     <img class="widen" src="${base}widen-logo.png" alt="WIDEN">
-  </div>
-  ${s.references ? `<div class="refs">${T.ref} : ${esc(s.references)}</div>` : '<div class="refs"></div>'}
-  ${jours.length ? `<div class="sec"><div class="sec-t">${titreTrajets}</div><div class="sec-b">${jours.map(journeeHtml).join('')}</div></div>` : ''}
-  ${bagages.length ? `<div class="sec"><div class="sec-t">${T.bagages}</div><div class="sec-b centre">${bagages.map(esc).join('<br>')}</div></div>` : ''}
-  ${sejours.length ? `<div class="sec"><div class="sec-t">${T.sejour}</div><div class="sec-b">${sejours.map(x => {
+  </header>
+  ${s.references ? `<div class="refs"><span class="k">${T.ref}</span><b>${esc(s.references)}</b></div>` : ''}
+  ${jours.length ? section(titreTrajets, jours.map(journeeHtml).join('')) : ''}
+  ${bagages.length ? section(T.bagages, `<div class="bagages">${bagages.map(b => `<span>${esc(b)}</span>`).join('')}</div>`) : ''}
+  ${sejours.length ? section(T.sejour, sejours.map(x => {
     const c = parseGps(x.gps), lien = tsLienMaps(x);
-    return `<div class="sejour"><div class="txt"><b>${esc(String(x.nom || '').toUpperCase())}</b>${x.du ? `<b>${esc(T.periode(x.du, x.au))}</b>` : ''}${x.adresse ? (lien ? `<a href="${esc(lien)}">${esc(x.adresse)}</a>` : esc(x.adresse)) : lien ? `<a href="${esc(lien)}">${T.voirCarte}</a>` : ''}${x.tel ? `<br>${esc(x.tel)}` : ''}</div>
+    return `<div class="sejour"><div class="txt"><span class="nom">${esc(String(x.nom || '').toUpperCase())}</span>${x.du ? `<span class="dates">${esc(T.periode(x.du, x.au))}</span>` : ''}${x.adresse ? (lien ? `<a href="${esc(lien)}">${esc(x.adresse)}</a>` : esc(x.adresse)) : lien ? `<a href="${esc(lien)}">${T.voirCarte}</a>` : ''}${x.tel ? `<span class="tel">${esc(x.tel)}</span>` : ''}</div>
       ${c ? (lien ? `<a class="carte-lien" href="${esc(lien)}">${tsCarteSejour(x, c)}</a>` : tsCarteSejour(x, c)) : ''}</div>`;
-  }).join('')}</div></div>` : ''}
-  ${groupes.length ? `<div class="sec"><div class="sec-t">${T.contacts}</div><div class="sec-b contacts">${groupes.map(g => {
-    const lignes = [];
-    for (let i = 0; i < g.liste.length; i += 3) lignes.push(g.liste.slice(i, i + 3));
-    return lignes.map((l, li) => `<div class="g"${li ? ' style="visibility:hidden"' : ''}>${esc(g.nom || ' ')}</div>${l.map(c => `<div class="p"><b>${esc(c.nom)}</b>${c.role ? `<i>${esc(c.role)}</i>` : ''}${esc(c.tel || '')}</div>`).join('')}${'<div></div>'.repeat(3 - l.length)}`).join('');
-  }).join('')}</div></div>` : ''}
+  }).join('')) : ''}
+  ${groupes.length ? section(T.contacts, groupes.map(g => `<div class="groupe">${g.nom ? `<div class="g">${esc(g.nom)}</div>` : ''}<div class="personnes">${g.liste.map(c => `<div class="p"><b>${esc(c.nom)}</b>${c.role ? `<i>${esc(c.role)}</i>` : ''}${c.tel ? `<span>${esc(c.tel)}</span>` : ''}</div>`).join('')}</div></div>`).join('')) : ''}
 </div>
 </body></html>`;
 }
