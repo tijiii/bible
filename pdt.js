@@ -1747,7 +1747,7 @@ function pdtDocCss(ecran, edit, paysage) {
   .pdt-doc-ed .pdt-ajout-haut button:hover, .pdt-doc-ed .pdt-ajout-bas button:hover { border-color: #2f5597; color: #2f5597; }
   .pdt-doc-ed .pdt-ajout-bas { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 6px; }` : `
   @media screen and (max-width: 760px) { .pdt-doc { zoom: .46; margin: 8px auto; } }
-  @media print { body { background: #fff; } .barre-impr { display: none; } .pdt-doc, .pdt-doc.paysage { width: auto; min-height: 0; margin: 0; padding: 0; } }`}`;
+  @media print { body { background: #fff; } .barre-impr { display: none; } .pdt-doc, .pdt-doc.paysage { width: auto !important; max-width: 100% !important; min-height: 0; margin: 0 !important; padding: 0 !important; } }`}`;
 }
 
 function pdtDocHtml(d, ecran) {

@@ -1328,7 +1328,7 @@ function csDocCss(ecran, edit) {
   .cs-doc.pdt-doc-ed .pdt-ajout-bas button { font: 10px Arial, sans-serif; letter-spacing: normal; background: #fff; border: 1px dashed #aaa; color: #555; padding: 3px 8px; cursor: pointer; }
   .cs-doc.pdt-doc-ed .pdt-ajout-bas button:hover { border-color: #2f5597; color: #2f5597; }` : `
   @media screen and (max-width: 760px) { .cs-doc { zoom: .46; margin: 8px auto; } }
-  @media print { body { background: #fff; } .barre { display: none; } .cs-doc { margin: 0; } }`}`;
+  @media print { body { background: #fff; } .barre { display: none; } .cs-doc { margin: 0 !important; max-width: 100% !important; } }`}`;
 }
 
 function csDocHtml(c, ecran) {
