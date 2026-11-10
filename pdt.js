@@ -1685,8 +1685,8 @@ function pdtDocCss(ecran, edit, paysage) {
   .pdt-doc .haut-2 table.eq, .pdt-doc .haut-2 table.hor { border-collapse: separate; border-spacing: 0; }
   .pdt-doc .haut-2 table.eq tr:last-child > td, .pdt-doc .haut-2 table.hor tr:last-child > td { border-bottom: 0; }
   .pdt-doc .haut-2 table.eq th { border-bottom: .5pt solid var(--ink); }
-  /* Les mises en place : un trait plus épais au-dessus et au-dessous, pour bien les séparer des plans */
-  .pdt-doc tr.install > td { border-top: 1.5pt solid var(--ink); border-bottom: 1.5pt solid var(--ink); }
+  /* Les mises en place : un trait un peu plus épais (1 pt) au-dessus et au-dessous, pour bien les séparer des plans */
+  .pdt-doc tr.install > td { border-top: 1pt solid var(--ink); border-bottom: 1pt solid var(--ink); }
   ${edit ? `
   .pdt-doc-ed .ed { outline: none; min-width: 1.2em; display: inline-block; border-radius: 1px; cursor: text; }
   .pdt-doc-ed td > .ed, .pdt-doc-ed .t > .ed, .pdt-doc-ed .pied > .ed { display: block; min-height: 1.25em; }
