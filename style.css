@@ -868,6 +868,11 @@ body.doc-vue-ouvert > *:not(#doc-vue) { display:none !important; }
 .td-meta:empty { display:none; }
 .td-ligne.td-fait .td-texte input, .td-vligne.td-fait .td-vtexte { text-decoration:line-through; color:var(--muted); }
 .td-alerte { color:var(--red); }
+.td-pgroupe { margin:6px 0 12px; padding-left:10px; border-left:3px solid var(--td-c); }
+.td-pgroupe-titre { display:flex; align-items:center; gap:6px; flex-wrap:wrap; font-size:13px; letter-spacing:.06em; color:var(--td-c); padding:6px 0 4px; }
+.td-pgroupe-titre small { letter-spacing:.02em; }
+.td-pastille { width:9px; height:9px; border-radius:50%; background:var(--td-c); flex:none; }
+.td-ligne .td-qui-champ input { border-left:4px solid var(--td-c, var(--border2)); }
 .td-ligne.td-retard, .td-ligne.td-rappel { box-shadow:inset 3px 0 0 var(--red); padding-left:6px; }
 .td-vue { padding:8px 24px 60px; }
 .td-filtres { display:flex; gap:6px; align-items:center; flex-wrap:wrap; margin-bottom:12px; }
