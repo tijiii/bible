@@ -1357,3 +1357,13 @@ input:focus-visible, select:focus-visible, textarea:focus-visible { outline-offs
   .cs-groupe-titre { flex-basis:100%; }
   .cs-groupe .ts-add-row .filter-sel { max-width:100%; flex:1; }
 }
+/* Callsheet : édition sur le document */
+.cs-ed-barre2 { margin-top:6px; flex-wrap:wrap; gap:8px; }
+.cs-ed-barre2 #cs-msg { flex:1 1 200px; }
+.cs-mode { margin-bottom:10px; }
+#cs-sugg { position:fixed; display:none; z-index:9999; width:290px; max-height:280px; overflow:auto; background:#fff; border:1px solid var(--border); box-shadow:0 6px 24px rgba(0,0,0,.12); font-family:var(--serif); }
+#cs-sugg .cs-sugg-it { padding:7px 10px; cursor:pointer; display:flex; flex-direction:column; gap:1px; border-top:1px solid var(--border); }
+#cs-sugg .cs-sugg-it:first-child { border-top:none; }
+#cs-sugg .cs-sugg-it b { font-weight:600; font-size:14px; }
+#cs-sugg .cs-sugg-it small { color:var(--muted); font-size:12px; }
+#cs-sugg .cs-sugg-it:hover, #cs-sugg .cs-sugg-it.on { background:#f3f1ec; }
