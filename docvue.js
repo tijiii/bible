@@ -8,12 +8,15 @@ function ouvrirDocument(html) {
   const dejaOuvert = !!docVue;
   fermerDocument(true);
   const d = new DOMParser().parseFromString(html, 'text/html');
-  d.querySelectorAll('.barre, .ex-barre, script').forEach(e => e.remove());
+  // Seulement la barre « Vérifie… puis IMPRIMER » du document, pas ses lignes de tableau (tr.barre du PDT)
+  d.querySelectorAll('body > .barre, body > .ex-barre, script').forEach(e => e.remove());
   // Les styles du document ne vivent que le temps de son affichage
   const styles = [...d.head.querySelectorAll('style, link[rel="stylesheet"]')].map(e => {
     const n = document.importNode(e, true);
     n.setAttribute('data-doc-vue', '');
-    document.head.appendChild(n);
+    // À la fin de la page : passe devant les styles de l'éditeur encore présents (sinon l'aperçu et le PDF
+    // prennent la mise en page de l'écran)
+    document.body.appendChild(n);
     return n;
   });
   const vue = document.createElement('div');
