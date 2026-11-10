@@ -18,7 +18,7 @@ const CS_VEHICULES = ['OWN', 'VAN', 'CAMION', 'VOLVO', 'TRAIN', 'AVION', 'TAXI']
 // document) et leur largeur relative. On en ajoute (x1, x2…), on les déplace, on
 // les retire (sauf POSITION et NAME) ; l'ordre est gardé dans c.cols.
 const CS_COL_TITRES = { pos: 'POSITION', nom: 'NAME', tel: 'PHONE NUMBER', mail: 'EMAIL', pickup: 'PICK-UP TIME', pickupLieu: 'PICK-UP LOCATION', vehicule: 'VEHICLE', hebergement: 'ACCOMMODATION', call: 'CALL TIME' };
-const CS_LARG = { pos: 12, nom: 14, tel: 12, mail: 23, pickup: 7, pickupLieu: 14, vehicule: 7, hebergement: 11, call: 7 };
+const CS_LARG = { pos: 14, nom: 13, tel: 12, mail: 19, pickup: 7, pickupLieu: 21, vehicule: 7, hebergement: 11, call: 7 };
 const CS_COLS_BASE = ['pos', 'nom', 'tel', 'mail', 'pickup', 'pickupLieu', 'vehicule', 'call'];
 const CS_COLS_FIXES = ['pos', 'nom'];
 // Celles qu'on coche dans le formulaire
@@ -933,7 +933,7 @@ function renderCsDoc(main) {
       <button type="button" title="Enlever la mise en forme" onclick="pdtFormat('removeFormat')">⌀</button>
     </div>
     <div class="pdt-ed-zone">
-      <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=EB+Garamond:ital,wght@0,400;0,500;0,600;0,700;1,400;1,500&display=swap">
+      <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Work+Sans:ital,wght@0,400;0,500;0,600;0,700;1,400;1,700&display=swap">
       <style>${csDocCss(true, true)}</style>
       ${csDocCorps(c, true)}
     </div>
@@ -1131,41 +1131,47 @@ function csDocCorps(c, edit) {
   const outils = html => edit ? `<div class="pdt-outils" contenteditable="false">${html}</div>` : '';
   const vide = l => !(l.nom || l.poste || l.adresse || cols.some(k => l[k]));
 
-  // En-tête
+  // En-tête, comme l'onglet CALLSHEET du Google Sheet : logos, titre au centre, infos à droite
   const jour = c.jour != null ? c.jour : 1;
   const dateTexte = c.dateTexte || pdtDateTexte(c.date);
-  const entete = `<header class="entete">
-    <div class="client">${c.logo ? `<img src="${esc(c.logo)}" alt="${esc(c.client)}">` : esc(String(c.client || '').toUpperCase())}</div>
-    <div class="milieu"><span class="k">${T('feuille', 'FEUILLE DE SERVICE')}</span>
-      <b class="jour">${T('jourMot', 'JOUR')} ${ed(c, 'jour', { v: jour, ph: '1' })}</b>
-      <span class="date">${ed(c, 'dateTexte', { v: dateTexte, ph: 'DATE' })}</span></div>
-    <img class="widen" src="${base}widen-logo.png" alt="WIDEN">
+  // « Photographer : X / Director : Y » : les intitulés en gras, comme dans le sheet
+  const credFmt = v => esc(v || '').replace(/(^|\/\s*)([^:\/]+?)\s*:/g, (m, a, b) => `${a}<b>${b.trim()} :</b>`);
+  const champ = (lab, def, k, o = {}) => (edit || String(c[k] || '').trim()) ? `<p><b>${T(lab, def)} :</b> ${ed(c, k, o)}</p>` : '';
+  const entete = `<header class="entete bloc">
+    <div class="logos"><div class="client">${c.logo ? `<img src="${esc(c.logo)}" alt="${esc(c.client)}">` : esc(String(c.client || '').toUpperCase())}</div>
+      <img class="widen" src="${base}widen-logo.png" alt="WIDEN"></div>
+    <div class="titre"><b>${T('feuille', 'FEUILLE DE SERVICE')} ${T('jourMot', 'JOUR')} ${ed(c, 'jour', { v: jour, ph: '1' })}</b>
+      <b class="date">${ed(c, 'dateTexte', { v: dateTexte, ph: 'DATE' })}</b></div>
+    <div class="infos">
+      ${champ('labTitre', 'Production Title', 'titre', { ph: 'Titre du projet' })}
+      ${edit || c.credits ? `<p class="cred">${ed(c, 'credits', { ph: 'Photographer : … / Director : …', fmt: credFmt })}</p>` : ''}
+      <div class="esp"></div>
+      ${champ('labLieu', 'Location', 'lieu', { ph: 'Lieu' })}
+      ${champ('labTiming', 'Timing', 'timing', { ph: '14:00 - 04:30' })}
+    </div>
   </header>`;
-  const champ = (lab, def, k, o = {}) => (edit || String(c[k] || '').trim()) ? `<span class="k2">${T(lab, def)}</span><b>${ed(c, k, o)}</b>` : '';
-  const infos = `<div class="infos">
-    <div>${champ('labTitre', 'Production', 'titre', { ph: 'Titre du projet' })}</div>
-    <div class="r">${champ('labLieu', 'Location', 'lieu', { ph: 'Lieu' })}</div>
-    <div class="cred">${edit || c.credits ? ed(c, 'credits', { ph: 'Photographer : … / Director : …' }) : ''}</div>
-    <div class="r">${champ('labTiming', 'Timing', 'timing', { ph: '14:00 - 04:30' })}</div>
-  </div>
-  ${edit || c.basecamp ? `<div class="base"><span class="k2">${T('labBase', 'Basecamp')}</span>${ed(c, 'basecamp', { ph: 'Adresse du basecamp', lien: csLienLieu(c.basecamp) })}</div>` : ''}
-  ${edit || c.meteo ? `<p class="meteo">${T('labMeteo', 'Météo')} : ${ed(c, 'meteo', { ph: 'facultatif (vide : pas dans le PDF)' })}</p>` : ''}`;
 
-  // Déroulé : un bloc par partie (vidéo, photo), côte à côte
+  // Bloc gris : basecamp, météo, puis les déroulés côte à côte (vidéo, photo)
   const blocs = (c.schedules || []).filter(b => edit || csSchLignes(b).some(l => l.h || l.t));
   const schHtml = b => `<div class="sch">
     <h3>${ed(b, 'titre', { sch: b.id, ph: 'SCHEDULE' })}${edit ? `<span class="sch-x" contenteditable="false"><button type="button" title="Retirer ce bloc" onclick="csScheduleRetirer('${b.id}')">✕</button></span>` : ''}</h3>
     <table class="schl">${csSchLignes(b).filter(l => edit || l.h || l.t).map(l => {
       const o = { sch: b.id, sl: l.id };
+      if (!edit && !l.h) return `<tr class="sous"><td colspan="2" class="tt">${ed(l, 't', o)}</td></tr>`;
       return `<tr class="${l.h ? 'h' : 'sous'}"><td class="hh">${ed(l, 'h', { ...o, ph: '00:00 - 00:00' })}${outils(`<button type="button" title="Ajouter une ligne dessous (ou Entrée)" onclick="csSchLigneAjouter('${b.id}', '${l.id}')">+</button><button type="button" title="Retirer" onclick="csSchLigneRetirer('${b.id}', '${l.id}')">✕</button>`)}</td><td class="tt">${ed(l, 't', { ...o, ph: l.h ? 'Ce qui se passe' : 'avec … (ligne sans heure)' })}</td></tr>`;
     }).join('')}</table>
     ${edit ? `<div class="pdt-ajout-bas"><button type="button" onclick="csSchLigneAjouter('${b.id}')">+ ligne</button></div>` : ''}
   </div>`;
-  const schedule = blocs.length || edit ? `<section class="sec"><h2 class="sec-t"><span>${T('schedule', 'SCHEDULE')}</span></h2>
-    <div class="schs" style="grid-template-columns:repeat(${Math.min(3, Math.max(1, blocs.length))}, minmax(0, 1fr))">${blocs.map(schHtml).join('')}</div>
-    ${edit ? `<div class="pdt-ajout-bas"><button type="button" onclick="csScheduleAjouter()">+ bloc (SCHEDULE …)</button></div>` : ''}</section>` : '';
+  const aBase = edit || c.basecamp, aMeteo = edit || c.meteo;
+  const infos = aBase || aMeteo || blocs.length || edit ? `<section class="bloc gris jour-b">
+    ${aBase ? `<p class="base"><b class="rouge">${T('labBase', 'BASECAMP')}</b> <b>:</b> ${ed(c, 'basecamp', { ph: 'Adresse du basecamp', lien: csLienLieu(c.basecamp) })}</p>` : ''}
+    ${aMeteo ? `<p class="meteo"><b>${T('labMeteo', 'MÉTÉO')} :</b> ${ed(c, 'meteo', { ph: 'facultatif (vide : pas dans le PDF)' })}</p>` : ''}
+    ${blocs.length ? `<div class="schs" style="grid-template-columns:repeat(${Math.min(3, Math.max(1, blocs.length))}, minmax(0, 1fr))">${blocs.map(schHtml).join('')}</div>` : ''}
+    ${edit ? `<div class="pdt-ajout-bas"><button type="button" onclick="csScheduleAjouter()">+ bloc (SCHEDULE …)</button></div>` : ''}
+  </section>` : '';
+  const schedule = '';
 
-  const note = edit || String(c.note || '').trim() ? `<section class="sec"><h2 class="sec-t"><span>${T('crewNote', 'CREW NOTE')}</span></h2><p class="note">${ed(c, 'note', { multi: true, ph: 'Note à toute l\'équipe' })}</p></section>` : '';
+  const note = edit || String(c.note || '').trim() ? `<section class="bloc gris note-b"><h2>${T('crewNote', 'CREW NOTE')}</h2><p class="note">${ed(c, 'note', { multi: true, ph: 'Note à toute l\'équipe' })}</p></section>` : '';
 
   // Tableau de l'équipe
   const colOutils = (k, j) => !edit ? '' : `<div class="pdt-col-outils" contenteditable="false">
@@ -1199,14 +1205,14 @@ function csDocCorps(c, edit) {
       const iCall = cols.indexOf('call'), reste = nCols - 1 - (iCall >= 0 ? 1 : 0);
       return `${tr}<td class="pos">${tools}${ed(l, 'nom', { ...o, ph: 'LIEU' })}</td><td colspan="${Math.max(1, reste)}" class="adr">${ed(l, 'adresse', { ...o, ph: 'Adresse', lien: csLienLieu(l.adresse) })}${edit || l.tel ? ` <span class="sep">·</span> ${ed(l, 'tel', { ...o, ph: 'téléphone' })}` : ''}</td>${iCall >= 0 ? `<td class="call">${ed(l, 'call', { ...o, ph: 'OWN', fmt: tbc })}</td>` : ''}</tr>`;
     }
-    return `${tr}${cols.map((k, j) => `<td class="${k}">${j === 0 ? tools : ''}${cellule(s, l, k)}</td>`).join('')}</tr>`;
+    return `${tr}${cols.map((k, j) => `<td class="${k}${k === 'vehicule' ? csVehClasse(l.vehicule) : ''}">${j === 0 ? tools : ''}${cellule(s, l, k)}</td>`).join('')}</tr>`;
   };
   const groupes = c.sections.filter(s => edit || s.lignes.some(l => !vide(l)));
   const equipe = (pjById(c.projetId) || {}).equipe || [];
   const groupeHtml = (s, si) => `<tbody class="g"><tr class="grp"${edit ? ` data-s="${s.id}"` : ''}><td colspan="${nCols}">${outils(`<button type="button" title="Monter le groupe" onclick="csSectionDeplacer('${s.id}', -1)"${si ? '' : ' disabled'}>↑</button><button type="button" title="Descendre le groupe" onclick="csSectionDeplacer('${s.id}', 1)"${si < c.sections.length - 1 ? '' : ' disabled'}>↓</button><button type="button" title="Ajouter un groupe dessous" onclick="csSectionAjouter('${s.id}')">+</button><button type="button" title="Retirer le groupe" onclick="csSectionRetirer('${s.id}')">✕</button>`)}${ed(s, 'titre', { s: s.id, ph: 'GROUPE', cls: 'up' })}
       ${edit ? `<span class="grp-plus" contenteditable="false"><button type="button" onclick="csAjouterPersonne('${s.id}', 'vide')">+ ${s.cle === 'lieux' ? 'lieu' : 'personne'}</button>${s.cle !== 'lieux' && equipe.length ? `<select title="Ajouter quelqu'un de l'équipe du projet" onchange="csAjouterPersonne('${s.id}', this.value)"><option value="">+ de l'équipe…</option>${equipe.filter(a => pjNomPersonne(a)).map(a => `<option value="${a.id}">${esc(pjNomPersonne(a) + (a.role ? ' · ' + a.role : ''))}</option>`).join('')}</select>` : ''}${s.lignes.length && s.cle !== 'lieux' && champsAppli.length ? `<select title="Mettre la même valeur à tout le groupe" onchange="csAppliquerDemande('${s.id}', this.value); this.value=''"><option value="">tout le groupe…</option>${champsAppli.map(k => `<option value="${k}">${esc(csColTitre(c, k))}</option>`).join('')}</select>` : ''}</span>` : ''}</td></tr>
       ${s.lignes.filter(l => edit || !vide(l)).map(l => ligne(s, l)).join('')}</tbody>`;
-  const crew = `<section class="sec"><h2 class="sec-t"><span>${T('crew', 'CREW')}</span></h2>
+  const crew = `<section class="bloc crew-b"><div class="barre-noire"></div>
     <table class="crew">
       <colgroup>${larg.map(w => `<col style="width:${w}%">`).join('')}</colgroup>
       ${thead}
@@ -1217,80 +1223,86 @@ function csDocCorps(c, edit) {
 
   return `<div class="cs-doc${edit ? ' pdt-doc pdt-doc-ed' : ''}">${entete}${infos}${schedule}${note}${crew}</div>`;
 }
+// Les couleurs des véhicules du sheet
+function csVehClasse(v) {
+  const x = pjNorm(v || '');
+  return /\bvan\b/.test(x) ? ' veh-van' : /camion/.test(x) ? ' veh-camion' : /volvo/.test(x) ? ' veh-volvo' : '';
+}
 
 function csDocCss(ecran, edit) {
   return `${edit ? '' : `@page { size: A4 portrait; margin: 0; }
   body { margin: 0; background: ${ecran ? '#fff' : '#e9e9e7'}; -webkit-print-color-adjust: exact; print-color-adjust: exact; }`}
   .cs-doc, .cs-doc * { box-sizing: border-box; margin: 0; padding: 0; }
-  .cs-doc { --ink: #141414; --gris: #8a8a86; --filet: #e2e2de; --rouge: #9b1c1c; font-family: 'EB Garamond', Garamond, Georgia, serif; font-variant-numeric: lining-nums; color: var(--ink); width: 210mm; min-height: 297mm; margin: ${ecran && !edit ? '0' : '10mm'} auto; background: #fff; padding: 13mm 12mm 12mm; font-size: 11px; line-height: 1.3; text-align: left; letter-spacing: normal; }
+  .cs-doc { --ink: #000; --gris: #f3f3f3; --bande: #efefef; --rouge: #cc0000; --lien: #1155cc; font-family: 'Work Sans', Arial, sans-serif; color: var(--ink); width: 210mm; min-height: 297mm; margin: ${ecran && !edit ? '0' : '10mm'} auto; background: #fff; padding: 11mm 10mm 10mm; font-size: 8.5px; line-height: 1.35; text-align: left; letter-spacing: normal; }
   .cs-doc a { color: inherit; text-decoration: none; }
-  .cs-doc .adr a, .cs-doc .pickupLieu a, .cs-doc .base a { border-bottom: 1px solid var(--filet); }
+  .cs-doc .base a, .cs-doc td.pickupLieu a, .cs-doc td.adr a { color: var(--lien); text-decoration: underline; }
+  .cs-doc .bloc { border: 1px solid var(--ink); }
+  .cs-doc .gris { background: var(--gris); }
+  .cs-doc .rouge { color: var(--rouge); }
 
-  /* En-tête : logos aux coins, jour et date au centre (comme la travel sheet) */
-  .cs-doc .entete { display: grid; grid-template-columns: 1fr 2fr 1fr; align-items: center; padding-bottom: 14px; border-bottom: 2px solid var(--ink); }
-  .cs-doc .entete .client { font-weight: 500; font-size: 22px; letter-spacing: .06em; line-height: 1; }
-  .cs-doc .entete .client img { max-width: 34mm; max-height: 15mm; display: block; }
-  .cs-doc .entete .milieu { text-align: center; line-height: 1.25; }
-  .cs-doc .entete .k { font-size: 10px; font-weight: 500; letter-spacing: .32em; color: var(--gris); padding-left: .32em; }
-  .cs-doc .entete .jour { display: block; font-size: 26px; font-weight: 500; letter-spacing: .05em; margin: 4px 0 3px; }
-  .cs-doc .entete .date { font-size: 12px; letter-spacing: .16em; color: #555; }
-  .cs-doc .entete .widen { justify-self: end; height: 15px; }
+  /* En-tête : logo du client à gauche, WIDEN à droite, titre au centre, infos à droite */
+  .cs-doc .entete { padding: 6px 8px 9px; }
+  .cs-doc .logos { display: flex; justify-content: space-between; align-items: flex-start; min-height: 13mm; }
+  .cs-doc .logos .client { font-size: 20px; font-weight: 600; letter-spacing: .02em; }
+  .cs-doc .logos .client img { max-width: 48mm; max-height: 14mm; display: block; }
+  .cs-doc .logos .widen { height: 20px; margin-top: 4px; }
+  .cs-doc .entete .titre { text-align: center; font-size: 11px; line-height: 1.3; margin: 2px 0 12px; }
+  .cs-doc .entete .titre b { display: block; font-weight: 700; text-transform: uppercase; }
+  .cs-doc .entete .infos { text-align: right; font-style: italic; font-size: 7.5px; line-height: 1.45; }
+  .cs-doc .entete .infos b { font-weight: 700; }
+  .cs-doc .entete .infos .esp { height: 7px; }
 
-  /* Infos de la journée */
-  .cs-doc .infos { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 24px; padding: 11px 0 10px; border-bottom: 1px solid var(--filet); }
-  .cs-doc .infos > div { display: flex; gap: 10px; align-items: baseline; font-size: 12.5px; min-width: 0; }
-  .cs-doc .infos .r { justify-content: flex-end; text-align: right; }
-  .cs-doc .k2 { font-size: 9.5px; font-weight: 500; letter-spacing: .2em; text-transform: uppercase; color: var(--gris); white-space: nowrap; }
-  .cs-doc .infos b { font-weight: 600; letter-spacing: .02em; }
-  .cs-doc .base { padding: 9px 0; text-align: center; font-size: 13px; border-bottom: 1px solid var(--filet); }
-  .cs-doc .base .k2 { color: var(--rouge); margin-right: 10px; }
-  .cs-doc .meteo { padding: 7px 0 0; text-align: center; font-size: 12px; color: #555; font-style: italic; }
-
-  /* Titres de section : petites capitales espacées, filet fin de chaque côté */
-  .cs-doc .sec { margin-top: 16px; }
-  .cs-doc .sec-t { display: flex; align-items: center; gap: 12px; font-size: 10.5px; font-weight: 600; letter-spacing: .26em; margin-bottom: 8px; }
-  .cs-doc .sec-t::before, .cs-doc .sec-t::after { content: ''; flex: 1; height: 1px; background: var(--ink); }
-  .cs-doc .sec-t span { padding-left: .26em; }
-
-  /* Déroulé */
-  .cs-doc .schs { display: grid; gap: 0 26px; }
+  /* Bloc gris de la journée */
+  .cs-doc .jour-b { margin-top: 8px; padding: 10px 8px 14px; }
+  .cs-doc .base, .cs-doc .meteo { font-size: 9px; margin-bottom: 6px; }
+  .cs-doc .base b, .cs-doc .meteo b { font-weight: 700; }
+  .cs-doc .schs { display: grid; gap: 0 22px; margin-top: 10px; }
   .cs-doc .sch { break-inside: avoid; min-width: 0; }
-  .cs-doc .sch h3 { font-size: 9.5px; font-weight: 500; letter-spacing: .22em; color: var(--gris); margin-bottom: 4px; position: relative; }
-  .cs-doc table.schl { width: 100%; border-collapse: collapse; font-size: 12px; }
-  .cs-doc table.schl td { padding: 1.5px 0; vertical-align: baseline; border: none; }
-  .cs-doc table.schl td.hh { width: 84px; padding-right: 8px; font-weight: 600; color: var(--rouge); white-space: nowrap; letter-spacing: .02em; }
-  .cs-doc table.schl td.tt { font-weight: 500; }
-  .cs-doc table.schl tr.sous td.tt { font-style: italic; color: #555; font-weight: 400; font-size: 11.5px; }
+  .cs-doc .sch h3 { font-size: 9px; font-weight: 700; text-transform: uppercase; margin-bottom: 10px; position: relative; }
+  .cs-doc table.schl { border-collapse: collapse; font-size: 9px; }
+  .cs-doc table.schl td { padding: 0; vertical-align: baseline; border: none; line-height: 1.45; }
+  .cs-doc table.schl td.hh { padding-right: 9px; font-weight: 700; white-space: nowrap; }
+  .cs-doc table.schl tr.h td.tt { font-weight: 700; }
+  .cs-doc table.schl tr.sous td.tt { font-weight: 400; }
 
-  .cs-doc .note { text-align: center; font-size: 11.5px; font-style: italic; color: #444; max-width: 88%; margin: 0 auto; white-space: pre-line; }
+  .cs-doc .note-b { margin-top: 18px; padding: 8px 10px 10px; text-align: center; }
+  .cs-doc .note-b h2 { font-size: 7.5px; font-weight: 700; margin-bottom: 1px; }
+  .cs-doc .note { font-size: 6.8px; white-space: pre-line; }
 
-  /* Tableau de l'équipe */
-  .cs-doc table.crew { width: 100%; border-collapse: collapse; table-layout: fixed; font-size: 10px; }
-  .cs-doc table.crew thead th { font-size: 7.5px; font-weight: 500; letter-spacing: .12em; color: var(--gris); text-align: left; padding: 0 4px 5px; border-bottom: 1.5px solid var(--ink); vertical-align: bottom; line-height: 1.2; }
-  .cs-doc table.crew td { padding: 2.5px 4px; vertical-align: baseline; border-bottom: 1px solid var(--filet); overflow-wrap: anywhere; }
-  .cs-doc table.crew tbody tr:last-child td { border-bottom: none; }
-  .cs-doc table.crew tr.grp td { padding: 11px 4px 3px; border-bottom: 1px solid var(--ink); font-size: 9.5px; font-weight: 600; letter-spacing: .24em; text-transform: uppercase; }
+  /* Tableau de l'équipe : barre noire, bandes grises par groupe, colonnes centrées */
+  .cs-doc .crew-b { border-top: none; }
+  .cs-doc .barre-noire { height: 8px; background: var(--ink); margin: 0 -1px; }
+  .cs-doc table.crew { width: 100%; border-collapse: collapse; table-layout: fixed; font-size: 7.5px; }
+  .cs-doc table.crew thead th { font-size: 6.5px; font-weight: 400; text-transform: uppercase; text-align: center; padding: 6px 3px 1px; border-bottom: 1px solid var(--ink); vertical-align: bottom; line-height: 1.2; }
+  .cs-doc table.crew td { padding: 1px 3px; vertical-align: top; text-align: center; overflow-wrap: anywhere; line-height: 1.4; }
+  .cs-doc table.crew tr.grp td { background: var(--bande); padding: 2px 3px; border-top: 1px solid var(--ink); border-bottom: 1px solid var(--ink); font-size: 6.5px; font-weight: 700; text-transform: uppercase; text-align: left; }
+  .cs-doc table.crew tbody.g:first-of-type tr.grp td { border-top: none; }
+  .cs-doc table.crew tr.grp + tr td { padding-top: 9px; }
+  .cs-doc table.crew tbody.g tr:last-child:not(.grp) td { padding-bottom: 9px; }
   .cs-doc tbody.g { break-inside: avoid; }
-  .cs-doc td.pos { color: #555; font-style: italic; }
-  .cs-doc td.nom { font-weight: 600; font-size: 11px; }
-  .cs-doc td.call, .cs-doc th.call { text-align: right; }
-  .cs-doc td.call { font-weight: 600; color: var(--rouge); white-space: nowrap; }
-  .cs-doc td.tel { white-space: nowrap; }
-  .cs-doc td.vehicule { letter-spacing: .06em; font-size: 9.5px; }
-  .cs-doc td.adr .sep { color: var(--gris); }
-  .cs-doc .tbc { color: var(--rouge); font-weight: 600; letter-spacing: .06em; }
+  .cs-doc table.crew th.pos, .cs-doc table.crew td.pos { text-align: left; }
+  .cs-doc table.crew th.call, .cs-doc table.crew td.call { text-align: right; }
+  .cs-doc td.call, .cs-doc td.tel { white-space: nowrap; }
+  .cs-doc td.veh-van { color: #e06666; }
+  .cs-doc td.veh-camion { color: #8e7cc3; }
+  .cs-doc td.veh-volvo { color: #93c47d; }
+  .cs-doc td.adr { text-align: center; }
+  .cs-doc td.adr .sep { color: #999; }
+  .cs-doc .tbc { font-weight: 600; }
   ${edit ? `
   .pdt-ed-zone .cs-doc { box-shadow: 0 1px 6px rgba(0,0,0,.15); margin: 0 auto; }
   .cs-doc.pdt-doc-ed .ed { outline: none; min-width: 1.2em; display: inline-block; border-radius: 1px; cursor: text; white-space: pre-wrap; }
   .cs-doc.pdt-doc-ed td > .ed, .cs-doc.pdt-doc-ed .note > .ed, .cs-doc.pdt-doc-ed .cred > .ed { display: block; min-height: 1.25em; }
-  .cs-doc.pdt-doc-ed .infos b, .cs-doc.pdt-doc-ed .base > .ed { min-width: 4em; }
+  .cs-doc.pdt-doc-ed .entete .infos .ed, .cs-doc.pdt-doc-ed .base > .ed { min-width: 6em; }
+  .cs-doc.pdt-doc-ed td.hh .ed, .cs-doc.pdt-doc-ed td.call .ed, .cs-doc.pdt-doc-ed td.tel .ed { white-space: nowrap; }
   .cs-doc.pdt-doc-ed .ed:hover { box-shadow: 0 0 0 1px #9cb6d8; }
   .cs-doc.pdt-doc-ed .ed:focus { box-shadow: 0 0 0 1.5px #2f5597; background: #fff8; }
   .cs-doc.pdt-doc-ed .ed:empty::before { content: attr(data-ph); color: #b5b5b0; font-weight: 400; font-style: italic; letter-spacing: normal; text-transform: none; }
-  .cs-doc.pdt-doc-ed td.call .ed:empty::before { color: #d9a3a3; font-style: normal; }
+  .cs-doc.pdt-doc-ed td.call .ed:empty::before { color: #aaa; font-style: normal; }
   .cs-doc.pdt-doc-ed td { position: relative; }
   .cs-doc.pdt-doc-ed .pdt-outils { position: absolute; right: 100%; top: 50%; transform: translateY(-50%); display: flex; gap: 2px; align-items: center; z-index: 3; padding: 4px 6px 4px 10px; visibility: hidden; opacity: 0; transition: opacity .15s, visibility 0s linear .8s; font: 10px Arial, sans-serif; letter-spacing: normal; text-transform: none; }
   .cs-doc.pdt-doc-ed table.crew td:first-child { overflow: visible; }
+  .cs-doc.pdt-doc-ed .crew-b, .cs-doc.pdt-doc-ed .jour-b { overflow: visible; }
   .cs-doc.pdt-doc-ed tr:hover .pdt-outils, .cs-doc.pdt-doc-ed tr:focus-within .pdt-outils, .cs-doc.pdt-doc-ed .pdt-outils:hover { visibility: visible; opacity: 1; transition-delay: 0s; }
   .cs-doc.pdt-doc-ed .pdt-outils button, .cs-doc.pdt-doc-ed .grp-plus button, .cs-doc.pdt-doc-ed .grp-plus select, .cs-doc.pdt-doc-ed .sch-x button { font: 10px Arial, sans-serif; letter-spacing: normal; text-transform: none; background: #fff; border: 1px solid #ccc; color: #333; padding: 0 4px; height: 18px; cursor: pointer; min-width: 18px; }
   .cs-doc.pdt-doc-ed .pdt-outils button:disabled { opacity: .35; cursor: default; }
@@ -1325,7 +1337,7 @@ function csDocHtml(c, ecran) {
   return `<!DOCTYPE html><html lang="fr"><head><meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>${esc(titreDoc)}</title>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=EB+Garamond:ital,wght@0,400;0,500;0,600;0,700;1,400;1,500&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Work+Sans:ital,wght@0,400;0,500;0,600;0,700;1,400;1,700&display=swap">
 <style>${csDocCss(ecran, false)}</style></head><body>
 ${ecran ? '' : '<div class="barre" style="position:sticky;top:0;z-index:5;display:flex;gap:12px;align-items:center;justify-content:center;padding:12px;background:#111;color:#fff;font:14px Arial">Vérifie la callsheet puis <button onclick="window.print()">IMPRIMER / ENREGISTRER EN PDF</button></div>'}
 ${csDocCorps(c, false)}
