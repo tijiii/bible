@@ -406,6 +406,8 @@ function tdProjetHtml(p) {
   const apart = !stF;
   const ouvertes = (apart ? l.filter(t => !t.fait) : l).slice().sort(ordre);
   const faites = apart ? l.filter(t => t.fait).sort(ordre) : [];
+  // Sans filtre de personne, les tâches ouvertes sont rangées par personne
+  const groupes = !quiF && ouvertes.length ? tdGroupesParPersonne(ouvertes) : null;
   const nbOuvertes = toutes.filter(t => !t.fait).length;
   const barre = toutes.length ? pjBFBarre(`${pjBFSel('tdQui', quiF, [['', 'TOUT LE MONDE']].concat(gens.map(([k, n]) => [k, n.toUpperCase()])), 'Personne')}
     ${pjBFSel('tdStatut', stF, [['', 'À FAIRE + EN COURS'], ['afaire', 'À FAIRE'], ['encours', 'EN COURS'], ['fait', 'TERMINÉES'], ['toutes', 'TOUTES']], 'Statut')}
@@ -416,7 +418,7 @@ function tdProjetHtml(p) {
   return `<details class="ts-bloc pj-repli pj-taches"${ouvert ? ' open' : ''} ontoggle="if(this.open!==${ouvert})tdOuvert=this.open">
     <summary><h3>TO-DO <small class="pj-muted">${nbOuvertes ? `· ${nbOuvertes} à faire` : ''}</small>${nbRetard ? ` <span class="pj-warn">⚠ ${nbRetard} en retard</span>` : ''}${barre}</h3></summary>
     <datalist id="td-noms">${tdNoms(p).map(n => `<option value="${esc(n)}"></option>`).join('')}</datalist>
-    <div class="td-liste">${ouvertes.map(t => tdLigneHtml(t)).join('') || (l.length !== toutes.length || stF ? '<p class="field-hint">Aucune tâche avec ces filtres.</p>' : '<p class="field-hint">Rien à faire pour le moment. Ajoute une tâche, attribue-la à quelqu\'un : elle apparaîtra chez lui. La date est facultative : sans date, choisis un rappel tous les jours ou tous les 2 jours.</p>')}</div>
+    <div class="td-liste">${groupes ? groupes.map(g => tdGroupeHtml(g)).join('') : ouvertes.map(t => tdLigneHtml(t)).join('') || (l.length !== toutes.length || stF ? '<p class="field-hint">Aucune tâche avec ces filtres.</p>' : '<p class="field-hint">Rien à faire pour le moment. Ajoute une tâche, attribue-la à quelqu\'un : elle apparaîtra chez lui. La date est facultative : sans date, choisis un rappel tous les jours ou tous les 2 jours.</p>')}</div>
     <div class="ts-add-row"><button type="button" class="btn-upload" onclick="tdAjouter()">+ TÂCHE</button></div>
     ${faites.length ? `<details class="pj-sous-bloc"${tdFaitesOuvert ? ' open' : ''} ontoggle="if(this.open!==${tdFaitesOuvert})tdFaitesOuvert=this.open">
       <summary><span class="pj-sous-titre">TERMINÉES</span> <small class="pj-muted">${faites.length}</small></summary>
@@ -425,10 +427,46 @@ function tdProjetHtml(p) {
   </details>`;
 }
 
+// ── Une couleur par personne, pour s'y retrouver dans la to-do ───────────────
+// L'équipe garde toujours la même couleur (dans l'ordre de l'équipe) ;
+// les autres noms en reçoivent une d'après leur nom.
+const TD_COULEURS = ['#2f6fb5', '#c2571a', '#2e8b57', '#8e44ad', '#b8860b', '#c0397a', '#138d90', '#6d4c41', '#5c6bc0', '#7c8a1e', '#d0453a', '#455a64'];
+function tdCouleur(nom) {
+  if (!nom) return '#9a9a96';
+  const k = pjNorm(nom);
+  const i = tdEquipe().findIndex(n => pjNorm(n) === k);
+  if (i >= 0) return TD_COULEURS[i % TD_COULEURS.length];
+  let h = 0;
+  for (const c of k) h = (h * 31 + c.charCodeAt(0)) >>> 0;
+  return TD_COULEURS[h % TD_COULEURS.length];
+}
+
+// Les tâches par personne : toi d'abord, puis les autres par nom, « sans personne » à la fin.
+// L'ordre choisi (statut, urgence, date) est gardé dans chaque groupe.
+function tdGroupesParPersonne(l) {
+  const m = new Map();
+  l.forEach(t => {
+    const k = t.qui ? pjNorm(t.qui) : '~';
+    if (!m.has(k)) m.set(k, { k, nom: t.qui || '', taches: [] });
+    m.get(k).taches.push(t);
+  });
+  const moi = pjNorm(tdMoi() || '');
+  return [...m.values()].sort((a, b) => (a.k === '~') - (b.k === '~') || (b.k === moi) - (a.k === moi) || a.nom.localeCompare(b.nom, 'fr'));
+}
+
+function tdGroupeHtml(g) {
+  const moi = g.nom && tdEstMoi(g.nom);
+  const nbRetard = g.taches.filter(t => tdEtat(t) === 'retard').length;
+  return `<div class="td-pgroupe" style="--td-c:${tdCouleur(g.nom)}">
+    <div class="td-pgroupe-titre"><span class="td-pastille"></span>${g.nom ? esc(g.nom.toUpperCase()) : 'SANS PERSONNE'}${moi ? ' <small class="pj-muted">(toi)</small>' : ''} <small class="pj-muted">· ${g.taches.length}</small>${nbRetard ? ` <span class="pj-warn">⚠ ${nbRetard}</span>` : ''}</div>
+    ${g.taches.map(t => tdLigneHtml(t)).join('')}
+  </div>`;
+}
+
 function tdLigneHtml(t) {
   const o = { l: 'taches', i: t.id };
   const etat = tdEtat(t);
-  return `<div class="td-ligne td-${etat} td-u${tdUrgence(t)}">
+  return `<div class="td-ligne td-${etat} td-u${tdUrgence(t)}" style="--td-c:${tdCouleur(t.qui)}">
     ${tdStatutSelectHtml(t)}
     ${pjField('', 'texte', t.texte, { ...o, ph: 'Tâche (ex : envoyer la V1 au client)', cls: 'td-texte' })}
     <div class="field td-qui-champ"><label></label><input list="td-noms" data-k="qui" data-l="taches" data-i="${t.id}" value="${esc(t.qui || '')}" placeholder="Pour qui ?" oninput="pjInput(this)" onchange="pjRedessiner()"></div>
@@ -464,8 +502,9 @@ function tdAjouter() {
   tdTaches(p).push({ id: uid(), texte: '', qui, echeance: '', rappel: 'j2', urgence: '2', statut: st, fait: false, par: tdMoi(), le: pjAujourdhui() });
   tdOuvert = true;
   pjChange(true);
-  const champs = document.querySelectorAll('.pj-taches .td-texte input');
-  if (champs.length) champs[champs.length - 1].focus();
+  const t = tdTaches(p)[tdTaches(p).length - 1];
+  const champ = document.querySelector(`.pj-taches .td-texte input[data-i="${t.id}"]`);
+  if (champ) { champ.focus(); champ.scrollIntoView({ block: 'nearest' }); }
 }
 
 function tdCocher(id, on, pid) { tdChangerStatut(id, on ? 'fait' : 'afaire', pid); }

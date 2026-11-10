@@ -23,7 +23,7 @@ let pjEquipeOuvert = false;  // bloc ÉQUIPE déplié
 let pjBlocFiltres = {};      // filtres et tris des blocs d'un projet (étapes, to-do, équipe, options), par projet
 let pjModifie = null;        // dernier projet modifié (la synchro le garde tant qu'il n'est pas envoyé)
 let pjEnDessin = false;      // la page est en train d'être remplacée (le champ quitté envoie « change »)
-let pjOnglet = 'calendrier'; // onglet ouvert dans la page du projet (voir PJ_ONGLETS)
+let pjOnglet = 'infos';      // onglet ouvert dans la page du projet (voir PJ_ONGLETS)
 
 const PJ_STATUTS = [
   ['devis', 'En discussion', '#9a9a96'],
@@ -393,7 +393,7 @@ function pjMien(c, p) { return c.x.p.id === p.id ? c.x : c.y; }
 function pjGo(vue, id) {
   if (vue === 'ts' && pjVue !== 'ts') pjTsDepuis = pjVue === 'projet' && pjCur() ? pjId : null;
   pjVue = vue;
-  if (id !== undefined && id !== pjId) { pjId = id; pjOnglet = 'calendrier'; pjMois = ''; pjRetroOuvert = false; pjEtapesOuvert = false; pjCalEtapesOuvert = false; pjEtSel = new Set(); pjEqSel = new Set(); pjEquipeOuvert = false; tdOuvert = false; tdFaitesOuvert = false; pjAffOuvert = new Set(); if (pjRetro && !pjRetro.enCours) pjRetro = null; }
+  if (id !== undefined && id !== pjId) { pjId = id; pjOnglet = 'infos'; pjMois = ''; pjRetroOuvert = false; pjEtapesOuvert = false; pjCalEtapesOuvert = false; pjEtSel = new Set(); pjEqSel = new Set(); pjEquipeOuvert = false; tdOuvert = false; tdFaitesOuvert = false; pjAffOuvert = new Set(); if (pjRetro && !pjRetro.enCours) pjRetro = null; }
   buildTabs();
   render();
   window.scrollTo(0, 0);
@@ -766,9 +766,9 @@ function renderPjProjet(main) {
   main.innerHTML = pjPageHtml(p, conflits, choix);
 }
 
-// La page d'un projet est rangée en onglets : on arrive sur le calendrier,
-// le reste (étapes à modifier et import du rétroplanning, équipe, to-do, PDT,
-// travel sheets, infos) est à un clic.
+// La page d'un projet est rangée en onglets : on arrive sur NOTES & INFOS
+// (avec le calendrier dedans), le reste (calendrier en grand, étapes à modifier
+// et import du rétroplanning, équipe, to-do, PDT, travel sheets) est à un clic.
 const PJ_ONGLETS = [
   ['infos', 'NOTES & INFOS'], ['calendrier', 'CALENDRIER'], ['retro', 'ÉTAPES'], ['equipe', 'ÉQUIPE'], ['todo', 'TO-DO'],
   ['pdt', 'PDT'], ['callsheet', 'CALLSHEETS'], ['travel', 'TRAVEL SHEETS'],
@@ -787,7 +787,7 @@ function pjOngletsHtml(p) {
 }
 
 function pjSetOnglet(k) {
-  pjOnglet = PJ_ONGLETS.some(o => o[0] === k) ? k : 'calendrier';
+  pjOnglet = PJ_ONGLETS.some(o => o[0] === k) ? k : 'infos';
   pjRedessiner();
   const nav = document.querySelector('.pj-onglets');
   if (nav && nav.getBoundingClientRect().top < 0) nav.scrollIntoView({ block: 'start' });
@@ -813,12 +813,18 @@ function pjOngletCorpsHtml(p, choix) {
     case 'callsheet': return pjCallsheetsHtml(p);
     case 'travel': return pjTravelHtml(p);
     case 'infos': return pjInfosHtml(p);
-    default: return `<section class="ts-bloc pj-cal-bloc${pjBF(p).calPlein ? ' pj-cal-plein' : ''}">
+    default: return pjCalBlocHtml(p);
+  }
+}
+
+// Le bloc CALENDRIER (vues mois, rétroplanning, post-prod) : l'onglet CALENDRIER,
+// et repris dans NOTES & INFOS où l'on arrive en ouvrant le projet
+function pjCalBlocHtml(p) {
+  return `<section class="ts-bloc pj-cal-bloc${pjBF(p).calPlein ? ' pj-cal-plein' : ''}">
       <h3>CALENDRIER ${pjCalVuesHtml(p)}</h3>
       ${pjBF(p).calVue === 'mois' ? pjCalendrierHtml(p) : pjFriseHtml(p, pjBF(p).calVue === 'postprod' ? 'postprod' : 'global')}
   ${pjEtapesBlocHtml(p, true)}
     </section>`;
-  }
 }
 
 function pjPageHtml(p, conflits, choix) {
@@ -833,12 +839,14 @@ function pjPageHtml(p, conflits, choix) {
   </div>`;
 }
 
-// Onglet NOTES & INFOS : les notes, puis nom, client, statut, couleur, ce qui vient de PROJETS WIDEN
+// Onglet NOTES & INFOS : les notes, le calendrier, puis nom, client, statut, couleur, ce qui vient de PROJETS WIDEN
 function pjInfosHtml(p) {
   return `<section class="ts-bloc">
       <h3>NOTES</h3>
       ${pjField('', 'notes', p.notes, { textarea: true, rows: 4, full: true, ph: 'Infos utiles, liens (devis, Dropbox, rétroplanning)…' })}
     </section>
+
+    ${pjCalBlocHtml(p)}
 
     <section class="ts-bloc">
       <h3>PROJET</h3>
