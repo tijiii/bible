@@ -13,6 +13,7 @@ casting-bible/
 ├── app.js       ← logique de l'app
 ├── prod.js      ← travel sheets (dans l'onglet Suivi production)
 ├── pdt.js       ← plans de travail / shooting schedules (dans chaque projet)
+├── callsheet.js ← callsheets / feuilles de service (dans chaque projet)
 └── projets.js   ← onglet Suivi production (suivi des projets)
 ```
 
@@ -223,6 +224,17 @@ Le formulaire : horaires de la journée (call, ready to shoot, wrap…), cast (c
 
 Les images de référence sont envoyées au serveur Cloudflare (`/store/photo/ref`) ; si l'envoi échoue, une petite copie est gardée dans le PDT. Un plan peut avoir plusieurs images (`img` puis `imgs`) : clic sur une image pour la changer, × pour la retirer, clic ailleurs dans la case (ou +), collage ou dépôt de plusieurs fichiers pour en ajouter. Elles se rangent toutes seules en grille selon la taille de la case (`pdtImgCols` : 2 côte à côte, 3 = 2 en haut et 1 en bas, 4 en carré…), dans le document comme dans le PDF.
 
+## Callsheets (feuilles de service)
+
+Dans la page d'un projet (Suivi production), onglet **CALLSHEETS** (fichier `callsheet.js`, données dans la base partagée sous `prod.callsheets`) : la feuille de service d'une journée, sur le modèle des onglets CALLSHEET des fiches de suivi. **+ NOUVELLE CALLSHEET** prend le prochain jour de tournage du calendrier qui n'a pas encore de callsheet, et remplit tout ce qu'elle peut :
+- **l'équipe du jour** : les gens de l'ÉQUIPE du projet pris ce jour-là (d'après leurs étapes ou leurs dates), sans ceux qui ne font que la post-prod. Ils sont rangés par groupe d'après leur rôle, dans l'ordre de la fiche de suivi : CLIENT, TALENTS, PHOTO TEAM, VIDEO TEAM, GLAM TEAM, PRODUCTION, puis CATERING et STUDIO / LOCATION ;
+- **leurs infos** : poste, téléphone et mail viennent de l'OPTIONS TEAM de la fiche de suivi du projet, de la fiche de la personne dans la bible, des contacts Widen, puis de l'OPTIONS TEAM des autres projets ;
+- **le déroulé** : s'il y a un PDT à cette date, SCHEDULE VIDEO / SCHEDULE PHOTO en reprennent les parties et les repas, avec le TIMING de la journée (bouton **REPRENDRE DES PDT DU JOUR** pour le refaire) ;
+- l'en-tête : client et logo, titre, crédits (photographe, réal), lieu, crew note.
+
+Dans l'éditeur, le champ NOM propose l'équipe du projet, l'OPTIONS TEAM, la bible et les contacts : choisir un nom remplit son poste, son téléphone et son mail. **+ L'ÉQUIPE DU JOUR** ajoute ceux qui manquent, **COMPLÉTER TÉLÉPHONES ET MAILS** remplit les cases vides. Chaque personne a son pick-up (heure, lieu proposé parmi les lieux de la bible et l'adresse de Widen, véhicule), son call time (le **CALL TIME PAR DÉFAUT** remplit ceux qui sont vides) et, si on coche la colonne, son hébergement. « Tout le groupe… » met la même valeur (call, pick-up, véhicule) à tout un groupe ; → déplace une personne dans un autre groupe. Les groupes se renomment, se déplacent et s'ajoutent. Le BASECAMP et les lieux de pick-up deviennent des liens Google Maps dans le PDF.
+**DUPLIQUER POUR LE JOUR SUIVANT** recopie la callsheet (mêmes personnes, pick-up et calls) sur le jour d'après ; **CRÉER LE PDF** l'affiche avec la fenêtre d'impression, comme la travel sheet et le PDT, dans la même DA (EB Garamond).
+
 ## Page d'un projet
 
-La page d'un projet s'ouvre sur son **CALENDRIER** (rétroplanning, post-prod ou mois). Les onglets en haut sont, dans l'ordre : **NOTES & INFOS** (les notes, puis nom, client, statut, couleur, supprimer le projet), **CALENDRIER**, **ÉTAPES** (modifier les étapes, importer un rétroplanning), **ÉQUIPE**, **TO-DO**, **PDT** et **TRAVEL SHEETS**. Un nouveau projet s'ouvre sur NOTES & INFOS pour écrire son nom. Sous le calendrier, un menu déroulant **ÉTAPES** (fermé par défaut) permet aussi de modifier et d'ajouter des étapes sans changer d'onglet.
+La page d'un projet s'ouvre sur son **CALENDRIER** (rétroplanning, post-prod ou mois). Les onglets en haut sont, dans l'ordre : **NOTES & INFOS** (les notes, puis nom, client, statut, couleur, supprimer le projet), **CALENDRIER**, **ÉTAPES** (modifier les étapes, importer un rétroplanning), **ÉQUIPE**, **TO-DO**, **PDT**, **CALLSHEETS** et **TRAVEL SHEETS**. Un nouveau projet s'ouvre sur NOTES & INFOS pour écrire son nom. Sous le calendrier, un menu déroulant **ÉTAPES** (fermé par défaut) permet aussi de modifier et d'ajouter des étapes sans changer d'onglet.

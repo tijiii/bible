@@ -251,14 +251,16 @@ async function pullRemoteDb() {
       // Travel sheet ouverte : on prend les changements des autres sans toucher
       // à la feuille en cours ni redessiner l'écran
       const pdtOuvert = document.querySelector('.pdt-editor') ? pdtCur() : null;
-      const tsOuverte = !pdtOuvert && document.querySelector('.ts-editor') ? tsCur() : null;
+      const csOuverte = !pdtOuvert && document.querySelector('.cs-editor') ? csCur() : null;
+      const tsOuverte = !pdtOuvert && !csOuverte && document.querySelector('.ts-editor') ? tsCur() : null;
       // Pareil pour un projet en cours de modification (onglet Suivi production)
-      const pjGarde = !tsOuverte && !pdtOuvert && typeof pjEnEdition === 'function' && pjEnEdition();
+      const pjGarde = !tsOuverte && !pdtOuvert && !csOuverte && typeof pjEnEdition === 'function' && pjEnEdition();
       const pjOuvert = pjGarde ? pjAGarder() : null;
       db = remote;
       lastRemoteJson = remoteJson;
       try { localStorage.setItem(STORAGE_KEY, remoteJson); } catch (e) {}
       if (pdtOuvert) pdtReprendre(pdtOuvert);
+      else if (csOuverte) csReprendre(csOuverte);
       else if (tsOuverte) tsReprendre(tsOuverte);
       else if (pjGarde) { if (pjOuvert) pjReprendre(pjOuvert); }
       else { buildTabs(); render(); }

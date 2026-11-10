@@ -5,7 +5,7 @@
 // une même personne est sur deux projets aux mêmes dates.
 // Tout est gardé dans la base partagée, sous db.projets.
 
-let pjVue = 'liste';         // 'liste' | 'projet' | 'ts' (travel sheet ouverte, prod.js) | 'pdt' (plan de travail ouvert, pdt.js)
+let pjVue = 'liste';         // 'liste' | 'projet' | 'ts' (travel sheet ouverte, prod.js) | 'pdt' (plan de travail ouvert, pdt.js) | 'cs' (callsheet ouverte, callsheet.js)
 let pjTsDepuis = null;       // projet d'où la travel sheet a été ouverte (pour y revenir)
 let pjId = null;             // projet ouvert
 let pjQ = '';                // recherche dans la liste
@@ -409,6 +409,14 @@ function pjRetourTs() {
 }
 
 function buildPjTabs(nav) {
+  if (pjVue === 'cs' && csCur()) {
+    const c = csCur(), dest = pjById(c.projetId);
+    nav.style.display = '';
+    nav.innerHTML = `<button class="crumb-back" onclick="csRetour()">← ${esc((dest ? pjTitre(dest) : 'PROJETS').toUpperCase())}</button>
+      <span class="crumb-sep">/</span>
+      <span class="crumb-title"><span class="ch-dot" style="background:#141414"></span>${esc(csTitreCourt(c))}</span>`;
+    return;
+  }
   if (pjVue === 'pdt' && pdtCur()) {
     const d = pdtCur(), dest = pjById(d.projetId);
     nav.style.display = '';
@@ -440,6 +448,7 @@ function renderProjets(main) {
   try {
     if (pjVue === 'ts' && tsById(tsId)) renderTsEditor(main);
     else if (pjVue === 'pdt' && pdtCur()) renderPdtEditor(main);
+    else if (pjVue === 'cs' && csCur()) renderCsEditor(main);
     else if (pjVue === 'projet' && pjCur()) renderPjProjet(main);
     else { pjVue = 'liste'; renderPjListe(main); }
   } finally { pjEnDessin = false; }
@@ -762,7 +771,7 @@ function renderPjProjet(main) {
 // travel sheets, infos) est à un clic.
 const PJ_ONGLETS = [
   ['infos', 'NOTES & INFOS'], ['calendrier', 'CALENDRIER'], ['retro', 'ÉTAPES'], ['equipe', 'ÉQUIPE'], ['todo', 'TO-DO'],
-  ['pdt', 'PDT'], ['travel', 'TRAVEL SHEETS'],
+  ['pdt', 'PDT'], ['callsheet', 'CALLSHEETS'], ['travel', 'TRAVEL SHEETS'],
 ];
 
 function pjOngletsHtml(p) {
@@ -772,7 +781,8 @@ function pjOngletsHtml(p) {
   const nTd = tdTaches(p).filter(t => !t.fait).length;
   const nPdt = pdtDuProjet(p.id).length;
   const nTs = tsList().filter(s => s.projetId === p.id).length;
-  const compte = { retro: nEt, equipe: nEq, todo: nTd, pdt: nPdt, travel: nTs };
+  const nCs = csDuProjet(p.id).length;
+  const compte = { retro: nEt, equipe: nEq, todo: nTd, pdt: nPdt, callsheet: nCs, travel: nTs };
   return `<nav class="pj-onglets" role="tablist">${PJ_ONGLETS.map(([k, lab]) => `<button type="button" role="tab" class="${pjOnglet === k ? 'on' : ''}" aria-selected="${pjOnglet === k}" onclick="pjSetOnglet('${k}')">${lab}${compte[k] ? ` <small>${compte[k]}</small>` : ''}${k === 'equipe' && nConf ? ' <span class="pj-warn">⚠</span>' : ''}</button>`).join('')}</nav>`;
 }
 
@@ -800,6 +810,7 @@ function pjOngletCorpsHtml(p, choix) {
     case 'equipe': pjEquipeOuvert = true; return pjEquipeHtml(p, choix);
     case 'todo': tdOuvert = true; return tdProjetHtml(p);
     case 'pdt': return pjPdtHtml(p);
+    case 'callsheet': return pjCallsheetsHtml(p);
     case 'travel': return pjTravelHtml(p);
     case 'infos': return pjInfosHtml(p);
     default: return `<section class="ts-bloc pj-cal-bloc${pjBF(p).calPlein ? ' pj-cal-plein' : ''}">

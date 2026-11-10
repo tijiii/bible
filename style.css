@@ -1319,3 +1319,41 @@ input:focus-visible, select:focus-visible, textarea:focus-visible { outline-offs
   .ch-add { width: 40px; height: 40px; }
   .ts-x { width: 32px; height: 32px; }
 }
+
+/* ── CALLSHEETS (callsheet.js) ── */
+.cs-schedules { display:grid; grid-template-columns:repeat(auto-fit,minmax(240px,1fr)); gap:12px; }
+.cs-schedule-hdr { display:flex; gap:8px; align-items:end; margin-bottom:6px; }
+.cs-schedule-hdr .field { flex:1; }
+.cs-schedule-hdr .ts-x { margin-bottom:8px; }
+.cs-schedule textarea { font-family:ui-monospace,Menlo,Consolas,monospace; font-size:13px; line-height:1.45; }
+.cs-grid-haut { margin-bottom:4px; }
+.cs-cols { display:flex; flex-wrap:wrap; gap:6px 14px; padding-top:6px; }
+#cs-msg:empty { display:none; }
+#cs-msg { color:var(--text); margin-top:8px; }
+.cs-groupe { margin-top:16px; border-top:2px solid var(--text); padding-top:8px; }
+.cs-groupe-hdr { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+.cs-groupe-titre { font-family:var(--serif); font-size:14px; font-weight:600; letter-spacing:.14em; border:1px solid transparent; background:none; padding:4px 6px; min-width:0; flex:0 1 240px; outline:none; }
+.cs-groupe-titre:hover, .cs-groupe-titre:focus { border-color:var(--border); background:#fff; }
+.cs-groupe-hdr .ts-x:disabled, .cs-ligne-outils .ts-x:disabled { opacity:.3; cursor:default; }
+.cs-ligne { padding:8px 0; border-top:1px solid var(--border); display:flex; flex-direction:column; gap:5px; }
+.cs-lignes .cs-ligne:first-child { border-top:none; }
+.cs-l { display:flex; gap:6px; align-items:flex-end; }
+.cs-l .field { flex:1 1 0; min-width:0; gap:3px; }
+.cs-l .field.cs-large { flex-grow:1.6; }
+.cs-l .field.cs-court { flex-grow:.6; }
+.cs-l .field label { font-size:11px; letter-spacing:.06em; }
+.cs-l .field input { padding:5px 7px; font-size:13.5px; }
+/* Les titres des champs ne sont écrits qu'à la première personne du groupe */
+.cs-lignes .cs-ligne + .cs-ligne .field label { display:none; }
+.cs-ligne-outils { flex:none; display:flex; align-items:center; gap:4px; padding-bottom:4px; }
+.cs-vers { background:none; border:1px solid var(--border); color:var(--muted); font-family:var(--serif); font-size:12.5px; height:24px; padding:0 4px; cursor:pointer; width:52px; }
+.cs-groupe .ts-add-row .filter-sel { max-width:280px; }
+@media (max-width:640px) {
+  .cs-l { flex-wrap:wrap; }
+  .cs-l .field, .cs-l .field.cs-court, .cs-l .field.cs-large { flex:1 1 40%; }
+  .cs-lignes .cs-ligne + .cs-ligne .field label { display:block; }
+  .cs-ligne { padding:10px 0; }
+  .cs-ligne-outils { flex-basis:100%; justify-content:flex-end; }
+  .cs-groupe-titre { flex-basis:100%; }
+  .cs-groupe .ts-add-row .filter-sel { max-width:100%; flex:1; }
+}
