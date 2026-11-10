@@ -1652,7 +1652,7 @@ function pdtDocCss(ecran, edit, paysage) {
   .pdt-doc .pied { margin: 6px 0 0; font-size: 8px; font-style: italic; color: #555; }
   /* Style graphique des fiches Google Sheet, comme la callsheet : Work Sans, en-tête encadré,
      bandes grises, barre noire, quadrillage léger */
-  .pdt-doc { --ink: #000; --gris: #8a8a86; --filet: #d9d9d9; --filet-v: #e6e6e6; --rouge: #cc0000; --bande: #efefef; --fond: #f3f3f3; font-family: 'Work Sans', Arial, sans-serif; font-variant-numeric: normal; font-size: 8px; }
+  .pdt-doc { --ink: #000; --gris: #8a8a86; --filet: #dadada; --filet-v: #dadada; /* même gris : pas de marque aux croisements */ --rouge: #cc0000; --bande: #efefef; --fond: #f3f3f3; font-family: 'Work Sans', Arial, sans-serif; font-variant-numeric: normal; font-size: 8px; }
   .pdt-doc .tete { grid-template-columns: 1fr 2fr 1fr; align-items: start; border: .5pt solid var(--ink); padding: 6px 8px 10px; margin-bottom: 4mm; }
   .pdt-doc .tete .cl { order: 1; justify-self: start; text-align: left; font-weight: 600; font-size: 18px; letter-spacing: .02em; }
   .pdt-doc .tete .mil { order: 2; padding-top: 16px; }
@@ -1682,7 +1682,9 @@ function pdtDocCss(ecran, edit, paysage) {
   .pdt-doc td small { letter-spacing: 0; }
   .pdt-doc .pied { font-size: 7px; color: #444; }
   /* Les encadrements de l'en-tête dessinés à part (pas fusionnés avec les cases) : fermés jusqu'au bout, à l'écran comme dans le PDF */
-  .pdt-doc .haut-2 table.eq, .pdt-doc .haut-2 table.hor { border-collapse: separate; border-spacing: 0; }
+  /* Le cadre est un seul rectangle (outline) autour du tableau, pas une bordure partagée avec les cases :
+     il se ferme jusqu'au bout et les traits des lignes ne viennent pas le couper */
+  .pdt-doc .haut-2 table.eq, .pdt-doc .haut-2 table.hor { border: 0; border-collapse: collapse; outline: .5pt solid var(--ink); outline-offset: -.25pt; }
   .pdt-doc .haut-2 table.eq tr:last-child > td, .pdt-doc .haut-2 table.hor tr:last-child > td { border-bottom: 0; }
   .pdt-doc .haut-2 table.eq th { border-bottom: .5pt solid var(--ink); }
   ${edit ? `
@@ -1745,7 +1747,7 @@ function pdtDocCss(ecran, edit, paysage) {
   .pdt-doc-ed .pdt-ajout-haut button:hover, .pdt-doc-ed .pdt-ajout-bas button:hover { border-color: #2f5597; color: #2f5597; }
   .pdt-doc-ed .pdt-ajout-bas { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 6px; }` : `
   @media screen and (max-width: 760px) { .pdt-doc { zoom: .46; margin: 8px auto; } }
-  @media print { body { background: #fff; } .barre-impr { display: none; } .pdt-doc { width: auto; min-height: 0; margin: 0; padding: 0; } }`}`;
+  @media print { body { background: #fff; } .barre-impr { display: none; } .pdt-doc, .pdt-doc.paysage { width: auto; min-height: 0; margin: 0; padding: 0; } }`}`;
 }
 
 function pdtDocHtml(d, ecran) {
