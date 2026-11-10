@@ -1653,7 +1653,7 @@ function pdtDocCss(ecran, edit, paysage) {
   /* Style graphique des fiches Google Sheet, comme la callsheet : Work Sans, en-tête encadré,
      bandes grises, barre noire, quadrillage léger */
   .pdt-doc { --ink: #000; --gris: #8a8a86; --filet: #d9d9d9; --filet-v: #e6e6e6; --rouge: #cc0000; --bande: #efefef; --fond: #f3f3f3; font-family: 'Work Sans', Arial, sans-serif; font-variant-numeric: normal; font-size: 8px; }
-  .pdt-doc .tete { grid-template-columns: 1fr 2fr 1fr; align-items: start; border: 1px solid var(--ink); padding: 6px 8px 10px; margin-bottom: 4mm; }
+  .pdt-doc .tete { grid-template-columns: 1fr 2fr 1fr; align-items: start; border: .5pt solid var(--ink); padding: 6px 8px 10px; margin-bottom: 4mm; }
   .pdt-doc .tete .cl { order: 1; justify-self: start; text-align: left; font-weight: 600; font-size: 18px; letter-spacing: .02em; }
   .pdt-doc .tete .mil { order: 2; padding-top: 16px; }
   .pdt-doc .tete .widen { order: 3; justify-self: end; height: 18px; margin-top: 3px; }
@@ -1661,22 +1661,22 @@ function pdtDocCss(ecran, edit, paysage) {
   .pdt-doc .tete .mil .t { font-size: 12px; font-weight: 700; letter-spacing: 0; margin-bottom: 2px; }
   .pdt-doc .tete .mil .d { font-size: 9px; font-weight: 700; letter-spacing: 0; color: var(--ink); text-transform: uppercase; }
   .pdt-doc th { font-size: 6.5px; font-weight: 400; letter-spacing: 0; color: var(--ink); text-transform: uppercase; }
-  .pdt-doc .haut-2 table.eq { border: 1px solid var(--ink); }
+  .pdt-doc .haut-2 table.eq { border: .5pt solid var(--ink); }
   .pdt-doc .haut-2 table.eq th { background: var(--bande); }
-  .pdt-doc .haut-2 table.hor { border: 1px solid var(--ink); background: var(--fond); }
+  .pdt-doc .haut-2 table.hor { border: .5pt solid var(--ink); background: var(--fond); }
   .pdt-doc .haut.hor td { border-bottom-color: #e2e2e2; }
   .pdt-doc .haut.hor .lab { font-size: 7px; font-weight: 700; letter-spacing: 0; color: var(--ink); text-transform: uppercase; }
   .pdt-doc .hh { font-weight: 700; }
   .pdt-doc .b { font-weight: 700; letter-spacing: 0; }
   .pdt-doc .tbc { color: var(--rouge); font-weight: 700; }
   .pdt-doc tr.noir td { border-top: 0; height: 8px; background: var(--ink); }
-  .pdt-doc tr.prepa td { font-weight: 700; letter-spacing: 0; background: var(--fond); border-bottom: 1px solid var(--ink); }
-  .pdt-doc tr.th th { border-top: 0; border-bottom: 1px solid var(--ink); font-size: 6px; }
-  .pdt-doc tr.barre td { background: var(--bande); font-weight: 700; letter-spacing: 0; font-size: 7.5px; height: 15px; padding-top: 2px; text-transform: uppercase; border-top: 1px solid var(--ink); border-bottom: 1px solid var(--ink); }
+  .pdt-doc tr.prepa td { font-weight: 700; letter-spacing: 0; background: var(--fond); border-bottom: .5pt solid var(--ink); }
+  .pdt-doc tr.th th { border-top: 0; border-bottom: .5pt solid var(--ink); font-size: 6px; }
+  .pdt-doc tr.barre td { background: var(--bande); font-weight: 700; letter-spacing: 0; font-size: 7.5px; height: 15px; padding-top: 2px; text-transform: uppercase; border-top: .5pt solid var(--ink); border-bottom: .5pt solid var(--ink); }
   .pdt-doc tr.install td { color: #444; }
   .pdt-doc tr.install td.it { font-size: 7.5px; letter-spacing: 0; }
   .pdt-doc td.shot { font-weight: 700; font-size: 11px; }
-  .pdt-doc tr.total td { font-weight: 700; letter-spacing: 0; border-top: 1px solid var(--ink); background: var(--bande); }
+  .pdt-doc tr.total td { font-weight: 700; letter-spacing: 0; border-top: .5pt solid var(--ink); background: var(--bande); }
   .pdt-doc td.txt, .pdt-doc td.note { font-size: 7.5px; }
   .pdt-doc td.opt, .pdt-doc td.lum { font-size: 7.5px; letter-spacing: 0; }
   .pdt-doc td small { letter-spacing: 0; }

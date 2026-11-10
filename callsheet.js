@@ -1236,7 +1236,7 @@ function csDocCss(ecran, edit) {
   .cs-doc { --ink: #000; --gris: #f3f3f3; --bande: #efefef; --rouge: #cc0000; --lien: #1155cc; font-family: 'Work Sans', Arial, sans-serif; color: var(--ink); width: 210mm; min-height: 297mm; margin: ${ecran && !edit ? '0' : '10mm'} auto; background: #fff; padding: 11mm 10mm 10mm; font-size: 8.5px; line-height: 1.35; text-align: left; letter-spacing: normal; }
   .cs-doc a { color: inherit; text-decoration: none; }
   .cs-doc .base a, .cs-doc td.pickupLieu a, .cs-doc td.adr a { color: var(--lien); text-decoration: underline; }
-  .cs-doc .bloc { border: 1px solid var(--ink); }
+  .cs-doc .bloc { border: .5pt solid var(--ink); }
   .cs-doc .gris { background: var(--gris); }
   .cs-doc .rouge { color: var(--rouge); }
 
@@ -1273,9 +1273,9 @@ function csDocCss(ecran, edit) {
   .cs-doc .crew-b { border-top: none; }
   .cs-doc .barre-noire { height: 8px; background: var(--ink); margin: 0 -1px; }
   .cs-doc table.crew { width: 100%; border-collapse: collapse; table-layout: fixed; font-size: 7.5px; }
-  .cs-doc table.crew thead th { font-size: 6.5px; font-weight: 400; text-transform: uppercase; text-align: center; padding: 6px 3px 1px; border-bottom: 1px solid var(--ink); vertical-align: bottom; line-height: 1.2; }
+  .cs-doc table.crew thead th { font-size: 6.5px; font-weight: 400; text-transform: uppercase; text-align: center; padding: 6px 3px 1px; border-bottom: .5pt solid var(--ink); vertical-align: bottom; line-height: 1.2; }
   .cs-doc table.crew td { padding: 1px 3px; vertical-align: top; text-align: center; overflow-wrap: anywhere; line-height: 1.4; }
-  .cs-doc table.crew tr.grp td { background: var(--bande); padding: 2px 3px; border-top: 1px solid var(--ink); border-bottom: 1px solid var(--ink); font-size: 6.5px; font-weight: 700; text-transform: uppercase; text-align: left; }
+  .cs-doc table.crew tr.grp td { background: var(--bande); padding: 2px 3px; border-top: .5pt solid var(--ink); border-bottom: .5pt solid var(--ink); font-size: 6.5px; font-weight: 700; text-transform: uppercase; text-align: left; }
   .cs-doc table.crew tbody.g:first-of-type tr.grp td { border-top: none; }
   .cs-doc table.crew tr.grp + tr td { padding-top: 9px; }
   .cs-doc table.crew tbody.g tr:last-child:not(.grp) td { padding-bottom: 9px; }
