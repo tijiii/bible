@@ -1682,9 +1682,9 @@ function pdtDocCss(ecran, edit, paysage) {
   .pdt-doc td small { letter-spacing: 0; }
   .pdt-doc .pied { font-size: 7px; color: #444; }
   /* Les encadrements de l'en-tête dessinés à part (pas fusionnés avec les cases) : fermés jusqu'au bout, à l'écran comme dans le PDF */
-  /* Le cadre est un seul rectangle (outline) autour du tableau, pas une bordure partagée avec les cases :
-     il se ferme jusqu'au bout et les traits des lignes ne viennent pas le couper */
-  .pdt-doc .haut-2 table.eq, .pdt-doc .haut-2 table.hor { border: 0; border-collapse: collapse; outline: .5pt solid var(--ink); outline-offset: -.25pt; }
+  /* Le cadre est la bordure du tableau lui-même (cases séparées) : un seul rectangle, que le PDF garde comme un
+     seul trait. Les lecteurs PDF le dessinent alors de la même épaisseur à gauche, à droite, en haut et en bas */
+  .pdt-doc .haut-2 table.eq, .pdt-doc .haut-2 table.hor { border: 1px solid var(--ink); border-collapse: separate; border-spacing: 0; outline: 0; }
   .pdt-doc .haut-2 table.eq tr:last-child > td, .pdt-doc .haut-2 table.hor tr:last-child > td { border-bottom: 0; }
   .pdt-doc .haut-2 table.eq th { border-bottom: .5pt solid var(--ink); }
   ${edit ? `
@@ -1747,7 +1747,7 @@ function pdtDocCss(ecran, edit, paysage) {
   .pdt-doc-ed .pdt-ajout-haut button:hover, .pdt-doc-ed .pdt-ajout-bas button:hover { border-color: #2f5597; color: #2f5597; }
   .pdt-doc-ed .pdt-ajout-bas { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 6px; }` : `
   @media screen and (max-width: 760px) { .pdt-doc { zoom: .46; margin: 8px auto; } }
-  @media print { body { background: #fff; } .barre-impr { display: none; } .pdt-doc, .pdt-doc.paysage { width: auto !important; max-width: 100% !important; min-height: 0; margin: 0 !important; padding: 0 !important; } }`}`;
+  @media print { body { background: #fff; } .barre-impr { display: none; } .pdt-doc, .pdt-doc.paysage { width: auto !important; max-width: 100% !important; min-height: 0; margin: 0 !important; padding: 0 1px !important; } }`}`;
 }
 
 function pdtDocHtml(d, ecran) {
